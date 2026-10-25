@@ -482,7 +482,7 @@
     <Content Include="Content\uigraphics\live\modes\opt_freewill.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Content\uigraphics\live\modes\opt_graphics.png">
+    <Content Include="Content\uigraphics\live\modes\opt_settings.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Content\uigraphics\live\money_bg.png">

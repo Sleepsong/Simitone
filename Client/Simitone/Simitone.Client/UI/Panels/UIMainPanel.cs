@@ -276,7 +276,7 @@ namespace Simitone.Client.UI.Panels
                         new UICatFunc(GameFacade.Strings.GetString("145", "3"), "opt_save.png", () => { Game.Save(); }),
                         new UICatFunc(GameFacade.Strings.GetString("145", "1"), "opt_neigh.png", () => { Game.ReturnToNeighbourhood(); }),
                         new UICatFunc(GameFacade.Strings.GetString("145", "5"), "opt_quit.png", () => { Game.CloseAttempt(); }),
-                        new UICatFunc("Graphics", "opt_graphics.png", () => { UIScreen.GlobalShowDialog(new UIGraphicsOptionsAlert(Game), true); }),
+                        new UICatFunc("Settings", "opt_settings.png", () => { UIScreen.GlobalShowDialog(new UIOptionsAlert(), true); }),
                     }, OptionsSpacing);
                     AddFreeWillToggle(panel);
                     break;
