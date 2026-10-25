@@ -51,6 +51,13 @@ namespace Simitone.Client
 
             FSOEnvironment.DPIScaleFactor = GlobalSettings.Default.DPIScaleFactor;
 
+            // MonoGame otherwise picks Reach, which on DirectX caps textures at 2048px. The 2D world
+            // buffers are the screen size + a 512px scroll margin, so larger windows/fullscreen crashed.
+            if (GraphicsAdapter.DefaultAdapter.IsProfileSupported(GraphicsProfile.HiDef))
+            {
+                Graphics.GraphicsProfile = GraphicsProfile.HiDef;
+            }
+
             if (!FSOEnvironment.SoftwareKeyboard)
             {
                 Graphics.SynchronizeWithVerticalRetrace = true;
