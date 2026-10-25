@@ -54,7 +54,8 @@ namespace Simitone.Windows
             bool pathProvidedViaCommandLine = false;
 
 
-            FSOEnvironment.Enable3D = false;
+            // 3D mode is remembered from the graphics options (or a previous -3d launch)
+            FSOEnvironment.Enable3D = GlobalSettings.Default.GlobalGraphicsMode > 0;
             bool ide = false;
             bool aa = false;
             bool jit = false;
@@ -317,10 +318,14 @@ namespace Simitone.Windows
                 GlobalSettings.Default.TS1HybridEnable = true;
                 FSO.Content.Content.TS1SteamInstall = GlobalSettings.Default.TS1IsSteamInstall;
                 GlobalSettings.Default.ClientVersion = "0";
-                GlobalSettings.Default.LightingMode = 3;
-                GlobalSettings.Default.AntiAlias = aa ? 1 : 0;
-                GlobalSettings.Default.ComplexShaders = true;
-                GlobalSettings.Default.EnableTransitions = true;
+                // Simitone defaults on first run only; afterwards these come from config.ini
+                // (changed in Options > Graphics), with -aa still forcing antialiasing on.
+                if (GlobalSettings.Default.LightingMode < 0)
+                {
+                    GlobalSettings.Default.LightingMode = 3;
+                    GlobalSettings.Default.ComplexShaders = true;
+                }
+                if (aa) GlobalSettings.Default.AntiAlias = 1;
 
                 // Save the updated settings to config.ini
                 GlobalSettings.Default.Save();
