@@ -278,6 +278,8 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 - **BHAV 9001 via PIFF.** Confirm that PIFF `Add` works for semi-global files, and that `GetRoutineWithOwner` resolves `0x2329` against TS1's person semi-global.
 - **`PersonData[54]` in TS1.** If we keep using it at all, verify that no TS1 behaviour reads or writes that slot.
 - **Windows backend.** Windows defaults to WindowsDX (`Simitone.Windows/Program.cs:52`). Its `GamePad` support is expected to be XInput-only, so PlayStation pads may need Steam Input or DS4Windows there; DesktopGL (SDL2) should recognise them natively. Verify on hardware. If confirmed, document the existing `gl` launch argument for PlayStation pads.
+- **Neighbourhood person data is truncated (pre-existing, unverified impact).** `NBRS` loads only the first 88 person-data entries, although non-version-4 records store 256. On save it writes zeros for everything past 88. If the original game keeps anything there, saving in Simitone wipes it. This is worth checking separately; it isn't related to controller support.
+- **New (2026) Steam Controller.** SDL 2.32.2 predates it and has no driver or mapping for it. Through Steam Input it appears as a "Steam Virtual Gamepad", which SDL's mapping database covers, so launching Simitone from Steam is the supported route.
 - **Steam Controller (original 2015 model) without Steam.** With Steam closed it presents as a keyboard and mouse ("lizard mode"), not a gamepad, so no code here sees it.
   - SDL 2.32.2, which MonoGame bundles, has a Steam Controller driver, but it is off by default (`SDL_JOYSTICK_HIDAPI_STEAM`). In that version its packet reader only accepts Bluetooth LE reports, so it wouldn't help over the USB dongle or a cable.
   - Practical routes: add Simitone to Steam as a non-Steam game (Steam Input presents a standard gamepad), or run a standalone driver that creates a virtual gamepad.
@@ -461,6 +463,9 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
   - Engine `f6741e2`: out-of-range avatar slots now read as empty, as they already did for objects.
   - The selector checks a target's interactions once, when it lands on it (as mouse hover does).
   - Side effect: the marker colour can be stale until the selector moves to another target or the active Sim changes.
+- **More exception popups (second test).**
+  - **"MAGIC - Ghost Social Test" (from "Tease Scare TEST").** When a Sim inherited its neighbourhood record, its 101-entry person-data array was replaced by the record's 88 entries, and this check reads past entry 87. Engine `e1e26f5` overlays the record onto the full-size array instead. This happens for the mouse too, whenever a Sim's menu is built (hover or click), so it isn't controller-specific.
+  - **Sofa and bench threads failing in `VMThread.Pop`** (null reference, empty stack). Not reproduced or explained yet. They appeared alongside Sim errors that reset the Sim, so they may be a knock-on effect of resetting a Sim mid-sit. Recheck after the person-data fix.
 
 ### Notes for Phase 3
 
