@@ -117,7 +117,9 @@ jobs:
 
   build-linux:
     if: ${{ inputs.build_linux }}
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: the native launcher is compiled here, and building on an older LTS
+    # keeps its glibc requirement low enough for users who aren't on the newest Ubuntu.
+    runs-on: ubuntu-24.04
     name: Build Linux
 
     steps:
@@ -134,7 +136,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libsdl2-2.0-0 libopenal1 libgtk-3-0 libgtk-3-dev libglib2.0-0 libcairo2 libpango-1.0-0 libgdk-pixbuf2.0-0 libatk1.0-0 imagemagick
+        sudo apt-get install -y libsdl2-2.0-0 libopenal1 libgtk-3-0 libgtk-3-dev libglib2.0-0 libcairo2 libpango-1.0-0 libgdk-pixbuf-2.0-0 libatk1.0-0 imagemagick
 
     - name: Restore dependencies
       run: dotnet restore Client/Simitone/Simitone.Desktop/Simitone.Desktop.csproj
