@@ -1,5 +1,9 @@
 ﻿using FSO.Client;
 using FSO.Client.UI.Framework;
+using FSO.Common.Rendering.Framework.IO;
+using FSO.Client;
+using FSO.Client.UI.Model;
+using FSO.HIT;
 using FSO.Content;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -13,7 +17,7 @@ using FSO.Common.Rendering.Framework.IO;
 
 namespace Simitone.Client.UI.Controls
 {
-    public class UITouchScroll : UICachedContainer
+    public class UITouchScroll : UICachedContainer, IPadNavigable
     {
         public int ItemWidth;
         public Texture2D ScrollEdgeL;
@@ -239,6 +243,37 @@ namespace Simitone.Client.UI.Controls
                     DrawLocalTexture(batch, ScrollEdgeR, new Vector2(Size.X - 15, Size.Y / 2 - 64));
                 }
             }
+        }
+
+        public bool PadFocusable => Visible && LengthProvider() > 0;
+        public Rectangle PadBounds => new Rectangle(0, 0, (int)Size.X, (int)Size.Y);
+
+        /// <summary>
+        /// Gamepad: directions along the list move the selection (and scroll to it); at either end, or across the
+        /// list, focus moves on to the neighbouring element.
+        /// </summary>
+        public bool PadMove(PadDirection direction)
+        {
+            int step;
+            if (VerticalMode) step = (direction == PadDirection.Up) ? -1 : ((direction == PadDirection.Down) ? 1 : 0);
+            else step = (direction == PadDirection.Left) ? -1 : ((direction == PadDirection.Right) ? 1 : 0);
+            if (step == 0) return false;
+
+            var current = LastSelected?.ItemID ?? -1;
+            var next = (current < 0) ? 0 : current + step;
+            if (next < 0 || next >= LengthProvider()) return false;
+            SelectItem(next);
+            ScrollToItem(next);
+            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+            return true;
+        }
+
+        /// <summary>Gamepad Confirm: selects the first item if nothing is selected yet.</summary>
+        public void PadActivate()
+        {
+            if (LastSelected != null || LengthProvider() == 0) return;
+            SelectItem(0);
+            ScrollToItem(0);
         }
 
         public void Reset()

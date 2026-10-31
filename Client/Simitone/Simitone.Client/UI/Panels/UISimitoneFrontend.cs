@@ -36,6 +36,9 @@ namespace Simitone.Client.UI.Panels
         public bool PanelActive;
         public int LastCut = 0;
 
+        /// <summary>Gamepad navigation inside the main panel (the needs panel when focused, and Options).</summary>
+        public UIFocusNavigator PanelNavigator = new UIFocusNavigator();
+
         public UISimitoneFrontend(TS1GameScreen screen)
         {
             var ui = Content.Get().CustomUI;
@@ -345,6 +348,12 @@ namespace Simitone.Client.UI.Panels
                 ModeSwitcher.LiveButton.Switching = MainPanel.ShowingSelect;
                 ExtendPanelBtn.Visible = !MainPanel.PanelActive;
             }
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
+            base.Draw(batch);
+            PanelNavigator.Draw(batch); //outline above the panel it navigates
         }
 
         public override void GameResized()

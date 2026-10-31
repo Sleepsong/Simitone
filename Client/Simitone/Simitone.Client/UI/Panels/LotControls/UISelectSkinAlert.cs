@@ -26,7 +26,7 @@ using System.Threading.Tasks;
 
 namespace Simitone.Client.UI.Panels.LotControls
 {
-    public class UISelectSkinAlert : UIMobileDialog
+    public class UISelectSkinAlert : UIMobileDialog, IPadScope
     {
         public UISelectSkinPanel NPanel;
         /*
@@ -55,6 +55,56 @@ namespace Simitone.Client.UI.Panels.LotControls
         {
             base.GameResized();
             NPanel.Position = new Microsoft.Xna.Framework.Vector2((Width - 1030) / 2, 110);
+        }
+
+        /// <summary>Gamepad: start on the carousel, so left/right browse straight away.</summary>
+        public UIElement PadDefaultFocus => NPanel.PadTarget;
+
+        public bool PadCancel()
+        {
+            NPanel.CancelButton.PerformClick();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Gamepad handle over the outfit/pet carousel: left/right turn it one body at a time, Confirm picks the body
+    /// in front (as OK does). It draws nothing; the navigator outlines its bounds.
+    /// </summary>
+    public class UISkinCarouselPadTarget : UIElement, IPadNavigable
+    {
+        private readonly UISelectSkinPanel Panel;
+
+        public UISkinCarouselPadTarget(UISelectSkinPanel panel)
+        {
+            Panel = panel;
+        }
+
+        public bool PadFocusable => true;
+        public Rectangle PadBounds => new Rectangle(0, 0, 1030, 360); //above the OK/Cancel row
+
+        public bool PadMove(FSO.Common.Rendering.Framework.IO.PadDirection direction)
+        {
+            switch (direction)
+            {
+                case FSO.Common.Rendering.Framework.IO.PadDirection.Left:
+                    Panel.PadStep(-1);
+                    return true;
+                case FSO.Common.Rendering.Framework.IO.PadDirection.Right:
+                    Panel.PadStep(1);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        public void PadActivate()
+        {
+            Panel.OKButton.PerformClick();
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
         }
     }
 
@@ -145,6 +195,21 @@ namespace Simitone.Client.UI.Panels.LotControls
             CancelButton.OnButtonClick += (btn) => { OnResult?.Invoke(-1); };
             CancelButton.Width = 275;
             Add(CancelButton);
+
+            PadTarget = new UISkinCarouselPadTarget(this);
+            Add(PadTarget);
+        }
+
+        public UISkinCarouselPadTarget PadTarget;
+
+        /// <summary>Turns the carousel to the next (1) or previous (-1) body, as a mouse flick would.</summary>
+        public void PadStep(int direction)
+        {
+            var mult = (float)Math.Pow(0.95, 60f / FSOEnvironment.RefreshRate);
+            var target = Math.Round(BodyPosition) + direction;
+            //speed decays by mult each frame, so a starting speed of distance * (1 - mult) travels about that distance,
+            //then UpdateCarousel's snapping settles it on the body.
+            BodySpeed = (float)((target - BodyPosition) * (1 - mult));
         }
 
         public override void PreDraw(UISpriteBatch batch)

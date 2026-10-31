@@ -12,10 +12,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using FSO.Common.Rendering.Framework.Model;
+using FSO.Client;
 
 namespace Simitone.Client.UI.Panels
 {
-    public class UIMobileAlert : UIMobileDialog
+    public class UIMobileAlert : UIMobileDialog, IPadScope
     {
         private UIAlertOptions m_Options;
         private TextRendererResult m_MessageText;
@@ -233,6 +234,29 @@ namespace Simitone.Client.UI.Panels
             Close();
         }
 
+        private UIButton ButtonFor(UIAlertButtonType type)
+        {
+            return ButtonMap.TryGetValue(type, out var button) ? button : null;
+        }
+
+        /// <summary>Gamepad: start on Yes or OK.</summary>
+        public UIElement PadDefaultFocus => ButtonFor(UIAlertButtonType.Yes) ?? ButtonFor(UIAlertButtonType.OK) ?? Buttons.FirstOrDefault();
+
+        /// <summary>
+        /// Gamepad Cancel presses Cancel, otherwise No. A plain message with only OK is dismissed with OK, but a
+        /// text entry isn't, so B can't submit an unfinished name.
+        /// </summary>
+        public bool PadCancel()
+        {
+            var button = ButtonFor(UIAlertButtonType.Cancel) ?? ButtonFor(UIAlertButtonType.No);
+            if (button == null && Buttons.Count == 1 && TextBox == null) button = ButtonFor(UIAlertButtonType.OK);
+            if (button == null) return false;
+            button.PerformClick();
+            return true;
+        }
+
+        private bool TextFocused;
+
         private bool m_TextDirty = false;
         public override void CalculateMatrix()
         {
@@ -260,6 +284,14 @@ namespace Simitone.Client.UI.Panels
         public override void Update(UpdateState state)
         {
             base.Update(state);
+            //give the text box keyboard focus straight away, so typing (or a system on-screen keyboard) goes into it.
+            if (TextBox != null && !TextFocused && state.InputManager != null)
+            {
+                state.InputManager.SetFocus(TextBox);
+                TextFocused = true;
+            }
+            //and give it back as the dialog closes, or keyboard shortcuts (and the pad, in lots) stay blocked.
+            if (TextBox != null && Closing && state.InputManager?.GetFocus() == TextBox) state.InputManager.SetFocus(null);
             var off = ((Closing) ? 1 : -1) * (1 - InterpolatedAnimation) * Width;
             var newIX = TargetIX + off;
             if (Icon.X != newIX)

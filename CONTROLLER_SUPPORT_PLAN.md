@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1 and 2 are done. The engine changes are on `simitone/controller-phase2` in `Sleepsong/FreeSO` (which includes Phase 1), and the submodule points at it (see §10 and §11). Neither phase has been tested on hardware or in the running game yet.
+**Status:** Phases 1–3 are done. The engine changes are on `simitone/controller-phase3` in `Sleepsong/FreeSO` (which includes Phases 1 and 2), and the submodule points at it (see §10–§12). Phases 1 and 2 have been tested on hardware (§11). Phase 3 hasn't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -223,7 +223,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | X / Square | Toggle Cursor ↔ Direct (Phase 4) | Toggle Cursor ↔ Direct |
 | Y / Triangle | Focus the action queue | Focus the action queue |
 | LB / RB (L1 / R1) | Previous / next household Sim | same |
-| LT / RT (L2 / R2) | Open/close the needs panel / next panel tab | same |
+| LT / RT (L2 / R2) | Needs panel: closed → open → focused → closed / next panel tab | same |
 | D-pad ← / → | Game speed down / up | same |
 | D-pad ↑ / ↓ | Floor up / down | same |
 | L3 | Cycle walls (up / cutaway / down) | same |
@@ -254,7 +254,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | 0 ✅ | This plan, decisions in §8, FreeSO fork | Decisions recorded |
 | 1 ✅ | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
 | 2 ✅ | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
-| 3 | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
+| 3 ✅ | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
 | 4 | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
 | 6 | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
@@ -488,3 +488,67 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 
 - Native dialog navigation (E4 focus navigator) is now the main gap. Every VM dialog currently falls back to the virtual cursor.
 - The needs panel opens and changes tabs natively, but its contents (relationship entries, job buttons, the inventory) still need focus navigation.
+
+---
+
+## 12. Phase 3 — what was built
+
+The engine commit is `931ccd7` on `simitone/controller-phase3` in `Sleepsong/FreeSO`, on top of Phase 2.
+
+### Focus navigation (engine, `FSO.UI/Framework/UIFocusNavigator.cs`)
+
+- **What can take focus:** within a scope element, the visible, enabled buttons that have a click handler (display-only buttons such as portraits are skipped), plus anything implementing `IPadNavigable`.
+- **`IPadNavigable` elements** (lists, the outfit carousel) can use a direction themselves, e.g. moving the selection within a list, and hand focus on at their ends.
+- **Moving focus:**
+  - D-pad or left stick moves to the nearest element in that direction.
+  - Elements in the same row or column always win over diagonal ones.
+  - Holding a direction repeats.
+- **Buttons:**
+  - A clicks (`UIButton.PerformClick`).
+  - B calls the scope's `IPadScope.PadCancel`.
+  - A new scope ignores A/B until both have been released, so the press that opened a dialog can't also answer it.
+- **Outline:** a pulsing outline marks the focused element while the pad is the device in use.
+
+### Dialogs
+
+- **Navigation:** `UILayer` navigates the top modal dialog whenever a pad is connected, and captures the pad so the virtual cursor stays away. This covers every modal dialog in the game, including outside lots.
+  - A dialog with nothing focusable keeps the pad captured for its first second, while its opening animation runs.
+  - After that, it's left to the virtual cursor.
+
+| Dialog | Starts on | B |
+|---|---|---|
+| Messages, Yes/No, Yes/No/Cancel (`UIMobileAlert`) | Yes or OK | Cancel, else No. On an OK-only message, OK. Never submits a text entry. |
+| Phone book (`UICallNeighborAlert`) | Family list. ↑↓ choose; → moves to the neighbour list, then the Call/Cancel buttons | Cancel |
+| Outfit / pet picker (`UISelectSkinAlert`) | Carousel. ←→ turn it, A picks the body in front | Cancel |
+
+**Text entry:** the text box now gets keyboard focus as soon as its dialog opens, so typing works without clicking it first, including from Steam's on-screen keyboard (Steam + X). Focus is released when the dialog closes. The lot helper also clears focus left on any element that is no longer on screen. That fixes an existing bug where, after typing in a dialog, the 1/2/3/P speed hotkeys stopped working.
+
+### Panels
+
+- **Needs panel, LT cycles:**
+  1. closed → open (display only, the selector keeps the pad);
+  2. → focused: the D-pad/stick move between that tab's buttons and lists, A activates, B unfocuses and leaves the panel open;
+  3. → closed.
+  - Tabs with nothing to select (motives, personality, job) skip the focused step.
+  - RT still changes tab. While focused, the D-pad's floor/speed bindings and Y (queue) are off, and the selector and its marker are idle.
+- **Options mode** (Save, Neighbourhood, Quit, free-will toggle): navigated directly as soon as Select reaches it. B returns to live mode. The quit and leave confirmations are modal dialogs, so they're navigated too.
+- **Buy and build:** still on the virtual cursor until Phase 5.
+
+### Lists
+
+`UITouchScroll` (the phone book lists, relationships, inventory) implements `IPadNavigable`. Moving along the list selects the next or previous item and scrolls to it. At either end, or across the list, focus moves on.
+
+### Verification
+
+- The full desktop build succeeds.
+- The headless harness now has 190 checks. The new ones cover neighbour picking (grids, edges, same row beating a closer diagonal, the outfit picker layout), person-data padding and log notes.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. A message, a Yes/No and a three-button dialog: starting focus, left/right between buttons, A, B.
+2. The phone book and the outfit/pet picker. Check which way the carousel turns for left/right.
+3. A naming dialog (baby or pet): the text box takes typing straight away, and B doesn't submit.
+4. Needs panel: LT three times on the relationships and inventory tabs; RT while focused.
+5. Options: Select into Options, Save, then B back to live.
+6. After any dialog closes, the selector works again without touching the mouse.

@@ -31,11 +31,12 @@ namespace Simitone.Client.UI.Panels
     /// edge of the screen scrolls the camera</item>
     /// <item>A: interaction menu for the selected object, or "go here" on empty floor</item>
     /// <item>LB/RB: previous/next household Sim</item>
-    /// <item>LT: open/close the needs panel; RT: next panel tab</item>
+    /// <item>LT: needs panel closed, then open, then focused (D-pad/stick move between its buttons and lists,
+    /// A activates, B leaves the panel), then closed; RT: next panel tab</item>
     /// <item>Y: focus the action queue (left/right to choose, A cancels the action, B or Y to leave)</item>
     /// </list>
-    /// Outside live mode the pad is left to the virtual cursor, except for the shared buttons above,
-    /// none of which the virtual cursor uses.
+    /// In Options mode the panel's buttons are navigated directly (B returns to live mode). In buy and build mode the
+    /// pad is left to the virtual cursor, except for the shared buttons above, none of which it uses.
     /// </summary>
     public class UILotControlPadHelper : UIElement
     {
@@ -73,6 +74,7 @@ namespace Simitone.Client.UI.Panels
         private VMEntity LastActive;
         private bool RotateArmed = true;
         private bool QueueFocus;
+        private bool PanelFocus; //live mode: the needs panel has the pad
         private int SpeedBeforePause = 1;
 
         private Vector2? MarkerBase; //UI coordinates, set in Update for Draw
@@ -103,6 +105,7 @@ namespace Simitone.Client.UI.Panels
             }
 
             var frontend = screen.Frontend;
+            ReleaseDetachedFocus(state);
             var lotHasPad = !GameFacade.Screens.HasModalDialog
                 && state.InputManager?.GetFocus() == null
                 && !frontend.MainPanel.ShowingSelect
@@ -110,8 +113,15 @@ namespace Simitone.Client.UI.Panels
             if (!lotHasPad)
             {
                 EndQueueFocus();
+                frontend.PanelNavigator.Clear();
                 return;
             }
+
+            var panel = frontend.MainPanel;
+            if (!Master.LiveMode || !panel.PanelActive) PanelFocus = false;
+            var optionsNav = !Master.LiveMode && panel.Mode == UIMainPanelMode.OPTIONS && panel.PanelActive;
+            var panelNav = optionsNav || PanelFocus;
+            if (!panelNav) frontend.PanelNavigator.Clear();
 
             var pad = state.Pad;
             var dt = (float)Math.Min(state.Time.ElapsedGameTime.TotalSeconds, 0.1);
@@ -125,8 +135,9 @@ namespace Simitone.Client.UI.Panels
             if (!Master.PieMenuOpen)
             {
                 if (padInUse) UpdateCamera(pad, dt, screen);
-                HandleSharedButtons(pad, screen, frontend);
+                HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav);
             }
+            if (panelNav) UpdatePanelNavigation(state, frontend, optionsNav);
 
             var active = Master.ActiveEntity;
             if (!Master.LiveMode || active == null)
@@ -154,13 +165,14 @@ namespace Simitone.Client.UI.Panels
             if (Master.PieMenuOpen) return; //the pie menu reads the pad itself
 
             var wasQueueFocus = QueueFocus;
+            var wasPanelFocus = PanelFocus;
             if (QueueFocus) UpdateQueueFocus(pad);
             else
             {
                 HandleLiveButtons(pad, frontend);
-                MoveSelector(pad.LeftStick, dt, now);
+                if (!PanelFocus) MoveSelector(pad.LeftStick, dt, now);
             }
-            if (QueueFocus) return;
+            if (QueueFocus || PanelFocus || wasPanelFocus) return; //the stick and A belong to the panel
 
             UpdateTarget(active);
             UpdateMarker(state, dt);
@@ -168,13 +180,46 @@ namespace Simitone.Client.UI.Panels
             if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm)) OpenMenu(state);
         }
 
+        /// <summary>
+        /// Clears keyboard focus held by an element that is no longer on screen (e.g. the text box of a dialog that
+        /// was removed). Nothing else clears it, and while it's set the lot treats a text field as focused.
+        /// </summary>
+        private static void ReleaseDetachedFocus(UpdateState state)
+        {
+            if (!(state.InputManager?.GetFocus() is UIElement focused)) return;
+            var screen = GameFacade.Screens.CurrentUIScreen;
+            for (UIElement element = focused; element != null; element = element.Parent)
+            {
+                if (element == screen) return; //still attached
+            }
+            state.InputManager.SetFocus(null);
+        }
+
         #region Buttons
 
-        private void HandleSharedButtons(GamePadInput pad, TS1GameScreen screen, UISimitoneFrontend frontend)
+        /// <param name="dpadFree">False while a panel is navigated with the d-pad.</param>
+        private void HandleSharedButtons(GamePadInput pad, TS1GameScreen screen, UISimitoneFrontend frontend, bool dpadFree)
         {
             if (pad.Pressed(PadAction.Select)) frontend.CycleMode();
             if (pad.Pressed(PadAction.Start)) TogglePause(screen);
 
+            if (dpadFree) HandleDpad(pad, screen);
+
+            if (pad.Pressed(PadAction.LeftStickClick))
+            {
+                frontend.SetWallsMode((Master.WallsMode + 1) % 4);
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
+
+            if (pad.Pressed(PadAction.RightStickClick) && Master.ActiveEntity != null)
+            {
+                PlaceSelectorOn(Master.ActiveEntity, true);
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
+        }
+
+        private void HandleDpad(GamePadInput pad, TS1GameScreen screen)
+        {
             if (pad.PressedRepeat(PadAction.Up) && screen.Level < MaxFloor)
             {
                 screen.Level++;
@@ -192,16 +237,27 @@ namespace Simitone.Client.UI.Panels
                 if (pad.Pressed(PadAction.Right) && speed >= 0 && speed < 3) screen.ChangeSpeedTo(speed + 1);
                 if (pad.Pressed(PadAction.Left) && speed > 0) screen.ChangeSpeedTo(speed - 1);
             }
+        }
 
-            if (pad.Pressed(PadAction.LeftStickClick))
+        /// <summary>
+        /// Runs the panel navigator on the open subpanel (needs panel when focused, or Options). B leaves: the needs
+        /// panel stays open but unfocused, and Options returns to live mode.
+        /// </summary>
+        private void UpdatePanelNavigation(UpdateState state, UISimitoneFrontend frontend, bool optionsMode)
+        {
+            var subpanel = frontend.MainPanel.SubPanel;
+            if (subpanel == null || !frontend.PanelNavigator.Update(state, subpanel))
             {
-                frontend.SetWallsMode((Master.WallsMode + 1) % 4);
-                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                frontend.PanelNavigator.Clear();
+                PanelFocus = false; //nothing to navigate on this tab
+                return;
             }
+            state.PadCaptured = true;
 
-            if (pad.Pressed(PadAction.RightStickClick) && Master.ActiveEntity != null)
+            if (state.Pad.Pressed(PadAction.Cancel))
             {
-                PlaceSelectorOn(Master.ActiveEntity, true);
+                if (optionsMode) frontend.SetModeDirect(UIMainPanelMode.LIVE);
+                else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
         }
@@ -217,8 +273,18 @@ namespace Simitone.Client.UI.Panels
             var panel = frontend.MainPanel;
             if (pad.Pressed(PadAction.TriggerLeft))
             {
-                if (panel.PanelActive) panel.Close();
-                else OpenPanel(panel);
+                //closed -> open -> focused (if this tab has anything to select) -> closed
+                if (!panel.PanelActive)
+                {
+                    OpenPanel(panel);
+                    PanelFocus = false;
+                }
+                else if (!PanelFocus && UIFocusNavigator.HasFocusable(panel.SubPanel)) PanelFocus = true;
+                else
+                {
+                    panel.Close();
+                    PanelFocus = false;
+                }
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
             if (pad.Pressed(PadAction.TriggerRight))
@@ -233,7 +299,7 @@ namespace Simitone.Client.UI.Panels
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
 
-            if (pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
+            if (!PanelFocus && pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
         }
 
         private static void OpenPanel(UIMainPanel panel)
