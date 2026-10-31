@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phase 1 is implemented as a FreeSO engine patch in `patches/FreeSO/`, waiting on the FreeSO fork (see §10).
+**Status:** Phase 1 is done. The engine changes are on `simitone/controller-phase1` in `Sleepsong/FreeSO`, and the submodule points at it (see §10). It hasn't been tested on hardware yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -72,7 +72,7 @@ FreeSO already contains a complete direct-control implementation. It was built f
 
 ### 2.6 Repo logistics
 
-`FreeSO` is a git submodule that points at `alexjyong/FreeSO`. Engine changes must either land in a FreeSO fork we control (with `.gitmodules` repointed) or be upstreamed to that repo. That is one reason the plan keeps engine changes small and generic.
+`FreeSO` is a git submodule. It originally pointed at the `alex-forked` branch of `alexjyong/FreeSO` and now points at the fork `Sleepsong/FreeSO`. Engine work goes on branches in that fork, based on upstream `alex-forked`. Don't base it on the fork's `master`: that is original FreeSO and lacks this project's weather, catalog and floor fixes. Engine changes are still kept small and generic, so they stay easy to upstream.
 
 ---
 
@@ -252,7 +252,7 @@ This is a *proposal* in the spirit of the console games. It is not a verified re
 | Phase | Deliverable | Done when |
 |---|---|---|
 | 0 ✅ | This plan, decisions in §8, FreeSO fork | Decisions recorded |
-| 1 ✅ (pending fork) | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
+| 1 ✅ | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
 | 2 | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
 | 3 | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
 | 4 | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
@@ -265,7 +265,7 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 
 ## 8. Decisions (recorded)
 
-1. **Where FreeSO changes land:** a FreeSO fork under your account. Until it exists, engine commits are kept as patches in `patches/FreeSO/`.
+1. **Where FreeSO changes land:** your fork, `Sleepsong/FreeSO`.
 2. **Default live scheme:** Cursor mode.
 3. **Layout under controller:** the mobile layout. Because of this, separating layout from touch input (S8) moves into Phase 2, since the Phase 2 lot work is built on that layout.
 4. **Direct control:** 3D camera only in v1.
@@ -285,7 +285,7 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 
 ## 10. Phase 1 — what was built
 
-The engine commit is in `patches/FreeSO/0001-Add-gamepad-input-layer-and-virtual-cursor-fallback.patch`. `patches/FreeSO/README.md` explains how to move it into your fork. No Simitone code changes were needed for this phase.
+The engine commit is `b4a41d2` on `simitone/controller-phase1` in `Sleepsong/FreeSO`, on top of upstream `alex-forked` (`7e76c19`). The Simitone submodule now pins it. No Simitone code changes were needed for this phase.
 
 ### New engine pieces (`tso.common/Rendering/Framework/IO/`)
 
