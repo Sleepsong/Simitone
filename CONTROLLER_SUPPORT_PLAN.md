@@ -465,7 +465,11 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
   - Side effect: the marker colour can be stale until the selector moves to another target or the active Sim changes.
 - **More exception popups (second test).**
   - **"MAGIC - Ghost Social Test" (from "Tease Scare TEST").** When a Sim inherited its neighbourhood record, its 101-entry person-data array was replaced by the record's 88 entries, and this check reads past entry 87. Engine `e1e26f5` overlays the record onto the full-size array instead. This happens for the mouse too, whenever a Sim's menu is built (hover or click), so it isn't controller-specific.
-  - **Sofa and bench threads failing in `VMThread.Pop`** (null reference, empty stack). Not reproduced or explained yet. They appeared alongside Sim errors that reset the Sim, so they may be a knock-on effect of resetting a Sim mid-sit. Recheck after the person-data fix.
+  - **Sofa and bench threads failing in `VMThread.Pop`** (null reference). Not explained yet.
+    - It isn't a knock-on from the check-tree errors: exceptions in check trees only clear the check's own stack and reset nothing.
+    - Leading hypothesis: when a lot loads, `VMStackFrame.Load` leaves `Routine` null if a saved frame's routine ID doesn't resolve against the installed content. The thread then crashes on `GetCurrentInstruction` when it returns to that frame, which is the reported line.
+    - The exception log will confirm or rule this out: such frames show as `<no routine>` with the owner's GUID.
+- **Error log.** Engine `f53a6ab` adds `VMExceptionLog`. Simitone writes every SimAntics exception to `simantics-errors.log` next to `config.ini`, including when dialogs are suppressed with `-nosimantics-exc`. Each report has the full .NET stack trace and every VM frame (routine name and ID, instruction, caller, callee, owner GUID). Repeats are counted after three full reports, and the file rotates at 8 MB.
 
 ### Notes for Phase 3
 

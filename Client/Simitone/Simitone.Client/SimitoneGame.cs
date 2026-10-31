@@ -148,6 +148,11 @@ namespace Simitone.Client
             
             // Initialize Free Will setting from config
             VM.FreeWillEnabled = GlobalSettings.Default.TS1FreeWill;
+
+            // Every SimAntics exception goes to this file with full details, even when the dialog is
+            // suppressed (-nosimantics-exc) or rate-limited. Attach it to bug reports.
+            FSO.SimAntics.Engine.VMExceptionLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "simantics-errors.log");
+            FSO.SimAntics.Engine.VMExceptionLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
             
             base.Initialize();
 
