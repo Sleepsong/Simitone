@@ -457,6 +457,11 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 7. Dialogs that appear mid-play are reachable with the virtual cursor, and the lot regains the pad when they close.
 8. The `auto` layout picks the mobile layout when a lot is loaded with the pad.
 
+### Hardware results so far
+
+- **2D, Linux, new Steam Controller through Steam Input:** the selector, pie menu, cursor hand-off and buttons all work.
+- **3D:** not tested yet.
+
 ### Fixes after the first hardware test
 
 - **Exception popups when the selector sat on a Sim.** The selector re-checked its target's interactions twice a second. For a Sim, that runs every social interaction's check tree, and Makin' Magic's "Magic - Attraction" expression (reached from "Kiss Cheek TEST") read an avatar slot that doesn't exist. `VMAvatar.GetSlot` had no bounds check, so each re-check threw and raised another "SimAntics Exception" dialog. Two fixes:
@@ -464,11 +469,15 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
   - The selector checks a target's interactions once, when it lands on it (as mouse hover does).
   - Side effect: the marker colour can be stale until the selector moves to another target or the active Sim changes.
 - **More exception popups (second test).**
-  - **"MAGIC - Ghost Social Test" (from "Tease Scare TEST").** When a Sim inherited its neighbourhood record, its 101-entry person-data array was replaced by the record's 88 entries, and this check reads past entry 87. Engine `e1e26f5` overlays the record onto the full-size array instead. This happens for the mouse too, whenever a Sim's menu is built (hover or click), so it isn't controller-specific.
-  - **Sofa and bench threads failing in `VMThread.Pop`** (null reference). Not explained yet.
-    - It isn't a knock-on from the check-tree errors: exceptions in check trees only clear the check's own stack and reset nothing.
-    - Leading hypothesis: when a lot loads, `VMStackFrame.Load` leaves `Routine` null if a saved frame's routine ID doesn't resolve against the installed content. The thread then crashes on `GetCurrentInstruction` when it returns to that frame, which is the reported line.
-    - The exception log will confirm or rule this out: such frames show as `<no routine>` with the owner's GUID.
+  - **"MAGIC - Ghost Social Test"** (from social check trees). Not controller-specific: the log showed it firing 50+ times in 18 seconds from Mortimer's own free-will checks. Sims' person-data arrays could be shorter than the 101 entries `GetPersonData` accepts, and this check reads entry 84. There are two sources of short arrays:
+    - neighbourhood records (88 entries);
+    - houses saved by the original game (80 entries before Superstar).
+
+    Engine `e1e26f5` covered only the first. Engine `e073db4` pads every avatar's person data to 101 on load and when merging the neighbourhood record.
+  - **Object threads failing in `VMThread.Pop`** (sofas, benches, paintings, a wall phone). The log confirmed the cause: frames restored from the saved lot show `<no routine>`, because `VMStackFrame.Load` couldn't find their routine ID in the installed content.
+    - Engine `ba9bbee` detects these frames at load and resets the object on its first tick. That's the same outcome the exception handler produced, without the exception.
+    - It also writes a note with the missing routine ID and owner GUID.
+    - Still unknown: *why* the IDs don't resolve, e.g. a conversion bug for original-format houses, or content differences. The notes in the next log should show which.
 - **Error log.** Engine `f53a6ab` adds `VMExceptionLog`. Simitone writes every SimAntics exception to `simantics-errors.log` next to `config.ini`, including when dialogs are suppressed with `-nosimantics-exc`. Each report has the full .NET stack trace and every VM frame (routine name and ID, instruction, caller, callee, owner GUID). Repeats are counted after three full reports, and the file rotates at 8 MB.
 
 ### Notes for Phase 3
