@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phase 1 is done. The engine changes are on `simitone/controller-phase1` in `Sleepsong/FreeSO`, and the submodule points at it (see §10). It hasn't been tested on hardware yet.
+**Status:** Phases 1 and 2 are done. The engine changes are on `simitone/controller-phase2` in `Sleepsong/FreeSO` (which includes Phase 1), and the submodule points at it (see §10 and §11). Neither phase has been tested on hardware or in the running game yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -208,30 +208,30 @@ Confirm = click        buy/build centre cursor                                  
 
 ---
 
-## 6. Proposed default mapping
+## 6. Default mapping
 
-This is a *proposal* in the spirit of the console games. It is not a verified reproduction of any one title's layout.
+This is in the spirit of the console games. It is not a verified reproduction of any one title's layout. Phase 2 changed the camera and trigger rows from the original proposal; see §11.
 
 **Live mode**
 
 | Input | Cursor mode | Direct control |
 |---|---|---|
 | Left stick | Move the selector | Walk (run at full tilt) |
-| Right stick | Pan the camera | Pan the camera |
+| Right stick | ↑↓ zoom, ←→ rotate | same |
 | A / Cross | Interact, or Go Here on empty floor | Interact with the target |
 | B / Circle | Cancel / close | Cancel / close |
-| X / Square | Toggle Cursor ↔ Direct | Toggle Cursor ↔ Direct |
+| X / Square | Toggle Cursor ↔ Direct (Phase 4) | Toggle Cursor ↔ Direct |
 | Y / Triangle | Focus the action queue | Focus the action queue |
 | LB / RB (L1 / R1) | Previous / next household Sim | same |
-| LT / RT (L2 / R2) | Zoom out / in | same |
+| LT / RT (L2 / R2) | Open/close the needs panel / next panel tab | same |
 | D-pad ← / → | Game speed down / up | same |
 | D-pad ↑ / ↓ | Floor up / down | same |
 | L3 | Cycle walls (up / cutaway / down) | same |
 | R3 | Recentre and re-anchor on the Sim | same |
-| Start | Pause + options | same |
-| Back / Select | Mode switcher (Live / Buy / Build) | same |
+| Start | Pause / resume | same |
+| Back / Select | Next mode (Live → Buy → Build → Options) | same |
 
-**Pie menu:** the stick or D-pad picks a slot, A chooses it, B goes back or closes, and LB/RB page through overflow items.
+**Pie menu:** the stick points at a slot; the D-pad and LB/RB step through every item, including overflow items and Back; A chooses; B goes back a level or closes.
 
 **Buy/Build:**
 
@@ -253,7 +253,7 @@ This is a *proposal* in the spirit of the console games. It is not a verified re
 |---|---|---|
 | 0 ✅ | This plan, decisions in §8, FreeSO fork | Decisions recorded |
 | 1 ✅ | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
-| 2 | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
+| 2 ✅ | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
 | 3 | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
 | 4 | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
@@ -355,3 +355,104 @@ Things to check on hardware:
 
 - Once the lot gets native pad handling, the virtual cursor must stand down inside the lot. Otherwise A would both open the pie menu natively and click through the fake mouse. Plan: a per-frame "pad captured" flag that consumers set, which `GameScreen` checks before applying the virtual cursor.
 - S8 comes first in Phase 2: `TS1GameScreen.Desktop` and other `FSOEnvironment.SoftwareKeyboard` checks need splitting into "mobile layout" and "touch input".
+
+---
+
+## 11. Phase 2 — what was built
+
+The engine commit is `9103581` on `simitone/controller-phase2` in `Sleepsong/FreeSO`, on top of Phase 1. The rest is in Simitone.
+
+### How live mode plays with a pad
+
+The lot takes over the pad in live mode whenever no modal dialog or text field has focus. The virtual cursor stands down and the OS cursor is hidden. When a dialog opens, the pad goes back to the virtual cursor, which starts at the centre of the screen, until Phase 3 adds native dialog navigation.
+
+| Input | Live mode |
+|---|---|
+| Left stick | Move the selector. It snaps to objects and people within about 0.6 tiles of their footprint. Pushing it into the screen edge scrolls the camera and stops following the Sim. |
+| A | Interaction menu for the selected object, or "go here" on empty floor. The press that switches from mouse to pad only reveals the selector. |
+| B | Back / close |
+| Y | Focus the action queue: ←/→ choose, A cancels the action, B or Y leave |
+| LB / RB | Previous / next household Sim; the camera follows the new Sim |
+| LT / RT | Open/close the needs panel / next panel tab (needs, job, personality, relationships, inventory) |
+| Right stick | ↑↓ zoom; ←→ rotate (continuous in 3D, one step per flick in 2D) |
+| D-pad ← / → | Game speed down / up |
+| D-pad ↑ / ↓ | Floor up / down |
+| L3 | Walls: down → cutaway → up → roofs |
+| R3 | Re-centre on the Sim and follow it |
+| Start | Pause / resume (resumes at the previous speed) |
+| Select | Next mode: Live → Buy → Build → Options |
+
+**Pie menu:** the stick points at a slot, the D-pad and LB/RB step through all items including Back, A chooses, and B goes back or closes. A only works after the press that opened the menu has been released.
+
+**Selector marker:** a ring on the floor under the target, with a bobbing diamond above it.
+- **Green:** the target has interactions.
+- **Red:** it has none right now.
+- **White:** empty floor.
+
+Hovering a person shows their name.
+
+**Cutaway:** follows the selector while you're moving it, then goes back to the active Sim three seconds after you stop.
+
+**Buy, Build and Options modes:** the left stick, A/B/X/Y and the triggers stay on the virtual cursor (native build/buy is Phase 5). The camera stick, Select, Start, D-pad, L3 and R3 still work natively, because the virtual cursor doesn't use them.
+
+### Changes from the original mapping (§6)
+
+- **Right stick zooms and rotates** instead of panning. Rotation had no binding, and pushing the selector to the screen edge already pans.
+- **Triggers drive the needs panel** instead of zoom. Seeing needs is required to play a day, and the right stick now zooms.
+
+### Layout (S8)
+
+`UILayout` in `config.ini`:
+
+| Value | Layout |
+|---|---|
+| `auto` (default) | Mobile layout on touch screens, or when the pad was the device in use as the lot loaded; desktop otherwise |
+| `desktop` | Always the desktop layout |
+| `mobile` | Always the mobile layout |
+
+The choice is made when each lot loads. Switching devices mid-lot doesn't change the layout until the next lot.
+
+### Code
+
+| Where | What |
+|---|---|
+| Engine `UpdateState` / `GameScreen` | `PadCaptured` / `PadWasCaptured`. The virtual cursor stands down the frame after a screen captures the pad, and restarts at the centre when capture ends. |
+| Engine `UILayer` | `HasModalDialog` |
+| Engine `World` | `ProjectToScreen` / `ProjectTileToScreen` (tile → screen, the inverse of `EstTileAtPosWithScroll`, in both 2D and 3D) |
+| Engine `GlobalSettings` | `UILayout` |
+| `UILotControlPadHelper` (new) | Everything in the live-mode table above, plus the selector marker |
+| `PadMath`, `PadGraphics` (new) | Selector geometry (screen ↔ tile movement, safe-area overflow, footprint distance, menu clamping) and the procedurally drawn ring and diamond |
+| `UILotControl` | Hosts the helper. `ShowPieMenu` now picks with the mouse, then calls the new `OpenPieMenu(target, tile, position)` that the pad also uses. Mouse hover, edge scroll and mouse-driven cutaway are skipped while the pad drives the lot. |
+| `UIPieMenu` | Pad navigation |
+| `UIInteractionQueue` | Pad focus and a highlight ring |
+| `UISimitoneFrontend` | `CycleSim` (the Space key now uses it), `SetModeDirect`/`CycleMode`, `SetWallsMode` |
+| `UILotControlTouchHelper` | `NudgeZoom`, so pad zoom shares the wheel's zoom-snapping hold-off |
+| `TS1GameScreen` | Layout choice per lot; hides the OS cursor while the pad drives the lot |
+
+### Verification
+
+- The full desktop build succeeds with no warnings in new code.
+- The headless harness now has 161 checks. The new ones cover:
+  - screen→tile movement solving
+  - safe-area overflow
+  - footprint distance
+  - menu clamping
+  - stick → pie-slot mapping (checked against the pie's layout convention)
+  - layout selection
+- **Not tested in the running game.** The selector, camera, pie and queue behaviour all need checking on hardware.
+
+### To check on hardware
+
+1. The selector moves at an even speed in every direction in 2D and 3D, at every rotation and zoom.
+2. The marker sits on objects and on items on counters. If it's offset by a constant amount, the likely cause is the DPI or smooth-zoom conversion in `ToUI`.
+3. Snapping picks sensible targets in cluttered rooms (radius and tie-breaking are constants at the top of `UILotControlPadHelper`).
+4. 3D rotation direction feels natural; flip the sign of `RotateRate3D` if not.
+5. The camera follow and the selector's edge push don't fight each other.
+6. Pie navigation with 2, 4, 8 and more than 8 items, and inside sub-categories.
+7. Dialogs that appear mid-play are reachable with the virtual cursor, and the lot regains the pad when they close.
+8. The `auto` layout picks the mobile layout when a lot is loaded with the pad.
+
+### Notes for Phase 3
+
+- Native dialog navigation (E4 focus navigator) is now the main gap. Every VM dialog currently falls back to the virtual cursor.
+- The needs panel opens and changes tabs natively, but its contents (relationship entries, job buttons, the inventory) still need focus navigation.

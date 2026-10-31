@@ -6,6 +6,7 @@ http://mozilla.org/MPL/2.0/.
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using FSO.Client.UI.Framework;
 using FSO.Client.UI.Model;
@@ -29,6 +30,7 @@ namespace Simitone.Client.UI.Panels
     {
 
         private List<UIIQTrackEntry> QueueItems;
+        private UIIQTrackEntry PadFocused;
         public VMEntity QueueOwner;
         public VM vm;
         public Vector2 PieMenuClickPos = new Vector2(-1, -1);
@@ -115,6 +117,11 @@ namespace Simitone.Client.UI.Panels
                 else itemui.Update();
             }
 
+            if (PadFocused != null && (PadFocused.UI.Dead || !QueueItems.Contains(PadFocused)))
+            {
+                PadFocused = PadOrder().LastOrDefault(); //focused action finished: move to whatever is left
+            }
+
             //now detect if there are any interactions we're not displaying and add them.
 
             skipParentIdle = false;
@@ -166,6 +173,59 @@ namespace Simitone.Client.UI.Panels
                 if (elem.Mode == VMQueueMode.ParentIdle) skipParentIdle = true;
             }
 
+        }
+
+        public bool HasPadFocus => PadFocused != null;
+
+        private List<UIIQTrackEntry> PadOrder()
+        {
+            return QueueItems.Where(x => !x.UI.Dead).OrderBy(x => x.QueuePosition).ToList();
+        }
+
+        /// <summary>Starts gamepad focus on the most recently queued action. Returns false if nothing is queued.</summary>
+        public bool FocusLastForPad()
+        {
+            PadFocused = PadOrder().LastOrDefault();
+            if (PadFocused != null) HITVM.Get().PlaySoundEvent(UISounds.Click);
+            return PadFocused != null;
+        }
+
+        /// <summary>Moves gamepad focus left (-1) or right (+1) along the queue, stopping at the ends.</summary>
+        public void MovePadFocus(int direction)
+        {
+            var order = PadOrder();
+            if (order.Count == 0)
+            {
+                PadFocused = null;
+                return;
+            }
+            var index = order.IndexOf(PadFocused);
+            var next = order[(index < 0) ? 0 : Math.Max(0, Math.Min(order.Count - 1, index + direction))];
+            if (next != PadFocused) HITVM.Get().PlaySoundEvent(UISounds.Click);
+            PadFocused = next;
+        }
+
+        /// <summary>Cancels the focused action, exactly as clicking it does.</summary>
+        public void CancelPadFocused()
+        {
+            if (PadFocused != null) InteractionClicked(PadFocused.UI);
+        }
+
+        public void ClearPadFocus()
+        {
+            PadFocused = null;
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
+            base.Draw(batch);
+            if (PadFocused != null && !PadFocused.UI.Dead)
+            {
+                var ring = PadGraphics.GetRing(GameFacade.GraphicsDevice);
+                var size = PadFocused.Active ? 96f : 56f;
+                var scale = size / ring.Width;
+                DrawLocalTexture(batch, ring, null, PadFocused.UI.Position - new Vector2(size / 2), new Vector2(scale), new Color(255, 230, 90));
+            }
         }
 
         private void InteractionResult(UIElement ui, bool accepted)

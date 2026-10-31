@@ -55,6 +55,16 @@ namespace Simitone.Client.UI.Panels
         private bool ScrollWheelInvalid;
         private int ZoomFreezeTime;
         public bool _3D;
+
+        /// <summary>
+        /// Zooms like the mouse wheel: <paramref name="wheelUnits"/> uses wheel units (120 per notch, positive zooms in),
+        /// and zoom snapping is held off briefly so continuous input isn't fought.
+        /// </summary>
+        public void NudgeZoom(float wheelUnits)
+        {
+            Master.TargetZoom = Math.Max(0.25f, Math.Min(Master.TargetZoom + wheelUnits / 1600f, 2));
+            ZoomFreezeTime = 10;
+        }
         public override void Update(UpdateState state)
         {
             var _3d = _3D;

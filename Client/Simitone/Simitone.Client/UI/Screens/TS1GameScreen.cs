@@ -32,6 +32,7 @@ using Simitone.Client.UI.Panels.WorldUI;
 using Simitone.Client.Utils;
 using Simitone.Client.Services;
 using System;
+using FSO.Common.Rendering.Framework.IO;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -44,7 +45,12 @@ namespace Simitone.Client.UI.Screens
     {
         public UIContainer WindowContainer;
         public bool Downtown;
+        /// <summary>
+        /// True for the desktop lot layout (UIDesktopUCP), false for the mobile one. Chosen when each lot's frontend
+        /// is created (see CreateFrontend) and fixed for that frontend's lifetime.
+        /// </summary>
         public bool Desktop = !FSOEnvironment.SoftwareKeyboard;
+        private InputDevice LastInputDevice;
 
         public UILotControl LotControl { get; set; }
         public UISimitoneFrontend Frontend { get; set; }
@@ -373,7 +379,9 @@ namespace Simitone.Client.UI.Screens
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             
             Visible = World?.Visible != false && World?.State.Cameras.HideUI != true;
-            GameFacade.Game.IsMouseVisible = Visible;
+            LastInputDevice = state.LastInputDevice;
+            //the lot hides the pointer while it drives the pad natively; it comes back for the mouse or the virtual cursor.
+            GameFacade.Game.IsMouseVisible = Visible && !(state.PadWasCaptured && state.LastInputDevice == InputDevice.GamePad);
 
             var nofocus = state.InputManager.GetFocus() == null;
             if (nofocus && state.NewKeys.Contains(Keys.D1)) ChangeSpeedTo(1);
@@ -643,8 +651,28 @@ namespace Simitone.Client.UI.Screens
             GameFacade.Cursor.SetCursor(CursorType.Normal);
             ZoomLevel = 1;
 
+            CreateFrontend();
+        }
+
+        private void CreateFrontend()
+        {
+            Desktop = UseDesktopLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard, LastInputDevice);
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
+        }
+
+        /// <summary>
+        /// Resolves the UILayout setting. "desktop" and "mobile" force a layout; anything else is "auto", which picks
+        /// the mobile layout for touch screens, or when the player was using a gamepad as the lot loaded.
+        /// </summary>
+        public static bool UseDesktopLayout(string setting, bool touch, InputDevice lastDevice)
+        {
+            switch ((setting ?? "").Trim().ToLowerInvariant())
+            {
+                case "desktop": return true;
+                case "mobile": return false;
+                default: return !touch && lastDevice != InputDevice.GamePad;
+            }
         }
 
         public void ShowLoadErrors(List<VMLoadError> errors, bool verbose)
@@ -759,8 +787,7 @@ namespace Simitone.Client.UI.Screens
                 ZoomLevel = 1;
             }
 
-            Frontend = new UISimitoneFrontend(this);
-            this.Add(Frontend);
+            CreateFrontend();
         }
 
         public void LoadSurrounding(short houseID)

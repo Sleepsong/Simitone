@@ -14,6 +14,7 @@ using FSO.Common.Utils;
 using FSO.SimAntics.NetPlay.Model.Commands;
 using FSO.Common;
 using FSO.Client;
+using FSO.Common.Rendering.Framework.IO;
 
 namespace Simitone.Client.UI.Panels
 {
@@ -44,6 +45,11 @@ namespace Simitone.Client.UI.Panels
 
         private TextStyle ButtonStyle;
         private TextStyle HighlightStyle;
+
+        //gamepad navigation
+        private int DirConfig;
+        private bool PadArmed; //the Confirm press that opened the menu must be released before Confirm can choose
+        private int PadIndex = -1; //index into m_PieButtons, -1 for none
 
         public UIPieMenu(List<VMPieMenuInteraction> pie, VMEntity obj, VMEntity caller, UILotControl parent)
         {
@@ -193,6 +199,75 @@ namespace Simitone.Client.UI.Panels
             }
             RotateHeadCam(GlobalPoint(new Vector2(state.MouseState.X, state.MouseState.Y)));
             ShiftDown = state.ShiftDown;
+
+            if (m_Parent.PadHelper.Capturing) HandlePad(state);
+        }
+
+        /// <summary>
+        /// The left stick points at one of the compass slots; the d-pad and shoulder buttons step through every
+        /// button (including overflow items and Back); Confirm chooses; Cancel goes back a level or closes.
+        /// </summary>
+        private void HandlePad(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            var pad = state.Pad;
+            if (!PadArmed && !pad.IsDown(PadAction.Confirm)) PadArmed = true;
+
+            var radialCount = Math.Min(DirConfig, m_CurrentItem.Children.Count);
+            var stick = pad.LeftStick;
+            if (stick.Length() > 0.5f && radialCount > 0)
+            {
+                var slot = StickToSlot(stick, DirConfig);
+                if (slot < radialCount) SetPadIndex(slot);
+            }
+
+            if (pad.PressedRepeat(PadAction.Down) || pad.PressedRepeat(PadAction.Right) || pad.PressedRepeat(PadAction.ShoulderRight)) StepPadIndex(1);
+            if (pad.PressedRepeat(PadAction.Up) || pad.PressedRepeat(PadAction.Left) || pad.PressedRepeat(PadAction.ShoulderLeft)) StepPadIndex(-1);
+
+            if (PadArmed && pad.Pressed(PadAction.Confirm) && PadIndex >= 0 && PadIndex < m_PieButtons.Count)
+            {
+                var button = m_PieButtons[PadIndex];
+                //the back button is always last and isn't one of the current item's children.
+                if (m_CurrentItem.Parent != null && PadIndex == m_PieButtons.Count - 1) BackButtonPress(button);
+                else PieButtonClick(button);
+            }
+            else if (pad.Pressed(PadAction.Cancel))
+            {
+                if (m_CurrentItem.Parent != null) BackButtonPress(null);
+                else
+                {
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                    m_Parent.CancelPie();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Maps a stick direction (+Y up) to the nearest of <paramref name="slots"/> compass slots, numbered clockwise
+        /// from the top, the same way RenderMenu lays them out.
+        /// </summary>
+        public static int StickToSlot(Vector2 stick, int slots)
+        {
+            var angle = Math.Atan2(stick.X, stick.Y);
+            if (angle < 0) angle += Math.PI * 2;
+            return (int)Math.Round(angle / (Math.PI * 2 / slots)) % slots;
+        }
+
+        private void SetPadIndex(int index)
+        {
+            if (index == PadIndex) return;
+            if (PadIndex >= 0 && PadIndex < m_PieButtons.Count) m_PieButtons[PadIndex].CurrentFrame = 0;
+            PadIndex = index;
+            var button = m_PieButtons[index];
+            button.CurrentFrame = 2; //same look as mouse hover
+            PieButtonHover(button);
+        }
+
+        private void StepPadIndex(int direction)
+        {
+            var count = m_PieButtons.Count;
+            if (count == 0) return;
+            var next = (PadIndex < 0) ? ((direction > 0) ? 0 : count - 1) : (PadIndex + direction + count) % count;
+            SetPadIndex(next);
         }
 
         public void RenderMenu()
@@ -208,6 +283,8 @@ namespace Simitone.Client.UI.Panels
             if (elems.Count > 4) dirConfig = 8;
             else if (elems.Count > 2) dirConfig = 4;
             else dirConfig = 2;
+            DirConfig = dirConfig;
+            PadIndex = -1;
 
             for (int i = 0; i < dirConfig; i++)
             {
