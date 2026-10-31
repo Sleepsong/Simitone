@@ -47,6 +47,16 @@ namespace Simitone.Client.UI.Model
         }
 
         /// <summary>
+        /// Converts a snap distance measured on screen into tiles at the current camera scale, so snapping feels the
+        /// same at every zoom level and in 2D and 3D. Clamped to [min, max] tiles.
+        /// </summary>
+        public static float SnapRadius(float pixelsPerTile, float snapPixels, float min, float max)
+        {
+            if (!(pixelsPerTile > 1e-3f)) return max;
+            return Math.Max(min, Math.Min(max, snapPixels / pixelsPerTile));
+        }
+
+        /// <summary>
         /// Clamps a menu anchor so a menu reaching <paramref name="marginX"/>/<paramref name="marginY"/> out from it
         /// stays on a screen of the given size. If the screen is too small, the anchor is centred on that axis.
         /// </summary>

@@ -40,7 +40,9 @@ namespace Simitone.Client.UI.Panels
     public class UILotControlPadHelper : UIElement
     {
         private const float SelectorSpeed = 520f; //UI px per second at full deflection (quadratic response)
-        private const float SnapRadius = 0.6f; //tiles from a footprint at which the selector snaps to it
+        private const float SnapPixels = 36f; //on-screen distance from a footprint at which the selector snaps to it
+        private const float MinSnapTiles = 0.2f;
+        private const float MaxSnapTiles = 0.6f;
         private const double CutawayFocusSeconds = 3; //after the selector stops, the cutaway goes back to the active sim
         private const float ZoomRate = 1600f; //wheel units per second at full deflection
         private const float RotateRate3D = 2.2f; //radians per second at full deflection
@@ -366,6 +368,15 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        /// <summary>Average on-screen length, in UI pixels, of one tile step along X and Y at a tile.</summary>
+        private float PixelsPerTile(Vector2 tile, sbyte level)
+        {
+            var origin = ToUI(World.ProjectTileToScreen(tile, level));
+            var stepX = ToUI(World.ProjectTileToScreen(tile + Vector2.UnitX, level)) - origin;
+            var stepY = ToUI(World.ProjectTileToScreen(tile + Vector2.UnitY, level)) - origin;
+            return (stepX.Length() + stepY.Length()) / 2;
+        }
+
         /// <summary>Converts a movement in UI pixels at a tile into the tile-space movement that produces it.</summary>
         private Vector2 ScreenToTileDelta(Vector2 tile, Vector2 screenDelta, sbyte level)
         {
@@ -390,6 +401,11 @@ namespace Simitone.Client.UI.Panels
             VMEntity best = null;
             var bestScore = float.MaxValue;
 
+            //snap within a fixed distance on screen. A fixed tile radius felt sticky up close (e.g. the 3D camera),
+            //where a tile covers many more pixels. The tie-break biases scale with it.
+            var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, level), SnapPixels, MinSnapTiles, MaxSnapTiles);
+            var bias = snapRadius / MaxSnapTiles;
+
             foreach (var entity in vm.Entities)
             {
                 if (entity == Master.GotoObject || entity.Dead) continue;
@@ -400,15 +416,15 @@ namespace Simitone.Client.UI.Panels
                 var distance = (footprint != null)
                     ? PadMath.DistanceToFootprint(Selector, footprint.x1, footprint.y1, footprint.x2, footprint.y2)
                     : PadMath.DistanceToFootprint(Selector, pos.x, pos.y, pos.x, pos.y);
-                if (distance > SnapRadius) continue;
+                if (distance > snapRadius) continue;
 
                 var leader = entity.MultitileGroup.GetInteractionGroupLeader(entity);
                 if ((leader.TreeTable?.Interactions.Length ?? 0) == 0 && (entity.TreeTable?.Interactions.Length ?? 0) == 0) continue;
 
                 var score = distance;
-                if (entity is VMAvatar) score += (entity == active) ? 0.3f : -0.15f; //people over furniture, but not yourself
-                if (entity.Container != null) score -= 0.1f; //things sitting on surfaces over the surface
-                if (entity == TargetPart) score -= 0.15f; //hysteresis, so the target doesn't flicker between neighbours
+                if (entity is VMAvatar) score += ((entity == active) ? 0.3f : -0.15f) * bias; //people over furniture, but not yourself
+                if (entity.Container != null) score -= 0.1f * bias; //things sitting on surfaces over the surface
+                if (entity == TargetPart) score -= 0.15f * bias; //hysteresis, so the target doesn't flicker between neighbours
                 if (score < bestScore)
                 {
                     bestScore = score;

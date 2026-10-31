@@ -460,7 +460,9 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 ### Hardware results so far
 
 - **2D, Linux, new Steam Controller through Steam Input:** the selector, pie menu, cursor hand-off and buttons all work.
-- **3D:** not tested yet.
+- **3D:** works, but the selector locked onto objects too easily.
+  - Cause: the snap radius was a fixed 0.6 tiles, which covers far more of the screen up close.
+  - Fix: snapping now uses a fixed on-screen distance (36 UI px), converted to tiles at the selector and clamped to 0.2–0.6 tiles. The tie-break biases scale with it.
 
 ### Fixes after the first hardware test
 
@@ -477,7 +479,9 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
   - **Object threads failing in `VMThread.Pop`** (sofas, benches, paintings, a wall phone). The log confirmed the cause: frames restored from the saved lot show `<no routine>`, because `VMStackFrame.Load` couldn't find their routine ID in the installed content.
     - Engine `ba9bbee` detects these frames at load and resets the object on its first tick. That's the same outcome the exception handler produced, without the exception.
     - It also writes a note with the missing routine ID and owner GUID.
-    - Still unknown: *why* the IDs don't resolve, e.g. a conversion bug for original-format houses, or content differences. The notes in the next log should show which.
+    - Second log: 11 objects had missing routines (mostly `0x1000`, the first private routine ID). Tiled Counters resumed `main` at an instruction past its end. Both are consistent with the saved stacks coming from older versions of those objects than the ones installed.
+    - Engine `ab9284b` also treats positions past a routine's end as unresumable.
+    - It also logs, per object type, when the house file's `OBJT` main/init tree versions differ from the installed main/init BHAV versions. If those mismatches line up with the broken objects, the converter should reset such objects, as the original game presumably does. That is unconfirmed until the next log.
 - **Error log.** Engine `f53a6ab` adds `VMExceptionLog`. Simitone writes every SimAntics exception to `simantics-errors.log` next to `config.ini`, including when dialogs are suppressed with `-nosimantics-exc`. Each report has the full .NET stack trace and every VM frame (routine name and ID, instruction, caller, callee, owner GUID). Repeats are counted after three full reports, and the file rotates at 8 MB.
 
 ### Notes for Phase 3
