@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phase 0, design only. No code changes yet.
+**Status:** Phase 1 is implemented as a FreeSO engine patch in `patches/FreeSO/`, waiting on the FreeSO fork (see §10).
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -251,24 +251,24 @@ This is a *proposal* in the spirit of the console games. It is not a verified re
 
 | Phase | Deliverable | Done when |
 |---|---|---|
-| 0 | This plan, decisions in §8, FreeSO fork | Decisions recorded |
-| 1 | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
-| 2 | E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
+| 0 ✅ | This plan, decisions in §8, FreeSO fork | Decisions recorded |
+| 1 ✅ (pending fork) | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
+| 2 | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
 | 3 | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
-| 4 | E6; S1 (direct control) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
+| 4 | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
-| 6 | S6, S7, S8, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
+| 6 | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
 
 Phase 1 is the right first PR. It is small, stays inside the engine, is testable, and everything else depends on it.
 
 ---
 
-## 8. Decisions needed
+## 8. Decisions (recorded)
 
-1. **Where FreeSO changes land:** a FreeSO fork we own, or PRs to `alexjyong/FreeSO`.
-2. **Default live scheme.** Recommendation: **Cursor mode**. It works with every object and doesn't depend on the VM changes in Phase 4.
-3. **Layout under controller** (S8). Recommendation: the mobile-style layout, once layout is separated from input source.
-4. **2D vs 3D.** Everything above works in both. Direct control plays better in 3D, where a follow camera can sit behind the Sim. Decide whether direct control is 3D-only in v1.
+1. **Where FreeSO changes land:** a FreeSO fork under your account. Until it exists, engine commits are kept as patches in `patches/FreeSO/`.
+2. **Default live scheme:** Cursor mode.
+3. **Layout under controller:** the mobile layout. Because of this, separating layout from touch input (S8) moves into Phase 2, since the Phase 2 lot work is built on that layout.
+4. **Direct control:** 3D camera only in v1.
 
 ---
 
@@ -280,3 +280,78 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 - **Windows backend.** Windows defaults to WindowsDX (`Simitone.Windows/Program.cs:52`). Its `GamePad` support is expected to be XInput-only, so PlayStation pads may need Steam Input or DS4Windows there; DesktopGL (SDL2) should recognise them natively. Verify on hardware. If confirmed, document the existing `gl` launch argument for PlayStation pads.
 - **Pie menu anchor.** The menu is currently placed at the mouse. With E5 it will be placed at the target's projected screen position, which has to be clamped to the screen bounds.
 - **Text input.** No on-screen keyboard exists. Naming, cheats and catalog search all depend on a keyboard.
+
+---
+
+## 10. Phase 1 — what was built
+
+The engine commit is in `patches/FreeSO/0001-Add-gamepad-input-layer-and-virtual-cursor-fallback.patch`. `patches/FreeSO/README.md` explains how to move it into your fork. No Simitone code changes were needed for this phase.
+
+### New engine pieces (`tso.common/Rendering/Framework/IO/`)
+
+| File | Role |
+|---|---|
+| `GamePadInput.cs` | `UpdateState.Pad`. Polls the first connected pad (rescanning once a second while none is connected) and applies a rescaled radial stick dead zone plus a trigger dead zone. Exposes `IsDown` / `Pressed` / `Released` / `PressedRepeat` per `PadAction` (0.4 s repeat delay, 0.1 s interval). `NavPressedRepeat` accepts either the D-pad or the left stick. `Active` is set only when input *starts*, so a drifting stick can't steal the pointer from the mouse. |
+| `PadBindings.cs` | Default action → button map, an optional confirm/cancel swap, and overrides from `gamepad.ini`. |
+| `GamePadSettings.cs` | Static options read by the input loop, filled in from `config.ini` in `GameFacade.Init`. |
+| `PointerDeviceTracker.cs` | Sets `UpdateState.LastInputDevice`: whichever of mouse or pad was used last wins, and the mouse wins ties. It ignores the OS echoing a cursor warp, jitter up to 3 px, and the zeroed mouse state while the window is unfocused. |
+| `VirtualCursor.cs` | The fallback pointer, active while the pad is the active device. |
+
+`GameScreen.Update` polls the pad every frame. In mouse mode it also runs the tracker and the virtual cursor before the existing Alt+click emulation. Touch mode polls the pad and tracks the device, but never uses the virtual cursor.
+
+### Virtual cursor controls (fallback only)
+
+| Pad | Acts as |
+|---|---|
+| Left stick | Moves the cursor. Speed grows with the square of deflection, about 1000 px/s at full tilt in a 1080 px tall window. |
+| A / Cross | Left mouse button |
+| X / Square | Right mouse button. Hold it and move the stick to pan the lot (the existing right-drag scroll). |
+| Y / Triangle | Middle mouse button. Click it to rotate the camera (existing behaviour). |
+| RT / LT | Scroll wheel up / down, which zooms the lot |
+| B / Circle | Holds Escape, which cancels held objects and build tools |
+
+The OS cursor is warped to the virtual position, so the game's normal cursors appear where the pad is pointing. Synthetic wheel scrolling is kept as an offset on top of the real wheel value, so switching devices never makes the zoom jump.
+
+### Settings (`config.ini`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `GamePadEnabled` | `true` | Ignore all pads when false |
+| `GamePadVirtualCursor` | `true` | Use the stick-driven fallback cursor |
+| `GamePadDeadZone` | `0.2` | Radial stick dead zone, clamped to 0–0.9 |
+| `GamePadCursorSpeed` | `1` | Virtual cursor speed multiplier, clamped to 0.1–5 |
+| `GamePadSwapConfirmCancel` | `false` | Confirm on B and Cancel on A (Nintendo-style) |
+
+Optional `gamepad.ini` in the user directory, one binding per line:
+
+```ini
+# Action names: Confirm Cancel FaceLeft FaceTop ShoulderLeft ShoulderRight TriggerLeft TriggerRight
+#               Up Down Left Right Start Select LeftStickClick RightStickClick
+# Button names: MonoGame Buttons enum (A, B, X, Y, Back, Start, LeftShoulder, DPadUp, ...)
+Confirm = A
+Cancel = B, Back
+```
+
+A line that doesn't parse leaves that action on its default binding, and the problem is written to the console.
+
+### Verification
+
+- The full Simitone desktop build succeeds with the patch applied (0 errors, no new warnings in the touched files).
+- A headless harness (139 checks) covers:
+  - binding parsing and swap
+  - press/release/repeat edges
+  - dead-zone maths
+  - focus loss and disconnect
+  - device arbitration, including warp echo, jitter, failed warps and refocus
+  - cursor speed, clamping, button and Escape mapping, and wheel accumulation
+- **Not yet tested with a real controller or in the running game.** This container has no display, pad or Sims install.
+
+Things to check on hardware:
+1. Xbox and PlayStation pads on Linux (DesktopGL/SDL2) and on Windows (default DirectX backend, plus the `gl` launch argument).
+2. Whether cursor warping works under your desktop session (native Wayland may ignore it; the game would still work, but the visible cursor would stay put).
+3. Whether the cursor speed and dead zone feel right.
+
+### Notes for Phase 2
+
+- Once the lot gets native pad handling, the virtual cursor must stand down inside the lot. Otherwise A would both open the pie menu natively and click through the fake mouse. Plan: a per-frame "pad captured" flag that consumers set, which `GameScreen` checks before applying the virtual cursor.
+- S8 comes first in Phase 2: `TS1GameScreen.Desktop` and other `FSOEnvironment.SoftwareKeyboard` checks need splitting into "mobile layout" and "touch input".
