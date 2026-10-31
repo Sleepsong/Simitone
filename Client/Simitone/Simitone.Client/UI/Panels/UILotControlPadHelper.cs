@@ -64,7 +64,7 @@ namespace Simitone.Client.UI.Panels
         private VMEntity TargetPart; //entity the selector snapped to; may be one tile of a multitile object
         private VMEntity Target; //its interaction group leader, which owns the interaction menu
         private bool TargetHasInteractions;
-        private int TargetCheckTimer;
+        private VMEntity TargetCheckedFor; //the active sim TargetHasInteractions was computed for
 
         private bool WasPadActive;
         private bool FollowSim;
@@ -416,18 +416,14 @@ namespace Simitone.Client.UI.Panels
                 }
             }
 
-            if (best != TargetPart)
+            if (best != TargetPart || active != TargetCheckedFor)
             {
                 TargetPart = best;
                 Target = best?.MultitileGroup.GetInteractionGroupLeader(best);
-                TargetCheckTimer = 0;
-            }
-
-            //interaction availability changes with game state; re-check about twice a second.
-            if (Target != null && --TargetCheckTimer <= 0)
-            {
-                TargetHasInteractions = Target.GetPieMenu(vm, active, false, true).Count > 0;
-                TargetCheckTimer = 30;
+                //checked once per target, like mouse hover. Building a menu runs every interaction's check tree,
+                //so re-checking on a timer is costly, and any tree that throws would raise a popup each time.
+                TargetHasInteractions = Target != null && Target.GetPieMenu(vm, active, false, true).Count > 0;
+                TargetCheckedFor = active;
             }
         }
 

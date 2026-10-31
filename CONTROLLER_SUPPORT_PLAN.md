@@ -278,6 +278,9 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 - **BHAV 9001 via PIFF.** Confirm that PIFF `Add` works for semi-global files, and that `GetRoutineWithOwner` resolves `0x2329` against TS1's person semi-global.
 - **`PersonData[54]` in TS1.** If we keep using it at all, verify that no TS1 behaviour reads or writes that slot.
 - **Windows backend.** Windows defaults to WindowsDX (`Simitone.Windows/Program.cs:52`). Its `GamePad` support is expected to be XInput-only, so PlayStation pads may need Steam Input or DS4Windows there; DesktopGL (SDL2) should recognise them natively. Verify on hardware. If confirmed, document the existing `gl` launch argument for PlayStation pads.
+- **Steam Controller (original 2015 model) without Steam.** With Steam closed it presents as a keyboard and mouse ("lizard mode"), not a gamepad, so no code here sees it.
+  - SDL 2.32.2, which MonoGame bundles, has a Steam Controller driver, but it is off by default (`SDL_JOYSTICK_HIDAPI_STEAM`). In that version its packet reader only accepts Bluetooth LE reports, so it wouldn't help over the USB dongle or a cable.
+  - Practical routes: add Simitone to Steam as a non-Steam game (Steam Input presents a standard gamepad), or run a standalone driver that creates a virtual gamepad.
 - **Pie menu anchor.** The menu is currently placed at the mouse. With E5 it will be placed at the target's projected screen position, which has to be clamped to the screen bounds.
 - **Text input.** No on-screen keyboard exists. Naming, cheats and catalog search all depend on a keyboard.
 
@@ -451,6 +454,13 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 6. Pie navigation with 2, 4, 8 and more than 8 items, and inside sub-categories.
 7. Dialogs that appear mid-play are reachable with the virtual cursor, and the lot regains the pad when they close.
 8. The `auto` layout picks the mobile layout when a lot is loaded with the pad.
+
+### Fixes after the first hardware test
+
+- **Exception popups when the selector sat on a Sim.** The selector re-checked its target's interactions twice a second. For a Sim, that runs every social interaction's check tree, and Makin' Magic's "Magic - Attraction" expression (reached from "Kiss Cheek TEST") read an avatar slot that doesn't exist. `VMAvatar.GetSlot` had no bounds check, so each re-check threw and raised another "SimAntics Exception" dialog. Two fixes:
+  - Engine `f6741e2`: out-of-range avatar slots now read as empty, as they already did for objects.
+  - The selector checks a target's interactions once, when it lands on it (as mouse hover does).
+  - Side effect: the marker colour can be stale until the selector moves to another target or the active Sim changes.
 
 ### Notes for Phase 3
 
