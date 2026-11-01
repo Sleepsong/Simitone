@@ -257,6 +257,21 @@ namespace Simitone.Client.UI.Model
             return rows;
         }
 
+        /// <summary>
+        /// Floor direction (tile space) a 3D camera with yaw <paramref name="rotationX"/> looks along: what
+        /// World.Transform((0, -1)) gives, from its scroll basis (rotation by -rotationX).
+        /// </summary>
+        public static Vector2 CameraForward(float rotationX)
+        {
+            return new Vector2(-(float)Math.Cos(rotationX), (float)Math.Sin(rotationX));
+        }
+
+        /// <summary>The camera yaw that looks the way an avatar with this RadianDirection faces (inverse of the above).</summary>
+        public static float FirstPersonYaw(float radianDirection)
+        {
+            return (float)Math.Atan2(-Math.Cos(radianDirection), -Math.Sin(radianDirection));
+        }
+
         /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>
         public static int ClampIndex(int index, int length)
         {

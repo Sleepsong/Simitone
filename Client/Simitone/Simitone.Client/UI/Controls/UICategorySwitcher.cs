@@ -23,6 +23,9 @@ namespace Simitone.Client.UI.Controls
         public event Action OnOpen;
         public int ActiveCategory;
         public List<UICategory> Categories;
+
+        /// <summary>The fan of categories is open, or opening (false as soon as it starts closing).</summary>
+        public bool Expanded { get; private set; }
         public List<UIStencilButton> CatSwitchButtons = new List<UIStencilButton>();
 
         private float _ce;
@@ -122,11 +125,13 @@ namespace Simitone.Client.UI.Controls
                 Close(); return;
             }
             OnOpen?.Invoke();
+            Expanded = true;
             GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "CategoryExpand", 1f } }, TweenQuad.EaseOut);
         }
 
         public void Close()
         {
+            Expanded = false;
             GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "CategoryExpand", 0f } }, TweenQuad.EaseOut);
         }
 

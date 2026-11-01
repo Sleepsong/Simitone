@@ -112,6 +112,20 @@ namespace Simitone.Client.UI.Panels
         private readonly UIFocusNavigator ModeMenuNav = new UIFocusNavigator();
         private readonly ModeMenuScope MenuScope = new ModeMenuScope();
         private bool ModeMenuActive;
+
+        //LB, RB, LT, RT: alone they act when let go; RT held opens the panel's tab fan; all four held open the cheat box
+        private readonly PadChords Chords = new PadChords();
+        private readonly UIFocusNavigator CategoryMenuNav = new UIFocusNavigator();
+        private readonly CategoryMenuScope CategoryScope = new CategoryMenuScope();
+        private bool CategoryMenuActive;
+
+        /// <summary>The FISH EYE cheat (typed in the cheat box): in live mode, B looks through the active Sim's eyes. For the session.</summary>
+        public static bool FishEyeCheat;
+        private bool FishEye; //looking through the Sim's eyes now (FreeSO's Direct camera, at the Sim's head)
+        private AvatarComponent FishEyeHead; //whose head is hidden
+        private int FishEyeWallsBefore;
+        private const float LookRate = 2.2f; //radians per second at full deflection
+        private const float PitchLimit = 1.2f; //radians up or down from level
         private bool QueueFocus;
         private bool PanelFocus; //live mode: the needs panel has the pad; buy/build: the catalog has it
 
@@ -154,6 +168,8 @@ namespace Simitone.Client.UI.Panels
             Capturing = false;
             PadActive = false;
             ModeMenuActive = false;
+            CategoryMenuActive = false;
+            Chords.Holdable[PadChords.RT] = true;
             CutawayFocus = null;
             MarkerBase = MarkerTop = null;
             BuildCursor = null;
@@ -174,14 +190,18 @@ namespace Simitone.Client.UI.Panels
             //direct control follows the active Sim, and is off outside live mode and in 2D. Every frame starts by
             //telling the Sim to stand still; it only walks if the stick drives it further down.
             var is3D = World.State.Cameras.ActiveType == CameraControllerType._3D;
-            SyncDirectControl(screen, (DirectMode && is3D && Master.LiveMode) ? Master.ActiveEntity as VMAvatar : null);
-            SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = DirectFacing });
+            //FISH EYE ends if live mode does, the Sim goes, or something else took the camera
+            if (FishEye && !(Master.LiveMode && Master.ActiveEntity is VMAvatar
+                && World.State.Cameras.ActiveType == CameraControllerType.Direct)) ExitFishEye(frontend);
+            SyncDirectControl(screen, (((DirectMode && is3D) || FishEye) && Master.LiveMode) ? Master.ActiveEntity as VMAvatar : null);
+            SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = LookFacing() });
 
             //the mode menu (the Simitone button's fan of modes, with the household's Sims): holding Select opens it
             if (frontend.MainPanel.ShowingSelect && frontend.ModeSwitcher != null && !GameFacade.Screens.HasModalDialog
                 && state.InputManager?.GetFocus() == null)
             {
                 SelectDownAt = -1;
+                Chords.Reset();
                 EndQueueFocus();
                 frontend.PanelNavigator.Clear();
                 UpdateModeMenu(state, frontend);
@@ -197,6 +217,7 @@ namespace Simitone.Client.UI.Panels
             if (!lotHasPad)
             {
                 SelectDownAt = -1;
+                Chords.Reset();
                 EndQueueFocus();
                 frontend.PanelNavigator.Clear();
                 return;
@@ -218,12 +239,33 @@ namespace Simitone.Client.UI.Panels
             var wasPadActive = WasPadActive;
             WasPadActive = false;
 
+            //the panel's tab fan (RT held, or the mouse opened it): the d-pad picks a tab
+            if (padInUse && panel.PanelActive && panel.Switcher.Expanded)
+            {
+                Chords.Reset();
+                EndQueueFocus();
+                UpdateCategoryMenu(state, panel);
+                return;
+            }
+            CategoryMenuNav.Clear();
+
             if (!Master.PieMenuOpen)
             {
+                Chords.Update(new[] { pad.IsDown(PadAction.ShoulderLeft), pad.IsDown(PadAction.ShoulderRight),
+                    pad.IsDown(PadAction.TriggerLeft), pad.IsDown(PadAction.TriggerRight) }, now);
                 if (padInUse) UpdateCamera(pad, dt, screen);
                 HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav);
+                if (Chords.Combo) //LB+RB+LT+RT held: the cheat box, as the console games had it
+                {
+                    frontend.CheatTextbox.OpenForPad(state);
+                    return;
+                }
             }
-            else SelectDownAt = -1;
+            else
+            {
+                SelectDownAt = -1;
+                Chords.Reset();
+            }
             var catalogFocusBefore = PanelFocus;
             if (!PanelFocus) CatalogEmptyTime = 0;
             var selectionBefore = BuildSelection();
@@ -258,7 +300,8 @@ namespace Simitone.Client.UI.Panels
             if (!SelectorPlaced) PlaceSelectorOn(active, true);
 
             var direct = DirectAvatar != null && DirectAvatar == active;
-            if (direct) FollowDirect(active, dt);
+            if (FishEye) KeepFishEyeOn(active);
+            else if (direct) FollowDirect(active, dt);
 
             var recentlyMoved = !direct && now - LastSelectorMove < CutawayFocusSeconds;
             CutawayFocus = recentlyMoved ? SelectorOrTargetTile() : new Vector2(active.VisualPosition.X, active.VisualPosition.Y);
@@ -299,6 +342,72 @@ namespace Simitone.Client.UI.Panels
             SetLivePrompts(direct, is3D, panel);
         }
 
+        /// <summary>The direction the Sim's body turns to: where the camera looks in FISH EYE, else where it last walked.</summary>
+        private short LookFacing()
+        {
+            return FishEye ? PadMath.DirectionToShort(World.Transform(new Vector2(0, -1))) : DirectFacing;
+        }
+
+        /// <summary>
+        /// FISH EYE: FreeSO's Direct camera, which sits at an avatar's head (FirstPersonAvatar) with the head hidden. The
+        /// Sim is under direct control: the left stick walks relative to the view, the right stick looks around, and
+        /// the body turns to face where the camera looks. Walls go up (with roofs) and every floor is drawn, as FreeSO
+        /// does for first person.
+        /// </summary>
+        private void EnterFishEye(UISimitoneFrontend frontend, VMAvatar sim)
+        {
+            if (!FSOEnvironment.Enable3D)
+            {
+                ShowHint("FISH EYE needs the 3D renderer.");
+                HITVM.Get().PlaySoundEvent(UISounds.Error);
+                return;
+            }
+            World.ToggleFirstPerson(CameraControllerType.Direct);
+            if (World.State.Cameras.ActiveType != CameraControllerType.Direct) return;
+            var camera = World.State.Cameras.CameraDirect;
+            camera.CaptureMouse = false; //the pad looks, not the mouse
+            camera.RotationX = PadMath.FirstPersonYaw(sim.RadianDirection); //start looking where the Sim faces
+            camera.RotationY = (float)Math.PI / 2; //level
+            FishEyeWallsBefore = Master.WallsMode;
+            frontend.SetWallsMode(3);
+            World.State.Level = 5;
+            FishEye = true;
+            KeepFishEyeOn(sim);
+            ShowHint("FISH EYE");
+            HITVM.Get().PlaySoundEvent(UISounds.Click);
+        }
+
+        /// <summary>Keeps the camera in the active Sim's head (it can change with LB/RB).</summary>
+        private void KeepFishEyeOn(VMEntity sim)
+        {
+            var head = sim.WorldUI as AvatarComponent;
+            var camera = World.State.Cameras.CameraDirect;
+            if (FishEyeHead != head)
+            {
+                if (FishEyeHead != null) FishEyeHead.Avatar.HideHead = false;
+                FishEyeHead = head;
+            }
+            if (head != null) head.Avatar.HideHead = true;
+            camera.FirstPersonAvatar = head;
+            Selector = new Vector2(sim.VisualPosition.X, sim.VisualPosition.Y);
+        }
+
+        private void ExitFishEye(UISimitoneFrontend frontend)
+        {
+            FishEye = false;
+            if (FishEyeHead != null) FishEyeHead.Avatar.HideHead = false;
+            FishEyeHead = null;
+            World.State.Cameras.CameraDirect.FirstPersonAvatar = null;
+            if (World.State.Cameras.ActiveType == CameraControllerType.Direct) World.ToggleFirstPerson(CameraControllerType.Direct);
+            frontend.SetWallsMode(FishEyeWallsBefore);
+            var active = Master.ActiveEntity;
+            if (active != null)
+            {
+                World.State.Level = active.Position.Level;
+                PlaceSelectorOn(active, true);
+            }
+        }
+
         /// <summary>
         /// Prompts for live mode, cursor or direct control, naming what A does on the current target and what RT shows
         /// next. Select (mode), Start (pause) and the d-pad (floors, speed) are left out to keep the bar short.
@@ -307,9 +416,11 @@ namespace Simitone.Client.UI.Panels
         {
             var items = new System.Collections.Generic.List<PadPrompt>();
             items.Add(PadPrompt.For(PadStick.Left, direct ? "Walk" : "Move"));
+            if (FishEye) items.Add(PadPrompt.For(PadStick.Right, "Look"));
             if (Target != null) items.Add(PadPrompt.Of(PadAction.Confirm, "Interact"));
             else if (!direct) items.Add(PadPrompt.Of(PadAction.Confirm, "Go here"));
-            if (direct) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
+            if (FishEye) items.Add(PadPrompt.Of(PadAction.Cancel, "Normal view"));
+            else if (direct) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
             else if (is3D) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Direct control"));
             items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
             items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
@@ -317,6 +428,7 @@ namespace Simitone.Client.UI.Panels
             items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
             items.Add(PadPrompt.Of(PadAction.LeftStickClick, "Walls"));
             if (!direct) items.Add(PadPrompt.Of(PadAction.RightStickClick, "Find Sim")); //the cursor back on the Sim
+            if (FishEyeCheat && !FishEye) items.Add(PadPrompt.Of(PadAction.Cancel, "FISH EYE"));
             PadPrompts.Set(items.ToArray());
         }
 
@@ -590,8 +702,8 @@ namespace Simitone.Client.UI.Panels
                 Direction = DirectFacing,
                 InputIntensity = Math.Max(1, (int)(stick.Length() * 100)),
                 //the frame turns the body towards LookDirectionInt; pointing it where the Sim walks gives a
-                //third-person feel (TSO used the first-person camera's facing here).
-                LookDirectionInt = DirectFacing,
+                //third-person feel. In FISH EYE it's where the camera looks, as TSO's first person did.
+                LookDirectionInt = LookFacing(),
                 Sprint = DirectRunning
             });
         }
@@ -797,7 +909,7 @@ namespace Simitone.Client.UI.Panels
 
         private void HandleLiveButtons(GamePadInput pad, UISimitoneFrontend frontend, bool is3D)
         {
-            if (pad.Pressed(PadAction.FaceLeft))
+            if (!FishEye && pad.Pressed(PadAction.FaceLeft))
             {
                 if (!is3D)
                 {
@@ -812,10 +924,17 @@ namespace Simitone.Client.UI.Panels
                 }
             }
 
-            if (pad.Pressed(PadAction.ShoulderLeft) || pad.Pressed(PadAction.ShoulderRight))
+            if (Chords.Tap[PadChords.LB] || Chords.Tap[PadChords.RB])
             {
                 FollowSim = true; //TrackActiveSim moves the selector and camera once the switch lands
-                frontend.CycleSim(pad.Pressed(PadAction.ShoulderLeft) ? -1 : 1);
+                frontend.CycleSim(Chords.Tap[PadChords.LB] ? -1 : 1);
+            }
+
+            //FISH EYE (the cheat): B, Circle on PlayStation as on PS2, in and out of the Sim's eyes
+            if (FishEyeCheat && !PanelFocus && pad.Pressed(PadAction.Cancel))
+            {
+                if (FishEye) ExitFishEye(frontend);
+                else if (Master.ActiveEntity is VMAvatar sim) EnterFishEye(frontend, sim);
             }
 
             HandlePanelTriggers(pad, frontend, canClose: true);
@@ -831,7 +950,7 @@ namespace Simitone.Client.UI.Panels
         private void HandlePanelTriggers(GamePadInput pad, UISimitoneFrontend frontend, bool canClose)
         {
             var panel = frontend.MainPanel;
-            if (pad.Pressed(PadAction.TriggerLeft))
+            if (Chords.Tap[PadChords.LT])
             {
                 if (!panel.PanelActive)
                 {
@@ -847,7 +966,7 @@ namespace Simitone.Client.UI.Panels
                 else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
-            if (pad.Pressed(PadAction.TriggerRight))
+            if (Chords.Tap[PadChords.RT])
             {
                 if (!panel.PanelActive) OpenPanel(panel);
                 else
@@ -858,6 +977,54 @@ namespace Simitone.Client.UI.Panels
                 }
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
+            if (Chords.Hold[PadChords.RT]) //held: the fan of tabs, to pick one
+            {
+                if (!panel.PanelActive) OpenPanel(panel);
+                if (!panel.Switcher.Expanded) panel.Switcher.Open();
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
+        }
+
+        /// <summary>The panel's tab fan: the d-pad moves between the tabs, A picks one, B closes the fan.</summary>
+        private void UpdateCategoryMenu(UpdateState state, UIMainPanel panel)
+        {
+            CategoryScope.Panel = panel;
+            if (!CategoryMenuNav.Update(state, CategoryScope)) return;
+            CategoryMenuActive = true;
+            Capturing = true;
+            state.PadCaptured = true;
+            PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"),
+                PadPrompt.Of(PadAction.Cancel, "Back"));
+        }
+
+        /// <summary>The tab fan as a pad scope: the tab buttons, and the main button (which closes it).</summary>
+        private class CategoryMenuScope : UIElement, IPadScope, IPadScopeRoots
+        {
+            public UIMainPanel Panel;
+
+            public IEnumerable<UIElement> PadRoots
+            {
+                get { yield return Panel.Switcher; }
+            }
+
+            public UIElement PadDefaultFocus
+            {
+                get
+                {
+                    var switcher = Panel.Switcher;
+                    var active = switcher.Categories?.FirstOrDefault(x => x.ID == switcher.ActiveCategory)?.Name;
+                    return (UIElement)switcher.CatSwitchButtons.FirstOrDefault(b => b.Tooltip == active)
+                        ?? switcher.CatSwitchButtons.FirstOrDefault();
+                }
+            }
+
+            public bool PadCancel()
+            {
+                Panel.Switcher.Close();
+                return true;
+            }
+
+            public override void Draw(UISpriteBatch batch) { }
         }
 
         private static void OpenPanel(UIMainPanel panel)
@@ -918,6 +1085,15 @@ namespace Simitone.Client.UI.Panels
         private void UpdateCamera(GamePadInput pad, float dt, TS1GameScreen screen)
         {
             var stick = pad.RightStick;
+            if (FishEye)
+            {
+                //look: right turns right (yaw falls), up looks up (RotationY below level)
+                var camera = World.State.Cameras.CameraDirect;
+                camera.RotationX -= stick.X * LookRate * dt;
+                var level = (float)Math.PI / 2;
+                camera.RotationY = Math.Max(level - PitchLimit, Math.Min(level + PitchLimit, camera.RotationY - stick.Y * LookRate * dt));
+                return;
+            }
             if (Math.Abs(stick.X) < 0.3f) RotateArmed = true;
             if (stick == Vector2.Zero) return;
 
@@ -1250,6 +1426,7 @@ namespace Simitone.Client.UI.Panels
         public override void Draw(UISpriteBatch batch)
         {
             if (ModeMenuActive) ModeMenuNav.Draw(batch);
+            if (CategoryMenuActive) CategoryMenuNav.Draw(batch);
             if (BuildCursor != null)
             {
                 var cursorRing = PadGraphics.GetRing(GameFacade.GraphicsDevice);
