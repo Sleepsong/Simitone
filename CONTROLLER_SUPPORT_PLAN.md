@@ -544,6 +544,19 @@ The engine commit is `931ccd7` on `simitone/controller-phase3` in `Sleepsong/Fre
 - The headless harness now has 190 checks. The new ones cover neighbour picking (grids, edges, same row beating a closer diagonal, the outfit picker layout), person-data padding and log notes.
 - **Not yet tested in the running game.**
 
+### Hardware results (first test)
+
+| Check | Result |
+|---|---|
+| Saving from Options, then B back to live | Works |
+| The selector after dialogs close | Works |
+| LT cycle on the needs panel | Works: the third press closes it |
+| Carousel | Right turns it clockwise seen from above: the front body moves left and the one on its right comes forward. That's the usual list convention, so it stays unless it feels wrong. |
+| Phone book Cancel | Went on to "Do you want to invite Unknown or just talk?". The same happened with a mouse click. |
+| Dialog focus outline | Not visible in the screenshot sent; still to confirm |
+
+**Phone book Cancel:** a pre-existing engine bug. `VMDialogPrivateStrings` ignored the phone book's response code and parsed Cancel's "-1" as a neighbour ID. Engine `cad8144` makes code 0 take the false branch, as the clothes and pet pickers already did.
+
 ### To check on hardware
 
 1. A message, a Yes/No and a three-button dialog: starting focus, left/right between buttons, A, B.
