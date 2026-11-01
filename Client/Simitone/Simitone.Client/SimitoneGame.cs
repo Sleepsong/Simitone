@@ -386,6 +386,11 @@ namespace Simitone.Client
                 GameFacade.Screens = uiLayer;
                 uiLayer.Overlay = new UI.Controls.UIPadOverlay(); //gamepad keyboard, prompts, focus tooltips
                 UI.Model.PadFocusStyle.Install(); //Sims-style focus highlight
+                //SDL stops reading the pad while it thinks the window is in the background, and can get that wrong
+                //after Alt+Tab (X11Focus): keep it reading, and let the game decide focus, with X11 as a second opinion
+                try { Utils.Sdl.SetHint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1"); } catch { }
+                Utils.X11Focus.Start(Window.Handle);
+                FSO.Common.Rendering.Framework.Game.FocusFallback = Utils.X11Focus.Fallback;
                 Utils.PadDiagnostics.Start(); //gamepad.log: what controllers the game can see
                 GameController.EnterLoading();
             }

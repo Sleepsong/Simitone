@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using FSO.Client;
 using FSO.Client.UI.Framework;
@@ -104,6 +105,13 @@ namespace Simitone.Client.UI.Panels
         private bool FollowSim;
         private VMEntity LastActive;
         private bool RotateArmed = true;
+
+        private const double ModeMenuHold = 0.6; //seconds Select is held to open the mode menu; a tap cycles modes
+        private double SelectDownAt = -1; //when Select went down, while it may still be a tap or a hold; else -1
+        private double Now;
+        private readonly UIFocusNavigator ModeMenuNav = new UIFocusNavigator();
+        private readonly ModeMenuScope MenuScope = new ModeMenuScope();
+        private bool ModeMenuActive;
         private bool QueueFocus;
         private bool PanelFocus; //live mode: the needs panel has the pad; buy/build: the catalog has it
 
@@ -145,6 +153,7 @@ namespace Simitone.Client.UI.Panels
             base.Update(state);
             Capturing = false;
             PadActive = false;
+            ModeMenuActive = false;
             CutawayFocus = null;
             MarkerBase = MarkerTop = null;
             BuildCursor = null;
@@ -160,12 +169,25 @@ namespace Simitone.Client.UI.Panels
             }
 
             var frontend = screen.Frontend;
+            Now = state.Time.TotalGameTime.TotalSeconds;
 
             //direct control follows the active Sim, and is off outside live mode and in 2D. Every frame starts by
             //telling the Sim to stand still; it only walks if the stick drives it further down.
             var is3D = World.State.Cameras.ActiveType == CameraControllerType._3D;
             SyncDirectControl(screen, (DirectMode && is3D && Master.LiveMode) ? Master.ActiveEntity as VMAvatar : null);
             SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = DirectFacing });
+
+            //the mode menu (the Simitone button's fan of modes, with the household's Sims): holding Select opens it
+            if (frontend.MainPanel.ShowingSelect && frontend.ModeSwitcher != null && !GameFacade.Screens.HasModalDialog
+                && state.InputManager?.GetFocus() == null)
+            {
+                SelectDownAt = -1;
+                EndQueueFocus();
+                frontend.PanelNavigator.Clear();
+                UpdateModeMenu(state, frontend);
+                return;
+            }
+            ModeMenuNav.Clear();
 
             ReleaseDetachedFocus(state);
             var lotHasPad = !GameFacade.Screens.HasModalDialog
@@ -174,6 +196,7 @@ namespace Simitone.Client.UI.Panels
                 && !frontend.CheatTextbox.Visible;
             if (!lotHasPad)
             {
+                SelectDownAt = -1;
                 EndQueueFocus();
                 frontend.PanelNavigator.Clear();
                 return;
@@ -200,6 +223,7 @@ namespace Simitone.Client.UI.Panels
                 if (padInUse) UpdateCamera(pad, dt, screen);
                 HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav);
             }
+            else SelectDownAt = -1;
             var catalogFocusBefore = PanelFocus;
             if (!PanelFocus) CatalogEmptyTime = 0;
             var selectionBefore = BuildSelection();
@@ -461,7 +485,7 @@ namespace Simitone.Client.UI.Panels
             {
                 PadPrompts.Set(move, PadPrompt.Of(PadAction.Confirm, "Pick up"), PadPrompt.Of(PadAction.FaceLeft, "Eyedropper"),
                     PadPrompt.Of(PadAction.TriggerLeft, "Catalog"), PadPrompt.Of(PadAction.LeftStickClick, "Walls"),
-                    PadPrompt.Of(PadAction.Select, "Mode"));
+                    PadPrompt.Of(PadAction.Select, "Mode (hold: menu)"));
             }
         }
 
@@ -624,7 +648,22 @@ namespace Simitone.Client.UI.Panels
         /// <param name="dpadFree">False while a panel is navigated with the d-pad.</param>
         private void HandleSharedButtons(GamePadInput pad, TS1GameScreen screen, UISimitoneFrontend frontend, bool dpadFree)
         {
-            if (pad.Pressed(PadAction.Select)) frontend.CycleMode();
+            //Select: a tap moves to the next mode, a hold opens the mode menu to pick one
+            if (pad.Pressed(PadAction.Select)) SelectDownAt = Now;
+            if (SelectDownAt >= 0)
+            {
+                if (!pad.IsDown(PadAction.Select))
+                {
+                    SelectDownAt = -1;
+                    frontend.CycleMode();
+                }
+                else if (Now - SelectDownAt >= ModeMenuHold && frontend.ModeSwitcher != null)
+                {
+                    SelectDownAt = -1;
+                    frontend.ModeSwitcher.SwitchMode(frontend.MainPanel.Mode); //as clicking the Simitone button does
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+            }
             if (pad.Pressed(PadAction.Start)) TogglePause(screen);
 
             if (dpadFree) HandleDpad(pad, screen);
@@ -642,6 +681,60 @@ namespace Simitone.Client.UI.Panels
                 PlaceSelectorOn(Master.ActiveEntity, true);
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
+        }
+
+        /// <summary>
+        /// The mode menu: the d-pad moves between the modes and the household's Sims, A picks one, B closes it in the
+        /// current mode. Its buttons show focus with their own hover (they grow).
+        /// </summary>
+        private void UpdateModeMenu(UpdateState state, UISimitoneFrontend frontend)
+        {
+            MenuScope.Frontend = frontend;
+            if (!ModeMenuNav.Update(state, MenuScope)) return;
+            ModeMenuActive = true;
+            Capturing = true;
+            state.PadCaptured = true;
+            PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"),
+                PadPrompt.Of(PadAction.Cancel, "Back"));
+        }
+
+        /// <summary>The mode menu as a pad scope: the mode buttons and the Sim portraits under them.</summary>
+        private class ModeMenuScope : UIElement, IPadScope, IPadScopeRoots
+        {
+            public UISimitoneFrontend Frontend;
+
+            public IEnumerable<UIElement> PadRoots
+            {
+                get
+                {
+                    yield return Frontend.ModeSwitcher;
+                    if (Frontend.MainPanel.SwitchAvatar != null) yield return Frontend.MainPanel.SwitchAvatar;
+                }
+            }
+
+            public UIElement PadDefaultFocus
+            {
+                get
+                {
+                    var modes = Frontend.ModeSwitcher;
+                    switch (Frontend.MainPanel.Mode)
+                    {
+                        case UIMainPanelMode.BUY: return modes.BuyButton;
+                        case UIMainPanelMode.BUILD: return modes.BuildButton;
+                        case UIMainPanelMode.OPTIONS: return modes.OptionButton;
+                        default: return modes.LiveButton;
+                    }
+                }
+            }
+
+            /// <summary>Picking the current mode closes the menu, as with the mouse.</summary>
+            public bool PadCancel()
+            {
+                Frontend.ModeSwitcher.SwitchMode(Frontend.MainPanel.Mode);
+                return true;
+            }
+
+            public override void Draw(UISpriteBatch batch) { }
         }
 
         private void HandleDpad(GamePadInput pad, TS1GameScreen screen)
@@ -1156,6 +1249,7 @@ namespace Simitone.Client.UI.Panels
 
         public override void Draw(UISpriteBatch batch)
         {
+            if (ModeMenuActive) ModeMenuNav.Draw(batch);
             if (BuildCursor != null)
             {
                 var cursorRing = PadGraphics.GetRing(GameFacade.GraphicsDevice);

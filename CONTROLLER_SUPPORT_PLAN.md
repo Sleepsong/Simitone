@@ -815,7 +815,7 @@ Everything worked except the focus outline on the neighbourhood's round buttons,
 
 ## 16. Phase 7 — UI polish and bug fixes
 
-Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9`, `b4580aa` and `df755b6` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9`, `b4580aa`, `df755b6` and `5e5e3bc` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
 
 ### Focus highlight
 
@@ -963,6 +963,11 @@ The next log: Steam asked to load the overlay and it is loaded in the game, SDL 
 |---|---|
 | With the pad, the camera can keep drifting while a popup is up | The lot scrolls when the hardware cursor is at a window edge (and on right-drag). That was skipped only while the pad helper was active, and the helper stands down while a popup is open, so a cursor parked at an edge (where Steam's mouse stick or the virtual cursor left it) scrolled the camera under the popup. Edge and right-drag scrolling now only happen while the mouse is the device in use. |
 | Live mode doesn't say what RT and R3 do | Added to the live prompts: RT "Sim info" (opens the info panel) or "Next: Job" etc. (its next tab), and R3 "Find Sim" (the cursor back on the active Sim; cursor mode only). Select, Start and the d-pad are still left out to keep the bar short. The prompt bar now wraps onto more rows, evenly filled and stacked upwards, when it's too wide for the screen (`PadMath.WrapRows`, 5 new harness checks, 341 in all). |
+
+| Feedback | Change |
+|---|---|
+| Holding Select could open the mode menu (the Simitone button's fan of modes) to pick a mode directly, instead of flipping through them | A tap of Select still moves to the next mode (now on release); holding it for 0.6 s opens the mode menu, as clicking the Simitone button does. The d-pad moves between the modes and the household's Sims under them, A picks (a Sim switches control, as clicking a portrait does), B closes it in the current mode. The buttons grow to show focus. The lot helper used to stand down while the menu was open; it now runs a navigator over it (`ModeMenuScope`). The buy/build prompt reads "Mode (hold: menu)". |
+| After tabbing out, the controller didn't come back | Not certain yet; the log can't tell which of two causes it was. (1) SDL 2.32 ignores X11 focus events that arrive during a keyboard grab (`NotifyGrab`/`NotifyUngrab`, as a window switcher's Alt+Tab can produce), so it can keep believing the window is in the background; the game then ignores the pad, and SDL itself stops reading it. Fix: the game asks the X server too (`X11Focus`: the root window's `_NET_ACTIVE_WINDOW`, compared with SDL's X11 window from `SDL_GetWindowWMInfo`), and counts as focused if X says it's active (engine: `Game.FocusFallback`, `Game.HasFocus`, used for the input loop and `WindowFocused`). SDL is told to keep reading the pad in the background (`SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS`); the game still ignores it while unfocused. Only the root window is queried, so no X error can end the process. Tested against a real X server (Xvfb) with a real SDL window: 6 harness checks, run when a display is available. (2) Steam keeps the controller on its Desktop Layout after the game comes back to the front; the game can't change that. gamepad.log now says, at each focus change, what X11 thinks is active, when SDL disagrees and the X11 answer is used, when the pad is used while the game thinks it's in the background, and whether pad input arrives after focus comes back (or not within 15 s). |
 
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.

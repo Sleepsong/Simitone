@@ -26,6 +26,10 @@ namespace Simitone.Client.Utils
         private static bool LastFocused = true;
         private static bool SawInput;
         private static bool NoSDL; //SDL couldn't be called (e.g. a build without it): stop asking
+        private static bool PadUsedInBackground; //logged once per time in the background
+        private static double FocusBackAt = -1; //when focus last came back, until the pad is next used
+        private static bool QuietLogged;
+        private static bool LastFallback;
 
         /// <summary>Starts the log: launch environment and SDL's joysticks.</summary>
         public static void Start()
@@ -74,6 +78,7 @@ namespace Simitone.Client.Utils
                     $"WAYLAND_DISPLAY={Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "(unset)"}");
             }
             log.AppendLine($"  SDL video driver: {SDL.VideoDriver()}");
+            log.AppendLine($"  X11 focus check: {X11Focus.Status}");
             log.AppendLine($"Pad support enabled: {FSO.Common.Rendering.Framework.IO.GamePadSettings.Enabled}, " +
                 $"ignore keyboard/mouse while held: {FSO.Common.Rendering.Framework.IO.GamePadSettings.IgnoreEchoes}");
             try
@@ -108,7 +113,39 @@ namespace Simitone.Client.Utils
             if (state.WindowFocused != LastFocused)
             {
                 LastFocused = state.WindowFocused;
-                Write(LastFocused ? "Window focused" : "Window lost focus (pad input is ignored until it's back)");
+                var x11 = X11Focus.ActiveWindowIsOurs();
+                var x11Text = (x11 == null) ? "" : (x11.Value ? "; X11 says Simitone is the active window" : "; X11 says another window is active");
+                Write((LastFocused ? "Window focused" : "Window lost focus (pad input is ignored until it's back)") + x11Text);
+                PadUsedInBackground = false;
+                FocusBackAt = LastFocused ? now : -1;
+                QuietLogged = false;
+            }
+            //SDL missed the focus coming back (see X11Focus): the game is going by the X server instead
+            var fallback = state.WindowFocused && !(FSO.Client.GameFacade.Game?.IsActive ?? true);
+            if (fallback != LastFallback)
+            {
+                LastFallback = fallback;
+                Write(fallback ? "SDL still thinks the window is in the background, but X11 says it's active: using the pad anyway"
+                    : "SDL agrees about focus again");
+            }
+            if (!state.WindowFocused && pad.UsedWhileUnfocused && !PadUsedInBackground)
+            {
+                PadUsedInBackground = true;
+                Write("The pad was used while the game thought it was in the background" +
+                    ((X11Focus.ActiveWindowIsOurs() == true) ? " (X11 says Simitone IS the active window)" : ""));
+            }
+            if (FocusBackAt >= 0 && pad.Connected)
+            {
+                if (pad.Active || pad.AnyButtonDown)
+                {
+                    if (now - FocusBackAt > 0.5) Write($"Pad input again, {now - FocusBackAt:0.0} s after focus came back");
+                    FocusBackAt = -1;
+                }
+                else if (!QuietLogged && now - FocusBackAt > 15)
+                {
+                    QuietLogged = true;
+                    Write("No pad input in the 15 s since focus came back (if you were pressing buttons, Steam may have kept the controller on its Desktop Layout)");
+                }
             }
 
             if (pad.Connected != LastConnected)
@@ -150,13 +187,13 @@ namespace Simitone.Client.Utils
         {
             public static string VideoDriver()
             {
-                try { return Marshal.PtrToStringUTF8(Native.GetCurrentVideoDriver()) ?? "(none)"; }
+                try { return Sdl.CurrentVideoDriver() ?? "(none)"; }
                 catch (Exception e) { return "unknown (" + e.GetType().Name + ")"; }
             }
 
             public static int JoystickCount()
             {
-                try { return Native.NumJoysticks(); }
+                try { return Sdl.NumJoysticks(); }
                 catch { return -2; }
             }
 
@@ -164,13 +201,13 @@ namespace Simitone.Client.Utils
             {
                 try
                 {
-                    var count = Native.NumJoysticks();
+                    var count = Sdl.NumJoysticks();
                     var text = new StringBuilder($"SDL sees {count} joystick(s)");
                     for (int i = 0; i < count; i++)
                     {
-                        var name = Marshal.PtrToStringUTF8(Native.JoystickNameForIndex(i)) ?? "?";
-                        text.Append($"{Environment.NewLine}  {i}: \"{name}\" vendor {Native.JoystickGetDeviceVendor(i):x4} product {Native.JoystickGetDeviceProduct(i):x4}, " +
-                            (Native.IsGameController(i) ? "usable as a gamepad" : "NOT a recognised gamepad (no mapping), so MonoGame ignores it"));
+                        var name = Marshal.PtrToStringUTF8(Sdl.JoystickNameForIndex(i)) ?? "?";
+                        text.Append($"{Environment.NewLine}  {i}: \"{name}\" vendor {Sdl.JoystickGetDeviceVendor(i):x4} product {Sdl.JoystickGetDeviceProduct(i):x4}, " +
+                            (Sdl.IsGameController(i) ? "usable as a gamepad" : "NOT a recognised gamepad (no mapping), so MonoGame ignores it"));
                     }
                     if (count == 0) text.Append(": no controller is reaching the game at all");
                     return text.ToString();
@@ -179,52 +216,6 @@ namespace Simitone.Client.Utils
                 {
                     return "Couldn't ask SDL about joysticks: " + e.GetType().Name;
                 }
-            }
-        }
-
-        private static class Native
-        {
-            private static readonly bool Windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-            private static readonly bool Mac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
-
-            public static IntPtr GetCurrentVideoDriver() => Windows ? W.SDL_GetCurrentVideoDriver() : Mac ? M.SDL_GetCurrentVideoDriver() : L.SDL_GetCurrentVideoDriver();
-            public static int NumJoysticks() => Windows ? W.SDL_NumJoysticks() : Mac ? M.SDL_NumJoysticks() : L.SDL_NumJoysticks();
-            public static IntPtr JoystickNameForIndex(int i) => Windows ? W.SDL_JoystickNameForIndex(i) : Mac ? M.SDL_JoystickNameForIndex(i) : L.SDL_JoystickNameForIndex(i);
-            public static ushort JoystickGetDeviceVendor(int i) => Windows ? W.SDL_JoystickGetDeviceVendor(i) : Mac ? M.SDL_JoystickGetDeviceVendor(i) : L.SDL_JoystickGetDeviceVendor(i);
-            public static ushort JoystickGetDeviceProduct(int i) => Windows ? W.SDL_JoystickGetDeviceProduct(i) : Mac ? M.SDL_JoystickGetDeviceProduct(i) : L.SDL_JoystickGetDeviceProduct(i);
-            public static bool IsGameController(int i) => (Windows ? W.SDL_IsGameController(i) : Mac ? M.SDL_IsGameController(i) : L.SDL_IsGameController(i)) != 0;
-
-            private static class L
-            {
-                private const string Lib = "libSDL2-2.0.so.0";
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_IsGameController(int index);
-            }
-
-            private static class M
-            {
-                private const string Lib = "libSDL2-2.0.0.dylib"; //as MonoGame ships it
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_IsGameController(int index);
-            }
-
-            private static class W
-            {
-                private const string Lib = "SDL2.dll";
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
-                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_IsGameController(int index);
             }
         }
     }
