@@ -57,7 +57,7 @@ namespace Simitone.Client.Services.Discord
         {
             if (house <= 0) return null;
             var neigh = Content.Get().Neighborhood;
-            var name = neigh.GetHouseNameDesc(house).Item1;
+            var name = neigh.GetHouseNameDesc(house).Item1?.Trim().TrimEnd(':').TrimEnd(); //some end in a colon
             if (!string.IsNullOrEmpty(name)) return name;
             var assignment = neigh.StreetNames.Get<STR>(2001)?.GetString(house - 1);
             if (int.TryParse(assignment, out var street))
