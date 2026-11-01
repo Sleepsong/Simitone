@@ -22,6 +22,7 @@ namespace Simitone.Client.Utils
         private static int LastJoysticks = -1;
         private static double NextJoystickCheck;
         private static bool LastConnected;
+        private static int LastSlot = -1;
         private static bool LastFocused = true;
         private static bool SawInput;
         private static bool NoSDL; //SDL couldn't be called (e.g. a build without it): stop asking
@@ -90,8 +91,15 @@ namespace Simitone.Client.Utils
             if (pad.Connected != LastConnected)
             {
                 LastConnected = pad.Connected;
+                LastSlot = pad.PlayerIndex;
                 SawInput = false;
                 Write(pad.Connected ? $"Pad connected: slot {pad.PlayerIndex}, \"{pad.DisplayName}\"" : "Pad disconnected");
+            }
+            else if (pad.Connected && pad.PlayerIndex != LastSlot)
+            {
+                LastSlot = pad.PlayerIndex;
+                SawInput = false;
+                Write($"Switched to the pad in slot {pad.PlayerIndex}, \"{pad.DisplayName}\" (it's the one being used)");
             }
             if (pad.Connected && !SawInput && (pad.Active || pad.AnyButtonDown))
             {

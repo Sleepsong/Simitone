@@ -815,7 +815,7 @@ Everything worked except the focus outline on the neighbourhood's round buttons,
 
 ## 16. Phase 7 — UI polish and bug fixes
 
-Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9` and `b4580aa` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9`, `b4580aa` and `df755b6` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
 
 ### Focus highlight
 
@@ -952,6 +952,8 @@ Known limit: Simitone's hover tint for stencil buttons (mint, (128, 255, 192)) i
 The harness has 17 new checks for the filter and the tracker (323 in all).
 
 **Pad not detected when started from Steam.** Launched by Steam, the game is shown Steam's virtual gamepad instead of the physical controller (Steam sets `SDL_GAMECONTROLLER_IGNORE_DEVICES` and friends), and what that pad sends depends on the Steam layout chosen for the shortcut. To see what's going on without a console, the game now writes `gamepad.log` to the user folder (`~/.local/share/Simitone/` on Linux, next to `crash.log`), rewritten each run (`Utils/PadDiagnostics`). It records the Steam/SDL environment variables, every joystick SDL can see (name, vendor/product, whether SDL has a gamepad mapping for it; MonoGame ignores joysticks without one), when the game's pad connects or disconnects, its first input, and window focus changes (pad input is ignored while unfocused). Checked against the SDL 2.32 MonoGame ships (324 harness checks).
+
+The first log (Bazzite, the new twin-stick Steam Controller, started from Steam) showed the cause: SDL saw two "Steam Controller" pads (28de:1302), both usable, and the game took slot 0 and never got any input from it, so input was going to the other copy. The game used to read the first connected pad and stay on it; after a restart the order changed. Now it reads every connected pad each frame and uses the one being pressed (`GamePadInput.ChoosePad`): the current pad while it's in use, else any pad with a button down or a stick or trigger past halfway, else the current one, else the first connected. A slightly drifting stick on another pad doesn't take over. gamepad.log notes each switch. The harness has 12 new checks (336 in all).
 
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
