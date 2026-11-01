@@ -128,8 +128,9 @@ namespace Simitone.Client.UI.Panels
 
         private Vector2? MarkerBase; //UI coordinates, set in Update for Draw
         private Vector2? MarkerTop; //top of the target: where the beam ends and the note bobs (null for empty floor)
-        private Vector2 RingAxisX; //UI-space vectors of the floor ring's radii along tile X and Y, around MarkerBase
-        private Vector2 RingAxisY;
+        private const int RingSegments = 48;
+        private readonly Vector2[] RingPoints = new Vector2[RingSegments]; //UI points round the floor ring; NaN where unseen
+        private float RingBand = 4.5f; //UI px thickness of the ring's bright band
         private float AnimTime;
 
         public UILotControlPadHelper(UILotControl master)
@@ -1020,22 +1021,27 @@ namespace Simitone.Client.UI.Panels
             var level = World.State.Level;
             if (TargetPart == null)
             {
-                if (floorRing) SetFloorRing(Selector, level, EmptyRingRadius);
+                if (floorRing)
+                {
+                    SetFloorRing(Selector, level, EmptyRingRadius, EmptyRingRadius);
+                    RingBand = 3f;
+                }
                 return;
             }
 
-            //a ring on the floor round the whole target (every tile of a multi-tile object)
-            var area = TargetArea(Target ?? TargetPart);
+            //an oval on the floor round the target
+            var area = TargetArea(Target ?? TargetPart, TargetPart);
             var entityLevel = TargetPart.Position.Level;
-            SetFloorRing(area.centre, entityLevel, area.radius);
+            SetFloorRing(area.centre, entityLevel, area.rx, area.ry);
+            RingBand = 4.5f;
 
-            //the beam rises to the top of the part targeted (raised for things on counters and shelves)
-            var visual = TargetPart.VisualPosition;
-            var heightAboveFloor = Math.Max(0, visual.Z - (entityLevel - 1) * 2.95f);
-            var markerHeight = (TargetPart is VMAvatar) ? 2.1f : 1.3f;
-            MarkerTop = ToUI(World.ProjectTileToScreen(new Vector2(visual.X, visual.Y), entityLevel, heightAboveFloor + markerHeight));
+            //the beam rises straight up from the ring's centre to the top of the target (raised for things on
+            //counters and shelves; terrain is already in the projection, so it isn't counted again)
+            var height = (TargetPart is VMAvatar) ? 2.1f : RaisedBy(TargetPart) + 1.2f;
+            MarkerTop = TryProject(area.centre, entityLevel, height, out var top) ? top : (Vector2?)null;
+            if (MarkerBase == null) MarkerTop = null;
 
-            if (Target is VMAvatar avatar && !UIPadOverlay.ToastShowing)
+            if (Target is VMAvatar avatar && MarkerTop != null && !UIPadOverlay.ToastShowing)
             {
                 var tip = state.UIState.TooltipProperties;
                 tip.Show = true;
@@ -1047,52 +1053,90 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
-        private const float EmptyRingRadius = 0.32f; //tiles, on empty floor
-        private const float RingMargin = 0.15f; //tiles beyond an object's footprint corners
-        private const float MinRingRadius = 0.42f; //a person, or a one-tile object, gets at least this
-        private const float MaxRingRadius = 2.6f;
+        private const float EmptyRingRadius = 0.3f; //tiles, on empty floor
+        private const float PersonRingRadius = 0.38f;
 
-        /// <summary>The floor circle round a target: its group's footprints combined, or a person-sized circle.</summary>
-        private (Vector2 centre, float radius) TargetArea(VMEntity target)
+        /// <summary>
+        /// The floor oval round a target. A person gets a small circle. An object gets an oval hugging its footprint:
+        /// the whole object if it's at most 2x2 tiles (a sofa, a bed), otherwise just the tile being pointed at
+        /// (stairs, railings and long counters would get rings across the room).
+        /// </summary>
+        private (Vector2 centre, float rx, float ry) TargetArea(VMEntity target, VMEntity part)
         {
-            if (target is VMAvatar)
+            if (target is VMAvatar || part is VMAvatar)
             {
-                var v = target.VisualPosition;
-                return (new Vector2(v.X, v.Y), MinRingRadius);
+                var v = part.VisualPosition;
+                return (new Vector2(v.X, v.Y), PersonRingRadius, PersonRingRadius);
             }
+            var group = FootprintBounds(target.MultitileGroup.Objects);
+            var bounds = (group != null && group.Value.Width <= 32 && group.Value.Height <= 32) ? group : FootprintBounds(new[] { part });
+            if (bounds == null)
+            {
+                var v = part.VisualPosition;
+                return (new Vector2(v.X, v.Y), PersonRingRadius, PersonRingRadius);
+            }
+            var b = bounds.Value;
+            return PadMath.FootprintEllipse(b.Left, b.Top, b.Right, b.Bottom, 1.05f, 0.05f, PersonRingRadius, 1.2f);
+        }
+
+        /// <summary>Combined footprints (1/16 tiles) of objects on the lot; a tile for one without a footprint (e.g. on a wall).</summary>
+        private static Rectangle? FootprintBounds(System.Collections.Generic.IEnumerable<VMEntity> parts)
+        {
             int x1 = int.MaxValue, y1 = int.MaxValue, x2 = int.MinValue, y2 = int.MinValue;
-            foreach (var part in target.MultitileGroup.Objects)
+            foreach (var part in parts)
             {
                 var pos = part.Position;
                 if (pos == LotTilePos.OUT_OF_WORLD) continue;
                 var fp = part.Footprint;
-                if (fp != null)
+                if (fp != null && fp.x2 > fp.x1 && fp.y2 > fp.y1)
                 {
                     x1 = Math.Min(x1, fp.x1); y1 = Math.Min(y1, fp.y1);
                     x2 = Math.Max(x2, fp.x2); y2 = Math.Max(y2, fp.y2);
                 }
                 else
                 {
-                    //no footprint (e.g. on a wall): its tile
                     x1 = Math.Min(x1, pos.TileX * 16); y1 = Math.Min(y1, pos.TileY * 16);
                     x2 = Math.Max(x2, pos.TileX * 16 + 16); y2 = Math.Max(y2, pos.TileY * 16 + 16);
                 }
             }
-            if (x1 > x2)
-            {
-                var v = target.VisualPosition;
-                return (new Vector2(v.X, v.Y), MinRingRadius);
-            }
-            return PadMath.EnclosingCircle(x1, y1, x2, y2, RingMargin, MinRingRadius, MaxRingRadius);
+            if (x1 > x2) return null;
+            return new Rectangle(x1, y1, x2 - x1, y2 - y1);
         }
 
-        /// <summary>Puts the floor ring at a tile: its centre and the screen vectors of its radii along X and Y.</summary>
-        private void SetFloorRing(Vector2 tile, sbyte level, float radius)
+        /// <summary>How far an object sits above the floor because it's on something (a counter, a shelf).</summary>
+        private static float RaisedBy(VMEntity entity)
         {
-            var centre = ToUI(World.ProjectTileToScreen(tile, level));
-            MarkerBase = centre;
-            RingAxisX = ToUI(World.ProjectTileToScreen(tile + new Vector2(radius, 0), level)) - centre;
-            RingAxisY = ToUI(World.ProjectTileToScreen(tile + new Vector2(0, radius), level)) - centre;
+            var root = entity;
+            while (root.Container != null) root = root.Container;
+            return (root == entity) ? 0 : Math.Max(0, entity.VisualPosition.Z - root.VisualPosition.Z);
+        }
+
+        /// <summary>
+        /// Projects a point at a height above a level's floor to UI space. False if it can't be seen properly: in 3D,
+        /// behind the camera.
+        /// </summary>
+        private bool TryProject(Vector2 tile, sbyte level, float height, out Vector2 ui)
+        {
+            if (World.State.Cameras.ActiveType != CameraControllerType._2D)
+            {
+                var p = World.ProjectTileToScreenWithDepth(tile, level, height);
+                ui = ToUI(new Vector2(p.X, p.Y));
+                return p.Z >= 0 && p.Z <= 1 && !float.IsNaN(p.X) && !float.IsNaN(p.Y);
+            }
+            ui = ToUI(World.ProjectTileToScreen(tile, level, height));
+            return true;
+        }
+
+        /// <summary>Projects the floor oval: its centre (<see cref="MarkerBase"/>) and points round it.</summary>
+        private void SetFloorRing(Vector2 tile, sbyte level, float rx, float ry)
+        {
+            MarkerBase = TryProject(tile, level, 0, out var centre) ? centre : (Vector2?)null;
+            for (int i = 0; i < RingSegments; i++)
+            {
+                var t = i * Math.PI * 2 / RingSegments;
+                var point = tile + new Vector2(rx * (float)Math.Cos(t), ry * (float)Math.Sin(t));
+                RingPoints[i] = TryProject(point, level, 0, out var ui) ? ui : new Vector2(float.NaN);
+            }
         }
 
         public override void Draw(UISpriteBatch batch)
@@ -1111,13 +1155,12 @@ namespace Simitone.Client.UI.Panels
             if (Target == null) color = Color.White;
             else color = TargetHasInteractions ? PadDraw.Accent : new Color(255, 96, 86);
 
-            //the ring, lying on the floor: a circle's radii projected, drawn as the ellipse they span
-            var ring = PadGraphics.GetFloorRing(gd);
-            var (angle, major, minor) = PadMath.EllipseFromAxes(RingAxisX, RingAxisY);
-            var breathe = 1f + 0.04f * (float)Math.Sin(AnimTime * 4);
-            var ringScale = new Vector2(major, minor) * (breathe / PadGraphics.FloorRingRadius);
-            DrawLocalTexture(batch, ring, null, GlobalPoint(MarkerBase.Value), ringScale, color * pulse, angle,
-                new Vector2(ring.Width, ring.Height) / 2);
+            //the ring on the floor: a line through the projected points, the same thickness at any zoom or angle
+            var line = PadGraphics.GetLine(gd);
+            var band = RingBand * (1f + 0.12f * (float)Math.Sin(AnimTime * 4));
+            DrawRing(batch, line, band * 3.2f, color * (0.22f * pulse), false); //glow
+            DrawRing(batch, line, band + 3f, Color.Black * 0.45f, false); //dark rim, for light floors
+            DrawRing(batch, line, band, color * pulse, true);
 
             if (MarkerTop != null)
             {
@@ -1125,9 +1168,10 @@ namespace Simitone.Client.UI.Panels
                 var beam = PadGraphics.GetBeam(gd);
                 var up = MarkerTop.Value - MarkerBase.Value;
                 var length = up.Length();
+                var reach = float.IsNaN(RingPoints[0].X) ? 20f : Vector2.Distance(MarkerBase.Value, RingPoints[0]);
                 if (length > 4)
                 {
-                    var width = Math.Max(12f, Math.Min(46f, minor * 0.9f));
+                    var width = Math.Max(10f, Math.Min(36f, reach * 0.5f));
                     var beamAngle = (float)Math.Atan2(up.X, -up.Y);
                     DrawLocalTexture(batch, beam, null, GlobalPoint(MarkerBase.Value), new Vector2(width / beam.Width, length / beam.Height),
                         color * 0.65f, beamAngle, new Vector2(beam.Width / 2f, beam.Height));
@@ -1139,6 +1183,31 @@ namespace Simitone.Client.UI.Panels
                 var bob = (float)Math.Sin(AnimTime * 3) * 4;
                 DrawLocalTexture(batch, note, null, GlobalPoint(MarkerTop.Value) - new Vector2(note.Width * noteScale / 2f, note.Height * noteScale - bob),
                     new Vector2(noteScale), color);
+            }
+        }
+
+        /// <summary>
+        /// Draws the floor ring as segments between its projected points, skipping any it can't see (behind the
+        /// camera, or so far off screen the projection is meaningless).
+        /// </summary>
+        /// <param name="overlap">Lengthen segments a little so an opaque line has no gaps at the joins.</param>
+        private void DrawRing(UISpriteBatch batch, Microsoft.Xna.Framework.Graphics.Texture2D line, float thickness, Color color, bool overlap)
+        {
+            var limit = new Rectangle((int)(-ScreenWidth), (int)(-ScreenHeight), (int)(ScreenWidth * 3), (int)(ScreenHeight * 3));
+            for (int i = 0; i < RingSegments; i++)
+            {
+                var a = RingPoints[i];
+                var b = RingPoints[(i + 1) % RingSegments];
+                if (float.IsNaN(a.X) || float.IsNaN(b.X)) continue;
+                if (!limit.Contains(a.ToPoint()) || !limit.Contains(b.ToPoint())) continue;
+                var d = b - a;
+                var length = d.Length();
+                if (length < 0.01f) continue;
+                var dir = d / length;
+                var extend = overlap ? thickness * 0.3f : 0f;
+                var start = a - dir * extend;
+                DrawLocalTexture(batch, line, null, GlobalPoint(start), new Vector2((length + extend * 2) / line.Width, thickness / line.Height),
+                    color, (float)Math.Atan2(d.Y, d.X), new Vector2(0, line.Height / 2f));
             }
         }
 

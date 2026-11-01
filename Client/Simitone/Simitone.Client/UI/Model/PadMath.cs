@@ -150,33 +150,16 @@ namespace Simitone.Client.UI.Model
         }
 
         /// <summary>
-        /// The ellipse a circle becomes on screen, from the screen vectors of its two radii (e.g. a floor circle's
-        /// +X and +Y tile radii, projected): returns the major axis's angle in radians and the two semi-axis lengths.
+        /// An oval on the floor hugging a footprint (1/16 tile units): centred on it, with semi-axes along X and Y of
+        /// the half-extents times <paramref name="grow"/> plus <paramref name="margin"/> tiles, each kept within
+        /// <paramref name="min"/>..<paramref name="max"/>.
         /// </summary>
-        public static (float angle, float major, float minor) EllipseFromAxes(Vector2 a, Vector2 b)
-        {
-            //singular values of [a b]: square roots of the eigenvalues of M*M^T
-            var p = a.X * a.X + b.X * b.X;
-            var q = a.X * a.Y + b.X * b.Y;
-            var r = a.Y * a.Y + b.Y * b.Y;
-            var mid = (p + r) / 2;
-            var spread = (float)Math.Sqrt((p - r) * (p - r) / 4 + q * q);
-            var major = (float)Math.Sqrt(Math.Max(0, mid + spread));
-            var minor = (float)Math.Sqrt(Math.Max(0, mid - spread));
-            var angle = 0.5f * (float)Math.Atan2(2 * q, p - r);
-            return (angle, major, minor);
-        }
-
-        /// <summary>
-        /// A circle on the floor around a footprint (1/16 tile units): centred on it, reaching its corners plus
-        /// <paramref name="margin"/> tiles, at least <paramref name="min"/> and at most <paramref name="max"/>.
-        /// </summary>
-        public static (Vector2 centre, float radius) EnclosingCircle(int x1, int y1, int x2, int y2, float margin, float min, float max)
+        public static (Vector2 centre, float rx, float ry) FootprintEllipse(int x1, int y1, int x2, int y2,
+            float grow, float margin, float min, float max)
         {
             var centre = new Vector2(x1 + x2, y1 + y2) / 32f;
-            var half = new Vector2(x2 - x1, y2 - y1) / 32f;
-            var radius = Math.Max(min, Math.Min(max, half.Length() + margin));
-            return (centre, radius);
+            float Axis(int length) => Math.Max(min, Math.Min(max, length / 32f * grow + margin));
+            return (centre, Axis(x2 - x1), Axis(y2 - y1));
         }
 
         /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>

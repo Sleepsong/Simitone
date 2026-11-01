@@ -894,11 +894,19 @@ Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_
 
 | Feedback | Change |
 |---|---|
-| The selection circle floated above objects (at their height: a mirror's ring hung on the wall) and was small | The ring now lies on the floor, projected properly so it's flat in 2D and 3D, and surrounds the whole target: every tile of a multi-tile object, or a person-sized circle round a Sim. It's bolder, with a dark rim so it reads on light floors, a soft glow and faint fill, and a gentle pulse. A soft beam rises from it to the target (so things on counters and walls connect to their ring), with the Simitone note at the top. Green: has actions. Red: none. White: empty floor (Go here). |
+| The selection circle floated above objects (at their height: a mirror's ring hung on the wall) and was small | The ring now lies on the floor and surrounds the target (sizing reworked in the third round, below). It's bolder, with a dark rim so it reads on light floors, a soft glow, and a gentle pulse. A soft beam rises from it to the target (so things on counters and walls connect to their ring), with the Simitone note at the top. Green: has actions. Red: none. White: empty floor (Go here). |
 | "There are no actions available" appeared far from the target | That was the pie menu's error tooltip, placed for the mouse. With the pad, A on a target with no actions now says "No actions available." as a message, and the menu's other errors (can't go there, for sale) show the same way. |
 | How do you change wall height with the pad? | L3 (press the left stick) cycles walls down, cutaway, up and roofs, as it has since Phase 2. It wasn't in the prompt bar; now it is (live mode, and buy/build with nothing held), and each press names the new setting. |
 
-Changes in code: `PadMath.EllipseFromAxes` (the ellipse a projected circle makes) and `EnclosingCircle` (a circle round a footprint), `PadGraphics.GetFloorRing`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`. The harness has 302 checks, covering the ellipse (including a skewed projection: every projected point lands on the ellipse drawn) and the circle sizes.
+### Third round: the ring
+
+| Feedback | Change |
+|---|---|
+| The ring was far too big | It was a circle round the diagonal of the whole object group, and stairs, railings and long counters are huge groups. Now it's an oval hugging the footprint: the whole object only if it's at most 2x2 tiles (a sofa, a bed), otherwise just the tile pointed at. One tile gives a ring just over a tile across, and a Sim a small circle. |
+| It looked odd at some camera angles, and huge and blurry close up | It was one ring texture stretched over the ellipse that the circle's two projected radii span: only approximately right in 3D, and its band grew with it. It's now a line through 48 points round the oval, each projected exactly, with a fixed thickness on screen: a glow, a dark rim, then the bright band. Points behind a 3D camera are skipped, using a new engine projection that keeps depth (`World.ProjectTileToScreenWithDepth`, engine `simitone/controller-phase7`). |
+| The beam was slanted, and the note sat far above the target | The beam went from the ring's centre to the targeted tile, and the height counted the lot's terrain twice: `VisualPosition.Z` already includes it, and the projection adds it again. The beam now goes straight up from the ring's centre. Its height counts only what the item sits on (a counter or shelf), measured from the bottom of that stack. |
+
+Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 
 ### To check on hardware
 

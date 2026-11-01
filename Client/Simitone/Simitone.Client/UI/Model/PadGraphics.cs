@@ -38,32 +38,18 @@ namespace Simitone.Client.UI.Model
             return Ring;
         }
 
-        private static Texture2D FloorRing;
         private static Texture2D Beam;
-
-        /// <summary>Radius, in texture pixels, of the bright band of <see cref="GetFloorRing"/>: scale by this.</summary>
-        public const float FloorRingRadius = 56f;
+        private static Texture2D Line;
 
         /// <summary>
-        /// 128x128 selection ring for the floor: a bold white band with a dark rim outside it (so it reads on light
-        /// floors), a soft glow inside it and a faint fill. Drawn squashed to lie on the floor.
+        /// 4x16 white line segment with soft (anti-aliased) long edges: stretched along its length and scaled across
+        /// it to draw lines of any thickness, e.g. the floor selection ring.
         /// </summary>
-        public static Texture2D GetFloorRing(GraphicsDevice gd)
+        public static Texture2D GetLine(GraphicsDevice gd)
         {
-            if (FloorRing == null || FloorRing.IsDisposed)
-            {
-                FloorRing = Generate(gd, 128, 128, (x, y) =>
-                {
-                    var d = Vector2.Distance(Centre(x, y), new Vector2(64, 64));
-                    var band = Coverage(Math.Abs(d - FloorRingRadius) - 5f); //bright band, 10px wide
-                    var rim = Coverage(Math.Abs(d - (FloorRingRadius + 6.5f)) - 2f) * 0.6f; //dark edge outside it
-                    var glow = (d < FloorRingRadius) ? 0.35f * (float)Math.Exp(-(FloorRingRadius - 5f - d) / 7f) : 0f;
-                    var fill = (d < FloorRingRadius) ? 0.1f : 0f;
-                    var bright = Math.Max(band, Math.Max(glow, fill));
-                    return (Math.Max(bright, rim), bright);
-                });
-            }
-            return FloorRing;
+            if (Line == null || Line.IsDisposed)
+                Line = GenerateMask(gd, 4, 16, (x, y) => Coverage(Math.Abs(y + 0.5f - 8f) - 6.5f));
+            return Line;
         }
 
         /// <summary>32x128 soft vertical light beam: brightest at the bottom, fading out towards the top and the sides.</summary>
