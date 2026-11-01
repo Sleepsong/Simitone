@@ -468,6 +468,7 @@ namespace Simitone.Client.UI.Screens
             Add(FamiliesPanel);
 
             BackButton = new UITwoStateButton(ui.Get("btn_back.png").Get(gd));
+            BackButton.Tooltip = "Back";
             BackButton.Position = new Vector2(25, ScreenHeight - 140);
             Add(BackButton);
 
@@ -479,8 +480,10 @@ namespace Simitone.Client.UI.Screens
             AcceptButton.OnButtonClick += Accept;
 
             HeadPadTarget = new UICASCarouselPadTarget(StepHead);
+            HeadPadTarget.Tooltip = "Heads";
             Add(HeadPadTarget);
             BodyPadTarget = new UICASCarouselPadTarget(StepBody);
+            BodyPadTarget.Tooltip = "Bodies";
             Add(BodyPadTarget);
             PadNav = new UIScreenPadNavigator(() => (Dead || !Initialized) ? null : this);
             PadNav.Prompts = CASPrompts;
@@ -567,14 +570,24 @@ namespace Simitone.Client.UI.Screens
             if (pad.Pressed(PadAction.Start) && !AcceptButton.Disabled) Accept(AcceptButton);
         }
 
-        private string CASPrompts(GamePadInput pad)
+        private PadPrompt[] CASPrompts()
         {
-            string P(PadAction action) => PadGlyphs.ActionName(action, pad);
-            var basic = $"{P(PadAction.Confirm)} Select    {P(PadAction.Cancel)} Back";
-            var accept = AcceptButton.Disabled ? "" : $"    {P(PadAction.Start)} Accept";
+            var items = new List<PadPrompt>
+            {
+                PadPrompt.Of(PadAction.Confirm, "Select"),
+                PadPrompt.Of(PadAction.Cancel, "Back"),
+            };
             if (Mode == UICASMode.SimEdit)
-                return basic + $"    {P(PadAction.ShoulderLeft)}/{P(PadAction.ShoulderRight)} Head    {P(PadAction.TriggerLeft)}/{P(PadAction.TriggerRight)} Body" + accept;
-            return basic + accept;
+            {
+                items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Head"));
+                items.Add(PadPrompt.Pair(PadAction.TriggerLeft, PadAction.TriggerRight, "Body"));
+            }
+            if (!AcceptButton.Disabled)
+            {
+                var accept = (Mode == UICASMode.FamilySelect) ? "Move in" : (Mode == UICASMode.FamilyEdit) ? "Done" : "Accept";
+                items.Add(PadPrompt.Of(PadAction.Start, accept));
+            }
+            return items.ToArray();
         }
 
         /// <summary>Turns the head carousel one place (1 = the next one along, as dragging left does).</summary>
@@ -763,6 +776,7 @@ namespace Simitone.Client.UI.Screens
             FamiliesPanel.SetSelection(-1);
             if (mode == UICASMode.FamilySelect) AcceptButton.Texture = Content.Get().CustomUI.Get("btn_movein.png").Get(GameFacade.GraphicsDevice);
             else AcceptButton.Texture = Content.Get().CustomUI.Get("btn_accept.png").Get(GameFacade.GraphicsDevice);
+            AcceptButton.Tooltip = (mode == UICASMode.FamilySelect) ? "Move in" : (mode == UICASMode.FamilyEdit) ? "Done" : "Accept";
 
             GameFacade.Screens.Tween.To(this, 1f, new Dictionary<string, float> { { "FamilySimInterp", (int)mode-1 } }, TweenQuad.EaseInOut);
             Mode = mode;

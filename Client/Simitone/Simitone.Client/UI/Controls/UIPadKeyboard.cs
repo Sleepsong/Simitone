@@ -29,7 +29,7 @@ namespace Simitone.Client.UI.Controls
         private const int Gap = 6;
         private const int Margin = 14;
         private const int PreviewHeight = 34;
-        private const int HintHeight = 22;
+        private const int HintHeight = 30;
         private const int PreviewChars = 48;
 
         private readonly PadKeyboardLayout Layout = new PadKeyboardLayout();
@@ -38,7 +38,7 @@ namespace Simitone.Client.UI.Controls
         private bool Shown;
         private float Time;
         private Vector2 Origin; //top-left of the panel, UI units
-        private string Hints = "";
+        private GamePadInput LastPad;
 
         private Texture2D Px;
         private TextStyle KeyStyle;
@@ -98,8 +98,7 @@ namespace Simitone.Client.UI.Controls
             var height = PanelHeight;
             Origin = new Vector2((screen.ScreenWidth - width) / 2f, screen.ScreenHeight - height - 16);
             ScaleX = ScaleY = FSOEnvironment.DPIScaleFactor;
-            string P(PadAction action) => PadGlyphs.ActionName(action, pad);
-            Hints = $"{P(PadAction.Confirm)} type    {P(PadAction.Cancel)} delete    {P(PadAction.FaceTop)} space    {P(PadAction.FaceLeft)} shift    {P(PadAction.Start)} done";
+            LastPad = pad;
         }
 
         private void Press(PadKey key, UpdateState state)
@@ -154,21 +153,25 @@ namespace Simitone.Client.UI.Controls
         {
             if (!Shown || Target == null) return;
             EnsureResources();
+            var gd = GameFacade.GraphicsDevice;
+            var rounded = PadGraphics.GetRounded(gd);
 
             var width = PanelWidth;
             var height = PanelHeight;
-            Rect(batch, Origin, new Vector2(width, height), UIStyle.Current.Bg);
+            PadDraw.DrawPanel(this, batch, ToRect(Origin, new Vector2(width, height)));
 
             //what's been typed (the box itself may be under the keyboard)
             var text = Target.CurrentText.Replace("\r", "").Replace('\n', ' ');
             if (text.Length > PreviewChars) text = "..." + text.Substring(text.Length - PreviewChars);
             var caret = ((int)(Time * 2) % 2 == 0) ? "_" : " ";
             var previewPos = Origin + new Vector2(Margin, Margin);
-            Rect(batch, previewPos, new Vector2(width - Margin * 2, PreviewHeight), Color.Black * 0.5f);
+            var previewRect = ToRect(previewPos, new Vector2(width - Margin * 2, PreviewHeight));
+            PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, previewRect, Color.Black * 0.45f);
             DrawLocalString(batch, text + caret, Vector2.Zero, PreviewStyle,
-                ToRect(previewPos + new Vector2(10, 0), new Vector2(width - Margin * 2 - 20, PreviewHeight)), TextAlignment.Left | TextAlignment.Middle);
+                ToRect(previewPos + new Vector2(12, 0), new Vector2(width - Margin * 2 - 24, PreviewHeight)), TextAlignment.Left | TextAlignment.Middle);
 
             var keysTop = previewPos.Y + PreviewHeight + Gap;
+            Rectangle? focusedRect = null;
             for (int r = 0; r < Layout.Rows.Count; r++)
             {
                 var row = Layout.Rows[r];
@@ -177,20 +180,53 @@ namespace Simitone.Client.UI.Controls
                     var key = row[i];
                     var pos = new Vector2(Origin.X + Margin + key.Column * (KeySize + Gap), keysTop + r * (KeySize + Gap));
                     var size = new Vector2(key.Width * KeySize + (key.Width - 1) * Gap, KeySize);
+                    var rect = ToRect(pos, size);
                     var focused = r == Layout.Row && i == Layout.Index;
                     var on = key.Action == PadKeyAction.Shift && Shift;
-                    var fill = focused ? UIStyle.Current.ActiveSelection : (on ? UIStyle.Current.SecondaryText * 0.6f : Color.White * 0.15f);
-                    Rect(batch, pos, size, fill);
+                    if (focused) focusedRect = rect;
+                    var fill = focused ? PadDraw.Plumbob : (on ? PadDraw.Plumbob * 0.45f : Color.White * 0.13f);
+                    PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, rect, fill);
 
                     var label = (key.Action == PadKeyAction.Char) ? key.Type(Shift) : key.Label;
-                    KeyStyle.Color = focused ? Color.Black : UIStyle.Current.Text;
-                    DrawLocalString(batch, label, Vector2.Zero, KeyStyle, ToRect(pos, size), TextAlignment.Center | TextAlignment.Middle);
+                    KeyStyle.Color = focused ? PadDraw.Dark : Color.White;
+                    DrawLocalString(batch, label, Vector2.Zero, KeyStyle, rect, TextAlignment.Center | TextAlignment.Middle);
                 }
             }
+            if (focusedRect != null)
+            {
+                var glow = focusedRect.Value;
+                glow.Inflate(PadGraphics.GlowInset + 2, PadGraphics.GlowInset + 2);
+                var pulse = 0.8f + 0.2f * (float)Math.Sin(Time * 5);
+                PadDraw.NineSlice(this, batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, glow, PadDraw.Plumbob * pulse);
+            }
 
-            var hintPos = new Vector2(Origin.X + Margin, keysTop + Layout.Rows.Count * (KeySize + Gap));
-            DrawLocalString(batch, Hints, Vector2.Zero, HintStyle,
-                ToRect(hintPos, new Vector2(width - Margin * 2, HintHeight)), TextAlignment.Center | TextAlignment.Middle);
+            //button prompts along the bottom, centred
+            var hintTop = keysTop + Layout.Rows.Count * (KeySize + Gap);
+            var prompts = new[]
+            {
+                PadPrompt.Of(PadAction.Confirm, "Type"),
+                PadPrompt.Of(PadAction.Cancel, "Delete"),
+                PadPrompt.Of(PadAction.FaceTop, "Space"),
+                PadPrompt.Of(PadAction.FaceLeft, "Shift"),
+                PadPrompt.Of(PadAction.Start, "Done"),
+            };
+            const float glyph = 22f, labelGap = 6f, spacing = 18f;
+            var total = 0f;
+            var widths = new float[prompts.Length];
+            for (int i = 0; i < prompts.Length; i++)
+            {
+                widths[i] = PadDraw.DrawPromptButtons(this, null, prompts[i], LastPad, 0, 0, glyph) + labelGap + HintStyle.MeasureString(prompts[i].Label).X;
+                total += widths[i] + ((i > 0) ? spacing : 0);
+            }
+            var x = Origin.X + (width - total) / 2f;
+            var centreY = hintTop + HintHeight / 2f;
+            for (int i = 0; i < prompts.Length; i++)
+            {
+                var icon = PadDraw.DrawPromptButtons(this, batch, prompts[i], LastPad, x, centreY, glyph);
+                DrawLocalString(batch, prompts[i].Label, Vector2.Zero, HintStyle,
+                    ToRect(new Vector2(x + icon + labelGap, hintTop), new Vector2(widths[i] - icon - labelGap + 4, HintHeight)), TextAlignment.Left | TextAlignment.Middle);
+                x += widths[i] + spacing;
+            }
         }
 
         private void Rect(UISpriteBatch batch, Vector2 pos, Vector2 size, Color color)
@@ -213,8 +249,8 @@ namespace Simitone.Client.UI.Controls
             PreviewStyle.Size = 16;
             PreviewStyle.Color = UIStyle.Current.Text;
             HintStyle = TextStyle.DefaultLabel.Clone();
-            HintStyle.Size = 11;
-            HintStyle.Color = UIStyle.Current.Text * 0.8f;
+            HintStyle.Size = 12;
+            HintStyle.Color = Color.White;
         }
     }
 }

@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–6 are done. The engine changes are on `simitone/controller-phase6` in `Sleepsong/FreeSO` (which includes Phases 1–5), and the submodule points at it (see §10–§15). Phases 1–5 have been tested on hardware (§11–§14). Phase 6 hasn't been yet.
+**Status:** Phases 1–7 are done. The engine changes are on `simitone/controller-phase7` in `Sleepsong/FreeSO` (which includes Phases 1–6), and the submodule points at it (see §10–§16). Phases 1–6 have been tested on hardware (§11–§15). Phase 7 hasn't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -260,6 +260,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | 4 ✅ | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 ✅ | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
 | 6 ✅ | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
+| 7 ✅ | UI polish and bug fixes (added after Phase 6 testing) | <ul><li>Focus and prompts look and read like a console Sims game.</li><li>The neighbourhood view lays out correctly at any window size.</li></ul> |
 
 Phase 1 is the right first PR. It is small, stays inside the engine, is testable, and everything else depends on it.
 
@@ -795,7 +796,11 @@ Not done from S7: a settings screen (these are `config.ini` keys) and a separate
 - `UITextEdit` can't be constructed without graphics, so `PadType`/`PadBackspace` have no harness coverage; they were checked by reading them against `ApplyKeyboardInput`.
 - **Not yet tested in the running game.**
 
-### To check on hardware
+### Hardware results
+
+Everything worked except the focus outline on the neighbourhood's round buttons, which sat down and to the right of them, and those buttons themselves were out of place (fixed in Phase 7, §16).
+
+### To check on hardware (done)
 
 1. Start up: the neighbourhood map takes the pad without the virtual cursor. Move between houses (they open up as focused), A opens a house, B closes it, and More/Back work.
 2. Move to the CAS button at the left edge and press A.
@@ -805,3 +810,82 @@ Not done from S7: a settings screen (these are `config.ini` keys) and a separate
 6. In buy mode, LT into the catalog and Y to search, then type a few letters. The list should filter as you type.
 7. Name a baby or pet if you can: the keyboard should be up as the dialog opens. Done, then OK with the pad.
 8. With a PlayStation pad (or `GamePadGlyphs = playstation`), the prompts say Cross/Circle.
+
+---
+
+## 16. Phase 7 — UI polish and bug fixes
+
+Engine commit `da2f2f2` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+
+### Focus highlight
+
+The yellow box is gone. Focus is now shown as:
+
+- a soft plumbob-green frame with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
+- a small plumbob bobbing over the focused control, where there's room above it and the control isn't a large area (a carousel, a whole list).
+- round buttons (the neighbourhood buttons, family portraits) grow a little, as they do under the mouse. The focused house on the map opens up, as before.
+
+The engine draws it through a new hook (`UIFocusNavigator.FocusRenderer`), so it applies everywhere: dialogs, panels, the catalog, the neighbourhood and CAS. The on-screen keyboard uses the same green for its focused key.
+
+### Button prompts
+
+A prompt bar shows the buttons that do something right now, with drawn button icons. Xbox naming gets coloured A/B/X/Y discs; PlayStation naming gets the cross, circle, square and triangle symbols. LB/RT and similar are pills, and sticks and the D-pad have their own icons. Like the Phase 6 text prompts, they follow the bindings and the pad's naming. All of it is drawn in code; there's no console artwork.
+
+| Where | Prompts |
+|---|---|
+| Live, cursor mode | Move; A Interact or Go here; X Direct control (3D); Y Actions; LT Needs; LB/RB Switch Sim |
+| Live, direct control | Walk; A Interact (with something in front); X Cursor; Y Actions; LT Needs; LB/RB Switch Sim |
+| Pie menu | Point; A Choose; B Back |
+| Action queue | Choose; A Cancel action; B Back |
+| Needs panel focused | Move; A Select; B Back; RT Next tab |
+| Options | Move; A Select; B Back to live |
+| Buy/build, nothing held | Move; A Pick up; X Eyedropper; LT Catalog; Back Mode |
+| Buy/build, holding an object | Move; A Place; LB/RB Rotate; Y Sell; B Put back |
+| Buy/build, using a tool | Move; A Use (hold to drag); X Whole room (hold); Y Erase (hold); B Put away |
+| Catalog | Browse; A Open, Buy or Choose; B Back; Y Search; RT Category; LT Lot |
+| Neighbourhood | Move; A Visit house. In the house panel: Move; A Select; B Back |
+| CAS | A Select; B Back; LB/RB Head and LT/RT Body in Sim edit; Start Move in, Done or Accept when available |
+| Any dialog | A Select; B Back |
+| On-screen keyboard | Its own row: A Type, B Delete, Y Space, X Shift, Start Done |
+
+In a lot the bar sits at the bottom right, above the main panel when it's open: the clock and queue have the top, and the mode button and money the bottom left. Elsewhere it's at the bottom centre. It's only shown while the pad is the device in use.
+
+### Tooltips
+
+The focused control's name shows in a bubble over it. Icon-only buttons now have names, which mouse hover also shows:
+
+- neighbourhood buttons: Create a family, Back to the neighborhood, Downtown, Vacation Island, Studio Town, Magic Town
+- houses on the map: lot name, plus the family living there
+- the main panel's tabs: Needs, Job, Personality, Relationships, Inventory; the eight buy categories; the three build ones; Options
+- mode buttons: Live mode, Buy mode, Build mode, Options
+- CAS: Back, Accept (Move in, Done or Accept by mode), Create a new family, Delete family, the Appearance, Personality and Biography tabs, gender, age, skin and Random Sim, Edit/Delete Sim, and Heads/Bodies on the carousels
+
+### Toasts and keyboard
+
+Lot messages ("Direct control", "Cursor mode", "Pick it up with A, then Y sells it.", "Direct control needs the 3D camera.") show in a rounded panel that fades out, instead of a tooltip. The keyboard has the same rounded Sims-blue panel and rounded keys, and button icons on its hint row.
+
+### Bug fixes
+
+| Bug | Fix |
+|---|---|
+| The focus outline on round (elastic) buttons sat down and to the right of them | They're drawn and clicked centred on their position, but reported their bounds from the top-left. `UIElasticButton.GetBounds` is now centred. This also fixes family portraits in CAS and the house panel. |
+| The neighbourhood's right-hand buttons stayed where the window's first size put them | `UINeighbourhoodSwitcher` re-lays them out on resize. |
+| The house panel kept the layout of the size it opened at | It's reopened at the new size after a resize (on the next update, not mid-resize). |
+| The map overflowed the sides of screens narrower than 4:3 | It fits whichever dimension is tighter. |
+| The house panel drew over its own focus highlight | The screen navigator keeps itself on top of anything added after it. |
+| The focus highlight and tooltip showed under the on-screen keyboard | Both stand down while typing. |
+
+### Verification
+
+- The full desktop build succeeds.
+- The harness now has 294 checks; the new ones cover the prompt bar's per-frame model. The drawing itself needs a graphics device, so the generated shapes (glow frame, plumbob, discs, the four symbols, stick ring, D-pad) were checked by rendering the same distance maths offline.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. The neighbourhood: the green frame and plumbob on houses and buttons, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
+2. The prompt bar on the neighbourhood, CAS (each mode) and in a lot (live, pie menu, queue, needs panel, buy/build with nothing, an object, then a tool, the catalog).
+3. With a PlayStation pad, or `GamePadGlyphs = playstation`: the symbols instead of letters.
+4. The keyboard's look, and that no highlight or bubble shows under it.
+5. Mouse hover on the neighbourhood buttons, mode buttons and catalog tabs shows their names.
+6. The lot toasts (X in 2D, X in 3D).

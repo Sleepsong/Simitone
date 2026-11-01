@@ -83,36 +83,36 @@ namespace Simitone.Client.UI.Panels
 
         private List<UICategory> LiveCategories = new List<UICategory>()
         {
-            new UICategory() { ID = 0, IconName = "live_motives.png" },
-            new UICategory() { ID = 1, IconName = "live_job.png" },
-            new UICategory() { ID = 2, IconName = "live_personality.png" },
-            new UICategory() { ID = 3, IconName = "live_relationships.png" },
-            new UICategory() { ID = 4, IconName = "live_inventory.png" }
+            new UICategory() { ID = 0, IconName = "live_motives.png", Name = "Needs" },
+            new UICategory() { ID = 1, IconName = "live_job.png", Name = "Job" },
+            new UICategory() { ID = 2, IconName = "live_personality.png", Name = "Personality" },
+            new UICategory() { ID = 3, IconName = "live_relationships.png", Name = "Relationships" },
+            new UICategory() { ID = 4, IconName = "live_inventory.png", Name = "Inventory" }
         };
 
 
         private List<UICategory> BuyCategories = new List<UICategory>()
         {
-            new UICategory() { ID = 0, IconName = "cat_seat.png" },
-            new UICategory() { ID = 1, IconName = "cat_surf.png" },
-            new UICategory() { ID = 2, IconName = "cat_appl.png" },
-            new UICategory() { ID = 3, IconName = "cat_elec.png" },
-            new UICategory() { ID = 4, IconName = "cat_plum.png" },
-            new UICategory() { ID = 5, IconName = "cat_deco.png" },
-            new UICategory() { ID = 6, IconName = "cat_misc.png" },
-            new UICategory() { ID = 7, IconName = "cat_ligt.png" },
+            new UICategory() { ID = 0, IconName = "cat_seat.png", Name = "Seating" },
+            new UICategory() { ID = 1, IconName = "cat_surf.png", Name = "Surfaces" },
+            new UICategory() { ID = 2, IconName = "cat_appl.png", Name = "Appliances" },
+            new UICategory() { ID = 3, IconName = "cat_elec.png", Name = "Electronics" },
+            new UICategory() { ID = 4, IconName = "cat_plum.png", Name = "Plumbing" },
+            new UICategory() { ID = 5, IconName = "cat_deco.png", Name = "Decorative" },
+            new UICategory() { ID = 6, IconName = "cat_misc.png", Name = "Miscellaneous" },
+            new UICategory() { ID = 7, IconName = "cat_ligt.png", Name = "Lighting" },
         };
 
         private List<UICategory> BuildCategories = new List<UICategory>()
         {
-            new UICategory() { ID = 0, IconName = "cat_build_arch.png" },
-            new UICategory() { ID = 1, IconName = "cat_build_outs.png" },
-            new UICategory() { ID = 2, IconName = "cat_build_objs.png" },
+            new UICategory() { ID = 0, IconName = "cat_build_arch.png", Name = "Walls, floors and roofs" },
+            new UICategory() { ID = 1, IconName = "cat_build_outs.png", Name = "Outdoors" },
+            new UICategory() { ID = 2, IconName = "cat_build_objs.png", Name = "Doors, windows and more" },
         };
 
         private List<UICategory> OptionsCategories = new List<UICategory>()
         {
-            new UICategory() { ID = 0, IconName = "cat_build_arch.png" },
+            new UICategory() { ID = 0, IconName = "cat_build_arch.png", Name = "Options" },
         };
 
         public UIMainPanel(TS1GameScreen game) : base()

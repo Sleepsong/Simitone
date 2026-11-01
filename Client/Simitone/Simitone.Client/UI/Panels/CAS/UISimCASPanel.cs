@@ -65,16 +65,19 @@ namespace Simitone.Client.UI.Panels.CAS
             var gd = GameFacade.GraphicsDevice;
 
             SimTabButton = new UIStencilButton(ui.Get("cas_sim.png").Get(gd));
+            SimTabButton.Tooltip = "Appearance";
             SimTabButton.Position = new Vector2();
             SimTabButton.OnButtonClick += (btn) => { SetTab(0); };
             Add(SimTabButton);
 
             PersonalityTabButton = new UIStencilButton(ui.Get("cas_per.png").Get(gd));
+            PersonalityTabButton.Tooltip = "Personality";
             PersonalityTabButton.Position = new Vector2(0, 93);
             PersonalityTabButton.OnButtonClick += (btn) => { SetTab(1); };
             Add(PersonalityTabButton);
 
             BioTabButton = new UIStencilButton(ui.Get("cas_bio.png").Get(gd));
+            BioTabButton.Tooltip = "Biography";
             BioTabButton.Position = new Vector2(0, 186);
             BioTabButton.OnButtonClick += (btn) => { SetTab(2); };
             Add(BioTabButton);
@@ -118,37 +121,45 @@ namespace Simitone.Client.UI.Panels.CAS
             InitLabel(SimSkinTitle, 15);
 
             SimMaleBtn = new UIStencilButton(ui.Get("cas_male.png").Get(gd));
+            SimMaleBtn.Tooltip = "Male";
             SimMaleBtn.OnButtonClick += (btn) => ChangeType(0, 'm');
             SimMaleBtn.Position = new Vector2(113, 114);
             Add(SimMaleBtn);
             SimFemaleBtn = new UIStencilButton(ui.Get("cas_female.png").Get(gd));
+            SimFemaleBtn.Tooltip = "Female";
             SimFemaleBtn.OnButtonClick += (btn) => ChangeType(0, 'f');
             SimFemaleBtn.Position = new Vector2(113, 191);
             Add(SimFemaleBtn);
 
             SimAdultBtn = new UIStencilButton(ui.Get("cas_adult.png").Get(gd));
+            SimAdultBtn.Tooltip = "Adult";
             SimAdultBtn.OnButtonClick += (btn) => ChangeType(1, 'a');
             SimAdultBtn.Position = new Vector2(212, 114);
             Add(SimAdultBtn);
             SimChildBtn = new UIStencilButton(ui.Get("cas_child.png").Get(gd));
+            SimChildBtn.Tooltip = "Child";
             SimChildBtn.OnButtonClick += (btn) => ChangeType(1, 'c');
             SimChildBtn.Position = new Vector2(212, 191);
             Add(SimChildBtn);
 
             SimSkinLgtBtn = new UIStencilButton(ui.Get("cas_skinlgt.png").Get(gd));
+            SimSkinLgtBtn.Tooltip = "Light skin";
             SimSkinLgtBtn.OnButtonClick += (btn) => ChangeSkin("lgt");
             SimSkinLgtBtn.Position = new Vector2(302, 114);
             Add(SimSkinLgtBtn);
             SimSkinMedBtn = new UIStencilButton(ui.Get("cas_skinmed.png").Get(gd));
+            SimSkinMedBtn.Tooltip = "Medium skin";
             SimSkinMedBtn.OnButtonClick += (btn) => ChangeSkin("med");
             SimSkinMedBtn.Position = new Vector2(302, 164);
             Add(SimSkinMedBtn);
             SimSkinDrkBtn = new UIStencilButton(ui.Get("cas_skindrk.png").Get(gd));
+            SimSkinDrkBtn.Tooltip = "Dark skin";
             SimSkinDrkBtn.OnButtonClick += (btn) => ChangeSkin("drk");
             SimSkinDrkBtn.Position = new Vector2(302, 214);
             Add(SimSkinDrkBtn);
 
             SimRandomBtn = new UIStencilButton(ui.Get("cas_rand.png").Get(gd));
+            SimRandomBtn.Tooltip = "Random Sim";
             SimRandomBtn.Position = new Vector2(405, 142);
             SimRandomBtn.OnButtonClick += SimRandomBtn_OnButtonClick;
             Add(SimRandomBtn);

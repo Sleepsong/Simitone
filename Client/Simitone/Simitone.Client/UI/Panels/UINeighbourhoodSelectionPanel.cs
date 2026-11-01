@@ -136,7 +136,8 @@ namespace Simitone.Client.UI.Panels
         public void UpdatePosition()
         {
             base.GameResized();
-            var scale = GlobalSettings.Default.GraphicsHeight / 600.0f;
+            //the map is 800x600: fit it to the screen whichever way is tighter (narrower than 4:3 is width)
+            var scale = Math.Min(GlobalSettings.Default.GraphicsHeight / 600.0f, GlobalSettings.Default.GraphicsWidth / 800.0f);
             ScaleX = ScaleY = scale * Zoom;
 
             X = (GlobalSettings.Default.GraphicsWidth) / 2 - _cp.X * ScaleX;
@@ -146,6 +147,17 @@ namespace Simitone.Client.UI.Panels
         public override void GameResized()
         {
             UpdatePosition();
+            //the house panel is laid out for the screen size it was opened at: open it again at the new size
+            if (LastHS != null) GameThread.NextUpdate((state) => ReopenHousePanel());
+        }
+
+        private void ReopenHousePanel()
+        {
+            if (LastHS == null) return;
+            var house = LastHS.HouseID;
+            LastHS.Parent?.Remove(LastHS);
+            LastHS = null;
+            OpenHousePanel(house);
         }
 
         private Texture2D texture;
@@ -235,20 +247,25 @@ namespace Simitone.Client.UI.Panels
             else
             {
                 LastHS?.Kill();
-                LastHS = new UIHouseSelectPanel(house);
-                GameFacade.Screens.CurrentUIScreen.Add(LastHS);
-                GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
-                    { "Zoom", (Mode==4)?3f:1.5f },
-                    { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
-                    { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
-
-                LastHS.OnClose += ResetZoom;
-                LastHS.OnSelected += (h) =>
-                {
-                    OnHouseSelect?.Invoke(h);
-                    //HITVM.Get().PlaySoundEvent("bkground_fade");
-                };
+                OpenHousePanel(house);
             }
+        }
+
+        private void OpenHousePanel(int house)
+        {
+            LastHS = new UIHouseSelectPanel(house);
+            GameFacade.Screens.CurrentUIScreen.Add(LastHS);
+            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
+                { "Zoom", (Mode==4)?3f:1.5f },
+                { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
+                { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
+
+            LastHS.OnClose += ResetZoom;
+            LastHS.OnSelected += (h) =>
+            {
+                OnHouseSelect?.Invoke(h);
+                //HITVM.Get().PlaySoundEvent("bkground_fade");
+            };
         }
 
         public override void Removed()
@@ -349,10 +366,11 @@ namespace Simitone.Client.UI.Panels
 
         private readonly int HouseNumber;
         private readonly Action<int> SelectionCallback;
-        private Rectangle HitRect;
+        private Rectangle HitRect; //what the mouse reacts to: a band across the middle of the lot picture
+        private Rectangle DrawRect; //the lot picture as drawn
 
         public bool PadFocusable => Visible;
-        public Rectangle PadBounds => HitRect;
+        public Rectangle PadBounds => DrawRect; //the outline goes round the whole lot picture
         public bool PadMove(PadDirection direction) => false;
 
         public void PadActivate()
@@ -368,10 +386,35 @@ namespace Simitone.Client.UI.Panels
             if (hover) HITVM.Get().PlaySoundEvent(FSO.Client.UI.Model.UISounds.NeighborhoodRollover);
         }
 
+        /// <summary>"Lot name - Family name" for the gamepad focus tooltip (the street address if the lot has no name).</summary>
+        private static string HouseTitle(int houseNumber)
+        {
+            try
+            {
+                var neigh = Content.Get().Neighborhood;
+                var name = neigh.GetHouseNameDesc(houseNumber).Item1;
+                if (string.IsNullOrEmpty(name))
+                {
+                    var assignment = neigh.StreetNames.Get<STR>(2001)?.GetString(houseNumber - 1);
+                    if (int.TryParse(assignment, out var street))
+                        name = neigh.StreetNames.Get<STR>(2000).GetString(street - 1).Replace("%s", houseNumber.ToString());
+                }
+                var family = neigh.GetFamilyForHouse((short)houseNumber);
+                var familyName = family?.ChunkParent.Get<FAMs>(family.ChunkID)?.GetString(0);
+                if (!string.IsNullOrEmpty(familyName)) name = string.IsNullOrEmpty(name) ? familyName : name + " - " + familyName;
+                return name;
+            }
+            catch
+            {
+                return null; //a missing string isn't worth failing the neighbourhood over
+            }
+        }
+
         public UINeighborhoodHouseButton(int houseNumber, Action<int> selectionCallback, float scale)
         {
             HouseNumber = houseNumber;
             SelectionCallback = selectionCallback;
+            Tooltip = HouseTitle(houseNumber);
             if (houseNumber == 71) { }
             AlphaTime = 0;
             var house = Content.Get().Neighborhood.GetHouse(houseNumber);
@@ -391,6 +434,8 @@ namespace Simitone.Client.UI.Panels
             var w = (int)(HouseTex.Width / HouseScale);
             var h = (int)(HouseTex.Height / HouseScale);
             HitRect = new Rectangle(w / -2, w / -4, w, h / 2);
+            //as Draw places the closed picture
+            DrawRect = new Rectangle((int)((Offsets.XOff - Offsets.Width) / HouseScale), (int)((-Offsets.BaseYOff - Offsets.Height) / HouseScale), w, h);
             var clickHandler =
                 ListenForMouse(HitRect, (evt, state) =>
                 {

@@ -34,22 +34,26 @@ namespace Simitone.Client.UI.Panels
             btn.MotiveLevel = 0.5f;
             btn.Position = Vector2.Zero;
             btn.OnButtonClick += (b) => { SwitchMode(UIMainPanelMode.LIVE); };
+            btn.Tooltip = "Live mode";
             Add(btn);
             LiveButton = btn;
 
             BuildButton = new UIElasticButton(ui.Get("mode_build.png").Get(GameFacade.GraphicsDevice));
+            BuildButton.Tooltip = "Build mode";
             BuildButton.Position = btn.Position;
             BuildButton.OnButtonClick += (b) => { SwitchMode(UIMainPanelMode.BUILD); };
             BuildButton.Opacity = 0;
             Add(BuildButton);
 
             BuyButton = new UIElasticButton(ui.Get("mode_buy.png").Get(GameFacade.GraphicsDevice));
+            BuyButton.Tooltip = "Buy mode";
             BuyButton.Position = btn.Position;
             BuyButton.OnButtonClick += (b) => { SwitchMode(UIMainPanelMode.BUY); };
             BuyButton.Opacity = 0;
             Add(BuyButton);
 
             OptionButton = new UIElasticButton(ui.Get("mode_options.png").Get(GameFacade.GraphicsDevice));
+            OptionButton.Tooltip = "Options";
             OptionButton.Position = btn.Position;
             OptionButton.OnButtonClick += (b) => { SwitchMode(UIMainPanelMode.OPTIONS); };
             OptionButton.Opacity = 0;

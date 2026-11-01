@@ -27,6 +27,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.WorldUI;
 using Simitone.Client.Utils;
@@ -63,6 +64,9 @@ namespace Simitone.Client.UI.Screens
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
         private UIScreenPadNavigator NeighPadNav; //gamepad on the neighbourhood map and house panel
+
+        /// <summary>Showing the neighbourhood map (rather than a lot).</summary>
+        public bool InNeighbourhood => TS1NeighPanel != null && GetChildren().Contains(TS1NeighPanel);
         public FAMI ActiveFamily;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
@@ -266,7 +270,13 @@ namespace Simitone.Client.UI.Screens
 
             if (NeighPadNav != null) Remove(NeighPadNav);
             NeighPadNav = new UIScreenPadNavigator(NeighbourhoodPadScope);
-            NeighPadNav.Prompts = (pad) => $"{PadGlyphs.ActionName(PadAction.Confirm, pad)} Select    {PadGlyphs.ActionName(PadAction.Cancel, pad)} Back";
+            NeighPadNav.Prompts = () =>
+            {
+                var housePanel = TS1NeighPanel?.LastHS;
+                if (housePanel?.Parent != null && NeighPadNav.Navigator.Scope == housePanel)
+                    return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"), PadPrompt.Of(PadAction.Cancel, "Back") };
+                return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Visit house") };
+            };
             NeighPadNav.FocusChanged += (previous, current) =>
             {
                 (previous as UINeighborhoodHouseButton)?.SetPadHover(false);

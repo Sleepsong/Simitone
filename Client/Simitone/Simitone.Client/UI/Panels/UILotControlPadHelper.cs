@@ -16,6 +16,7 @@ using FSO.SimAntics.NetPlay.Model.Commands;
 using FSO.LotView.Utils.Camera;
 using Microsoft.Xna.Framework;
 using Simitone.Client.UI.Model;
+using Simitone.Client.UI.Controls;
 using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Screens;
 
@@ -123,8 +124,6 @@ namespace Simitone.Client.UI.Panels
         private bool DirectRunning;
         private Vector2? DirectCamera; //smoothed camera centre while in direct control
 
-        private string Hint; //short message shown near the top of the screen
-        private float HintTime;
         private int SpeedBeforePause = 1;
 
         private Vector2? MarkerBase; //UI coordinates, set in Update for Draw
@@ -164,7 +163,6 @@ namespace Simitone.Client.UI.Panels
             var is3D = World.State.Cameras.ActiveType == CameraControllerType._3D;
             SyncDirectControl(screen, (DirectMode && is3D && Master.LiveMode) ? Master.ActiveEntity as VMAvatar : null);
             SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = DirectFacing });
-            UpdateHint(state);
 
             ReleaseDetachedFocus(state);
             var lotHasPad = !GameFacade.Screens.HasModalDialog
@@ -203,6 +201,8 @@ namespace Simitone.Client.UI.Panels
             if (!PanelFocus) CatalogEmptyTime = 0;
             var selectionBefore = BuildSelection();
             if (panelNav) UpdatePanelNavigation(state, frontend, optionsNav);
+            if (optionsNav) PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"),
+                PadPrompt.Of(PadAction.Cancel, "Back to live"));
 
             if (buildMode)
             {
@@ -236,7 +236,11 @@ namespace Simitone.Client.UI.Panels
             var recentlyMoved = !direct && now - LastSelectorMove < CutawayFocusSeconds;
             CutawayFocus = recentlyMoved ? SelectorOrTargetTile() : new Vector2(active.VisualPosition.X, active.VisualPosition.Y);
 
-            if (Master.PieMenuOpen) return; //the pie menu reads the pad itself
+            if (Master.PieMenuOpen) //the pie menu reads the pad itself
+            {
+                PadPrompts.Set(PadPrompt.For(PadStick.Left, "Point"), PadPrompt.Of(PadAction.Confirm, "Choose"), PadPrompt.Of(PadAction.Cancel, "Back"));
+                return;
+            }
 
             var wasQueueFocus = QueueFocus;
             var wasPanelFocus = PanelFocus;
@@ -250,7 +254,14 @@ namespace Simitone.Client.UI.Panels
                     else MoveSelector(pad.LeftStick, dt, now);
                 }
             }
-            if (QueueFocus || PanelFocus || wasPanelFocus) return; //the stick and A belong to the panel
+            if (QueueFocus || PanelFocus || wasPanelFocus) //the stick and A belong to the panel
+            {
+                if (QueueFocus) PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Choose"), PadPrompt.Of(PadAction.Confirm, "Cancel action"),
+                    PadPrompt.Of(PadAction.Cancel, "Back"));
+                else PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"),
+                    PadPrompt.Of(PadAction.Cancel, "Back"), PadPrompt.Of(PadAction.TriggerRight, "Next tab"));
+                return;
+            }
 
             if (direct) UpdateTargetInFront(active);
             else UpdateTargetAtSelector(active);
@@ -258,6 +269,22 @@ namespace Simitone.Client.UI.Panels
             //the press that hands control to the pad only reveals the selector; it doesn't act on whatever is under it.
             //In direct control, A with nothing in front of the Sim does nothing (there's no "go here").
             if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm) && (!direct || Target != null)) OpenMenu(state);
+            SetLivePrompts(direct, is3D);
+        }
+
+        /// <summary>Prompts for live mode, cursor or direct control, naming what A does on the current target.</summary>
+        private void SetLivePrompts(bool direct, bool is3D)
+        {
+            var items = new System.Collections.Generic.List<PadPrompt>();
+            items.Add(PadPrompt.For(PadStick.Left, direct ? "Walk" : "Move"));
+            if (Target != null) items.Add(PadPrompt.Of(PadAction.Confirm, "Interact"));
+            else if (!direct) items.Add(PadPrompt.Of(PadAction.Confirm, "Go here"));
+            if (direct) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
+            else if (is3D) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Direct control"));
+            items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
+            items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
+            items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
+            PadPrompts.Set(items.ToArray());
         }
 
         #region Buy and build
@@ -297,6 +324,7 @@ namespace Simitone.Client.UI.Panels
             if (!PadActive || PanelFocus || catalogFocusBefore)
             {
                 EndBuildPointer(state); //nothing is dragged while the catalog or the mouse has control
+                if (PanelFocus) SetCatalogPrompts(frontend);
                 return;
             }
 
@@ -391,6 +419,45 @@ namespace Simitone.Client.UI.Panels
                 Master.SimulateMU(state);
                 holder.EyedropperMode = false;
             }
+            SetBuildPrompts(holder);
+        }
+
+        /// <summary>Prompts on the lot in buy/build mode, for what's in hand.</summary>
+        private void SetBuildPrompts(UIObjectHolder holder)
+        {
+            var move = PadPrompt.For(PadStick.Left, "Move");
+            if (holder.Holding != null)
+            {
+                PadPrompts.Set(move, PadPrompt.Of(PadAction.Confirm, "Place"),
+                    PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Rotate"),
+                    PadPrompt.Of(PadAction.FaceTop, "Sell"), PadPrompt.Of(PadAction.Cancel, "Put back"));
+            }
+            else if (Master.CustomControl != null)
+            {
+                PadPrompts.Set(move, PadPrompt.Of(PadAction.Confirm, "Use (hold to drag)"),
+                    PadPrompt.Of(PadAction.FaceLeft, "Whole room (hold)"), PadPrompt.Of(PadAction.FaceTop, "Erase (hold)"),
+                    PadPrompt.Of(PadAction.Cancel, "Put away"));
+            }
+            else
+            {
+                PadPrompts.Set(move, PadPrompt.Of(PadAction.Confirm, "Pick up"), PadPrompt.Of(PadAction.FaceLeft, "Eyedropper"),
+                    PadPrompt.Of(PadAction.TriggerLeft, "Catalog"), PadPrompt.Of(PadAction.Select, "Mode"));
+            }
+        }
+
+        /// <summary>Prompts while the catalog has the pad.</summary>
+        private void SetCatalogPrompts(UISimitoneFrontend frontend)
+        {
+            var browse = frontend.MainPanel.SubPanel as UIBuyBrowsePanel;
+            var items = new System.Collections.Generic.List<PadPrompt> { PadPrompt.For(PadStick.DPad, "Browse") };
+            if (browse != null && !browse.ChoosingSub)
+                items.Add(PadPrompt.Of(PadAction.Confirm, (browse.Mode == UICatalogMode.Build) ? "Choose" : "Buy"));
+            else items.Add(PadPrompt.Of(PadAction.Confirm, "Open"));
+            items.Add(PadPrompt.Of(PadAction.Cancel, "Back"));
+            if (frontend.MainPanel.VisibleSearchField != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
+            items.Add(PadPrompt.Of(PadAction.TriggerRight, "Category"));
+            items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Lot"));
+            PadPrompts.Set(items.ToArray());
         }
 
         /// <summary>Lets go of anything the pad is pressing on the lot (A or the eyedropper).</summary>
@@ -509,23 +576,10 @@ namespace Simitone.Client.UI.Panels
             if (DirectAvatar?.Thread?.Stack.LastOrDefault() is VMDirectControlFrame frame) frame.SendUserControls(input);
         }
 
-        private void ShowHint(string text)
+        /// <summary>A short message on screen (the pad overlay's toast).</summary>
+        private static void ShowHint(string text)
         {
-            Hint = text;
-            HintTime = 2.5f;
-        }
-
-        private void UpdateHint(UpdateState state)
-        {
-            if (HintTime <= 0) return;
-            HintTime -= (float)state.Time.ElapsedGameTime.TotalSeconds;
-            var tip = state.UIState.TooltipProperties;
-            tip.Show = true;
-            tip.Color = Color.Black;
-            tip.Opacity = 1;
-            tip.Position = new Vector2(ScreenWidth / 2, ScreenHeight * 0.25f) * FSOEnvironment.DPIScaleFactor;
-            tip.UpdateDead = false;
-            state.UIState.Tooltip = Hint;
+            UIPadOverlay.ShowToast(text);
         }
 
         #endregion
@@ -965,7 +1019,7 @@ namespace Simitone.Client.UI.Panels
             MarkerBase = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor));
             MarkerTop = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor + markerHeight));
 
-            if (Target is VMAvatar avatar && HintTime <= 0)
+            if (Target is VMAvatar avatar && !UIPadOverlay.ToastShowing)
             {
                 var tip = state.UIState.TooltipProperties;
                 tip.Show = true;

@@ -32,19 +32,19 @@ namespace Simitone.Client.UI.Panels
             foreach (var btn in RightBtns) Remove(btn);
             LeftBtns.Clear(); RightBtns.Clear();
 
-            AddBtn(LeftBtns, "ngbh_cas.png", (btn) =>
+            AddBtn(LeftBtns, "ngbh_cas.png", "Create a family", (btn) =>
             {
                 var transition = new UITransDialog("cas", () =>
                 {
                     GameController.EnterCAS();
                 });
             });
-            if (mode != 4) AddBtn(LeftBtns, "ngbh_back.png", (btn) => PopMode(4));
+            if (mode != 4) AddBtn(LeftBtns, "ngbh_back.png", "Back to the neighborhood", (btn) => PopMode(4));
 
-            if (mode != 2 && !moveIn) AddBtn(RightBtns, "ngbh_downt.png", (btn) => PopMode(2));
-            if (mode != 3 && !moveIn) AddBtn(RightBtns, "ngbh_vacat.png", (btn) => PopMode(3));
-            if (mode != 5 && !moveIn) AddBtn(RightBtns, "ngbh_studio.png", (btn) => PopMode(5));
-            if (mode != 7) AddBtn(RightBtns, "ngbh_magic.png", (btn) => PopMode(7));
+            if (mode != 2 && !moveIn) AddBtn(RightBtns, "ngbh_downt.png", "Downtown", (btn) => PopMode(2));
+            if (mode != 3 && !moveIn) AddBtn(RightBtns, "ngbh_vacat.png", "Vacation Island", (btn) => PopMode(3));
+            if (mode != 5 && !moveIn) AddBtn(RightBtns, "ngbh_studio.png", "Studio Town", (btn) => PopMode(5));
+            if (mode != 7) AddBtn(RightBtns, "ngbh_magic.png", "Magic Town", (btn) => PopMode(7));
             Mode = mode;
 
             LayBtns();
@@ -54,6 +54,12 @@ namespace Simitone.Client.UI.Panels
         {
             Panel.PopulateScreen(mode);
             SetMode(mode, MoveInMode);
+        }
+
+        public override void GameResized()
+        {
+            base.GameResized();
+            LayBtns(); //the right-hand buttons sit against the right edge of the screen
         }
 
         private void LayBtns()
@@ -73,10 +79,11 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
-        private UIElasticButton AddBtn(List<UIElasticButton> targ, string imgname, ButtonClickDelegate onClick)
+        private UIElasticButton AddBtn(List<UIElasticButton> targ, string imgname, string tooltip, ButtonClickDelegate onClick)
         {
             var ui = Content.Get().CustomUI;
             var btn = new UIElasticButton(ui.Get(imgname).Get(GameFacade.GraphicsDevice));
+            btn.Tooltip = tooltip;
             btn.OnButtonClick += onClick;
             targ.Add(btn);
             Add(btn);

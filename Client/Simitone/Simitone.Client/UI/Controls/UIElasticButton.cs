@@ -71,5 +71,23 @@ namespace Simitone.Client.UI.Controls
             if (!Visible) return;
             DrawLocalTexture(SBatch, Texture, null, new Vector2(Texture.Width, Texture.Height) / -2, Vector2.One, Color.White * (Disabled?0.5f:1f));
         }
+
+        /// <summary>
+        /// Drawn (and clicked) centred on its position, so its bounds are too. Without this, anything placing itself
+        /// by the bounds, like the gamepad focus outline, lands a half-button down and to the right.
+        /// </summary>
+        public override Rectangle GetBounds()
+        {
+            if (Texture == null) return base.GetBounds();
+            return new Rectangle(Texture.Width / -2, Texture.Height / -2, Texture.Width, Texture.Height);
+        }
+
+        /// <summary>Gamepad focus: grows a little, as mouse hover does.</summary>
+        public void SetPadHover(bool hover)
+        {
+            if (Disabled) return;
+            var scale = hover ? 1.1f : 1.0f;
+            GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "ScaleX", scale }, { "ScaleY", scale } }, TweenQuad.EaseOut);
+        }
     }
 }

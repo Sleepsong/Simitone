@@ -86,6 +86,7 @@ namespace Simitone.Client.UI.Controls
                 if (catG.ID == cat)
                 {
                     MainButton.Texture = Content.Get().CustomUI.Get(catG.IconName).Get(GameFacade.GraphicsDevice);
+                    MainButton.Tooltip = catG.Name;
                 }
                 if (catG.ID != cat || UIScreen.Current.ScreenHeight >= 720)
                 {
@@ -94,6 +95,7 @@ namespace Simitone.Client.UI.Controls
                     btn.X = 10;
                     btn.Visible = false;
                     btn.OnButtonClick += (b) => { Select(id); };
+                    btn.Tooltip = catG.Name;
                     Add(btn);
                     CatSwitchButtons.Add(btn);
                 }
@@ -138,6 +140,7 @@ namespace Simitone.Client.UI.Controls
     {
         public int ID;
         public string IconName;
+        public string Name; //tooltip
     }
 
     public class UIVertGrad : UIElement
