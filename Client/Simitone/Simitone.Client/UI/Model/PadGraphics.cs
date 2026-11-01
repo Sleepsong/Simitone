@@ -14,14 +14,14 @@ namespace Simitone.Client.UI.Model
 
     /// <summary>
     /// Procedurally drawn shapes for gamepad affordances: the lot selector, the focus highlight, button prompts and
-    /// panels. All original geometry generated here; no console artwork.
+    /// panels, plus the Simitone note cut from Simitone's own logo. All original geometry generated here; no console
+    /// or Sims artwork.
     /// Shapes are white with a black outline baked in, so tinting them only colours the white part.
     /// Textures are premultiplied alpha, matching the default sprite batch blend state.
     /// </summary>
     public static class PadGraphics
     {
         private static Texture2D Ring;
-        private static Texture2D Marker;
 
         /// <summary>64x64 ring (radius 27) with a soft black outline.</summary>
         public static Texture2D GetRing(GraphicsDevice gd)
@@ -38,19 +38,144 @@ namespace Simitone.Client.UI.Model
             return Ring;
         }
 
-        /// <summary>32x40 downward-pointing diamond, like a small plumb bob, with a black outline.</summary>
-        public static Texture2D GetMarker(GraphicsDevice gd)
+        /// <summary>Height, in pixels, of the note texture (about twice the size it's drawn at).</summary>
+        public const int NoteHeight = 64;
+
+        private static Texture2D Note;
+
+        /// <summary>
+        /// The Simitone note: the musical note that forms the "t" of the Simitone logo, white with a dark outline (so
+        /// tinting colours the note), about <see cref="NoteHeight"/> pixels tall. It's cut from the white top layer of the
+        /// logo image (load_logo.png); if that can't be read, a plain drawn quaver stands in.
+        /// </summary>
+        public static Texture2D GetNote(GraphicsDevice gd)
         {
-            if (Marker == null || Marker.IsDisposed)
+            if (Note == null || Note.IsDisposed) Note = CutNoteFromLogo(gd) ?? DrawnNote(gd);
+            return Note;
+        }
+
+        private static Texture2D CutNoteFromLogo(GraphicsDevice gd)
+        {
+            try
             {
-                Marker = Generate(gd, 32, 40, (x, y) =>
+                var logo = FSO.Content.Content.Get().CustomUI.Get("load_logo.png")?.Get(gd);
+                if (logo == null) return null;
+                int w = logo.Width, h = logo.Height;
+                var px = new Color[w * h];
+                logo.GetData(px);
+                bool White(int x, int y)
                 {
-                    //diamond "radius" metric: 1 on the outer edge, 0 at the centre.
-                    var metric = Math.Abs(x + 0.5f - 16f) / 15f + Math.Abs(y + 0.5f - 20f) / 19f;
-                    return (Clamp01((1f - metric) * 15f), Clamp01((0.8f - metric) * 15f));
-                });
+                    var c = px[y * w + x];
+                    return c.A > 200 && Math.Min(c.R, Math.Min(c.G, c.B)) > 235;
+                }
+
+                //the note's stem is a little past the middle of the wordmark, in its upper half
+                int sx = -1, sy = -1;
+                for (int x = (int)(w * 0.50f); x < (int)(w * 0.54f) && sx < 0; x++)
+                    for (int y = (int)(h * 0.10f); y < (int)(h * 0.40f); y++)
+                        if (White(x, y)) { sx = x; sy = y; break; }
+                if (sx < 0) return null;
+
+                //flood fill the white shape it belongs to
+                var mask = new bool[w * h];
+                var stack = new System.Collections.Generic.Stack<int>();
+                stack.Push(sy * w + sx);
+                mask[sy * w + sx] = true;
+                int minX = sx, maxX = sx, minY = sy, maxY = sy, count = 0;
+                while (stack.Count > 0)
+                {
+                    var i = stack.Pop();
+                    int x = i % w, y = i / w;
+                    count++;
+                    minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                    minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
+                    void Visit(int nx, int ny)
+                    {
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+                        var ni = ny * w + nx;
+                        if (mask[ni] || !White(nx, ny)) return;
+                        mask[ni] = true;
+                        stack.Push(ni);
+                    }
+                    Visit(x + 1, y); Visit(x - 1, y); Visit(x, y + 1); Visit(x, y - 1);
+                }
+                //sanity: one letter-sized shape, taller than wide (not a run of joined letters)
+                int bw = maxX - minX + 1, bh = maxY - minY + 1;
+                if (count < 1000 || bw > w * 0.2f || bh < h * 0.5f) return null;
+
+                //at the logo's size: white note, dark outline around it (dilated mask), with a margin for the outline
+                const int outline = 6, margin = 8;
+                int sw = bw + margin * 2, shh = bh + margin * 2;
+                var inside = new bool[sw * shh];
+                for (int y = 0; y < bh; y++)
+                    for (int x = 0; x < bw; x++)
+                        inside[(y + margin) * sw + x + margin] = mask[(y + minY) * w + x + minX];
+                var near = (bool[])inside.Clone();
+                for (int pass = 0; pass < outline; pass++)
+                {
+                    var next = (bool[])near.Clone();
+                    for (int y = 1; y < shh - 1; y++)
+                        for (int x = 1; x < sw - 1; x++)
+                        {
+                            var i = y * sw + x;
+                            if (near[i]) continue;
+                            if (near[i - 1] || near[i + 1] || near[i - sw] || near[i + sw] || (pass % 2 == 1 && (near[i - sw - 1] || near[i - sw + 1] || near[i + sw - 1] || near[i + sw + 1])))
+                                next[i] = true;
+                        }
+                    near = next;
+                }
+
+                //box-filter down to NoteHeight (premultiplied: white inside, translucent black outline)
+                var scale = NoteHeight / (float)shh;
+                int ow = Math.Max(1, (int)Math.Ceiling(sw * scale)), oh = NoteHeight;
+                var output = new Color[ow * oh];
+                for (int oy = 0; oy < oh; oy++)
+                {
+                    for (int ox = 0; ox < ow; ox++)
+                    {
+                        int x0 = (int)(ox / scale), x1 = Math.Min(sw, (int)((ox + 1) / scale));
+                        int y0 = (int)(oy / scale), y1 = Math.Min(shh, (int)((oy + 1) / scale));
+                        float white = 0, alpha = 0, n = 0;
+                        for (int y = y0; y < Math.Max(y1, y0 + 1); y++)
+                            for (int x = x0; x < Math.Max(x1, x0 + 1); x++)
+                            {
+                                if (x >= sw || y >= shh) continue;
+                                var i = y * sw + x;
+                                if (inside[i]) { white += 1; alpha += 1; }
+                                else if (near[i]) alpha += 0.85f;
+                                n++;
+                            }
+                        if (n == 0) continue;
+                        output[oy * ow + ox] = new Color(white / n, white / n, white / n, alpha / n);
+                    }
+                }
+                var texture = new Texture2D(gd, ow, oh);
+                texture.SetData(output);
+                return texture;
             }
-            return Marker;
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>A plain quaver (round head, stem, curved flag) with a black outline, if the logo can't be read.</summary>
+        private static Texture2D DrawnNote(GraphicsDevice gd)
+        {
+            return Generate(gd, 40, NoteHeight, (x, y) =>
+            {
+                var p = Centre(x, y);
+                //head: an ellipse tilted up to the right
+                var d = p - new Vector2(15, 50);
+                var rx = d.X * 0.94f + d.Y * 0.34f;
+                var ry = -d.X * 0.34f + d.Y * 0.94f;
+                var head = (float)Math.Sqrt(rx * rx / (9f * 9f) + ry * ry / (6.5f * 6.5f)) * 7f - 7f;
+                var stem = RoundedRectDistance(p, new Vector2(22.5f, 29), new Vector2(1.8f, 21), 0.5f);
+                var flag = SegmentDistance(p, new Vector2(23, 9), new Vector2(31, 18)) - 2.2f;
+                flag = Math.Min(flag, SegmentDistance(p, new Vector2(31, 18), new Vector2(30, 28)) - 2.2f);
+                var shape = Math.Min(head, Math.Min(stem, flag));
+                return (Coverage(shape - 2.5f), Coverage(shape));
+            });
         }
 
         private static Texture2D Disc;

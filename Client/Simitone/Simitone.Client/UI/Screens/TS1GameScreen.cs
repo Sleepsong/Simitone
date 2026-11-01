@@ -269,11 +269,13 @@ namespace Simitone.Client.UI.Screens
             Add(switcher);
 
             if (NeighPadNav != null) Remove(NeighPadNav);
-            NeighPadNav = new UIScreenPadNavigator(NeighbourhoodPadScope);
-            NeighPadNav.Prompts = () =>
+            var nav = new UIScreenPadNavigator(NeighbourhoodPadScope);
+            NeighPadNav = nav;
+            //uses its own navigator, not the field: entering a lot clears the field while this navigator is updating
+            nav.Prompts = () =>
             {
                 var housePanel = TS1NeighPanel?.LastHS;
-                if (housePanel?.Parent != null && NeighPadNav.Navigator.Scope == housePanel)
+                if (housePanel?.Parent != null && nav.Navigator.Scope == housePanel)
                     return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"), PadPrompt.Of(PadAction.Cancel, "Back") };
                 return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Visit house") };
             };

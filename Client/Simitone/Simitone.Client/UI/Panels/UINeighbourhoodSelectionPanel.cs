@@ -175,8 +175,11 @@ namespace Simitone.Client.UI.Panels
             shad.Position = new Vector2(-24);
             Add(shad);
 
-            var bg = new UIImage(((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice));
+            var bgTex = ((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice);
+            var bg = new UIImage(bgTex);
             Add(bg);
+            //the original game ran at the map's size, so lots past its edges were simply off screen: clip them to it
+            var mapBounds = new Rectangle(0, 0, bgTex.Width, bgTex.Height);
             bg.ListenForMouse((evt, state) =>
             {
                 if (evt == UIMouseEventType.MouseDown) ResetZoom();
@@ -198,6 +201,7 @@ namespace Simitone.Client.UI.Panels
                 if (num == 99) continue;
                 var button = new UINeighborhoodHouseButton(num, SelectHouse, config.Scale);
                 button.Position = new Vector2(int.Parse(loc[1].TrimStart()), int.Parse(loc[2].TrimStart()));
+                button.MapBounds = mapBounds;
                 HousePositions[num] = button.Position;
                 HouseButtons[num] = button;
                 buttons.Add(button);
@@ -369,8 +373,23 @@ namespace Simitone.Client.UI.Panels
         private Rectangle HitRect; //what the mouse reacts to: a band across the middle of the lot picture
         private Rectangle DrawRect; //the lot picture as drawn
 
+        /// <summary>The map picture's rectangle in the map's coordinates (this button's parent); the lot is clipped to it.</summary>
+        public Rectangle MapBounds;
+
         public bool PadFocusable => Visible;
-        public Rectangle PadBounds => DrawRect; //the outline goes round the whole lot picture
+
+        /// <summary>The focus frame goes round the lot picture, as far as it's on the map.</summary>
+        public Rectangle PadBounds
+        {
+            get
+            {
+                if (MapBounds.IsEmpty) return DrawRect;
+                var onMap = new Rectangle(DrawRect.X + (int)X, DrawRect.Y + (int)Y, DrawRect.Width, DrawRect.Height);
+                onMap = Rectangle.Intersect(onMap, MapBounds);
+                if (onMap.Width <= 0 || onMap.Height <= 0) return DrawRect;
+                return new Rectangle(onMap.X - (int)X, onMap.Y - (int)Y, onMap.Width, onMap.Height);
+            }
+        }
         public bool PadMove(PadDirection direction) => false;
 
         public void PadActivate()
@@ -462,9 +481,41 @@ namespace Simitone.Client.UI.Panels
             yOff2.Y -= Offsets.AddYOff / (HouseScale);
             if (AlphaTime > 0)
             {
-                DrawLocalTexture(batch, HouseOpenTex, null, new Vector2(-Offsets.Width, -Offsets.Height)/ HouseScale + yOff2, new Vector2(1f / HouseScale, 1f / HouseScale));
+                DrawOnMap(batch, HouseOpenTex, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff2, 1f / HouseScale, Color.White);
             }
-            DrawLocalTexture(batch, HouseTex, null, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff, new Vector2(1f / HouseScale, 1f / HouseScale), Color.White * (1 - AlphaTime));
+            DrawOnMap(batch, HouseTex, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff, 1f / HouseScale, Color.White * (1 - AlphaTime));
+        }
+
+        /// <summary>Draws a texture at a local position and scale, cropped to <see cref="MapBounds"/>.</summary>
+        private void DrawOnMap(UISpriteBatch batch, Texture2D tex, Vector2 local, float scale, Color color)
+        {
+            if (tex == null) return;
+            if (MapBounds.IsEmpty)
+            {
+                DrawLocalTexture(batch, tex, null, local, new Vector2(scale), color);
+                return;
+            }
+            //in the map's coordinates
+            var left = X + local.X;
+            var top = Y + local.Y;
+            var right = left + tex.Width * scale;
+            var bottom = top + tex.Height * scale;
+            var cl = Math.Max(left, MapBounds.Left);
+            var ct = Math.Max(top, MapBounds.Top);
+            var cr = Math.Min(right, MapBounds.Right);
+            var cb = Math.Min(bottom, MapBounds.Bottom);
+            if (cr <= cl || cb <= ct) return;
+            if (cl == left && ct == top && cr == right && cb == bottom)
+            {
+                DrawLocalTexture(batch, tex, null, local, new Vector2(scale), color);
+                return;
+            }
+            var sx = (int)Math.Floor((cl - left) / scale);
+            var sy = (int)Math.Floor((ct - top) / scale);
+            var sw = Math.Min(tex.Width - sx, (int)Math.Ceiling((cr - cl) / scale));
+            var sh = Math.Min(tex.Height - sy, (int)Math.Ceiling((cb - ct) / scale));
+            if (sw <= 0 || sh <= 0) return;
+            DrawLocalTexture(batch, tex, new Rectangle(sx, sy, sw, sh), local + new Vector2(sx, sy) * scale, new Vector2(scale), color);
         }
 
         public override void Removed()

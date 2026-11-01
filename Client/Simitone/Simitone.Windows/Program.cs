@@ -362,6 +362,7 @@ namespace Simitone.Windows
         private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var exception = e.ExceptionObject;
+            Simitone.Client.Utils.CrashLog.Write(exception);
             if (exception is OutOfMemoryException)
             {
                 MessageBox.Show(e.ExceptionObject.ToString(), "Out of Memory! FreeSO needs to close.");

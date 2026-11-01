@@ -14,7 +14,8 @@ namespace Simitone.Client.UI.Model
     /// </summary>
     public static class PadDraw
     {
-        public static readonly Color Plumbob = new Color(112, 226, 80);
+        /// <summary>The highlight green (focus frame, focused keyboard key, the note).</summary>
+        public static readonly Color Accent = new Color(112, 226, 80);
         public static readonly Color Panel = new Color(16, 34, 62) * 0.9f;
         public static readonly Color PanelEdge = new Color(120, 190, 255) * 0.35f;
         public static readonly Color Light = new Color(232, 236, 242);

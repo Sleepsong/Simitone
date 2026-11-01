@@ -184,7 +184,7 @@ namespace Simitone.Client.UI.Controls
                     var focused = r == Layout.Row && i == Layout.Index;
                     var on = key.Action == PadKeyAction.Shift && Shift;
                     if (focused) focusedRect = rect;
-                    var fill = focused ? PadDraw.Plumbob : (on ? PadDraw.Plumbob * 0.45f : Color.White * 0.13f);
+                    var fill = focused ? PadDraw.Accent : (on ? PadDraw.Accent * 0.45f : Color.White * 0.13f);
                     PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, rect, fill);
 
                     var label = (key.Action == PadKeyAction.Char) ? key.Type(Shift) : key.Label;
@@ -197,7 +197,7 @@ namespace Simitone.Client.UI.Controls
                 var glow = focusedRect.Value;
                 glow.Inflate(PadGraphics.GlowInset + 2, PadGraphics.GlowInset + 2);
                 var pulse = 0.8f + 0.2f * (float)Math.Sin(Time * 5);
-                PadDraw.NineSlice(this, batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, glow, PadDraw.Plumbob * pulse);
+                PadDraw.NineSlice(this, batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, glow, PadDraw.Accent * pulse);
             }
 
             //button prompts along the bottom, centred

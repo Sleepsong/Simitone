@@ -137,7 +137,7 @@ namespace Simitone.Client.UI.Controls
             var width = size.X + 22f;
             const float height = 30f;
             var centreX = rect.Center.X / dpi;
-            var above = rect.Top / dpi - 34f - height; //clear of the plumbob
+            var above = rect.Top / dpi - 40f - height; //clear of the note
             var y = (above > 4) ? above : rect.Bottom / dpi + 12f;
             var screen = GameFacade.Screens.CurrentUIScreen;
             var x = Math.Max(4f, Math.Min(screen.ScreenWidth - width - 4f, centreX - width / 2f));

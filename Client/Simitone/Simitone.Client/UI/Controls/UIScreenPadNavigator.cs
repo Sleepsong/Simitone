@@ -55,6 +55,13 @@ namespace Simitone.Client.UI.Controls
                 return;
             }
             state.PadCaptured = true; //the virtual cursor isn't needed here
+            //what was activated may have taken this navigator off the screen (Enter Lot): then it's done
+            if (!(Parent is UIContainer owner) || !owner.GetChildren().Contains(this))
+            {
+                Navigator.Clear();
+                SetFocused(null);
+                return;
+            }
             SetFocused(Navigator.Focused);
             if (Prompts != null) PadPrompts.Set(Prompts());
         }

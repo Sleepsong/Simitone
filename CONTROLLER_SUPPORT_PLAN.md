@@ -392,7 +392,7 @@ The lot takes over the pad in live mode whenever no modal dialog or text field h
 
 **Pie menu:** the stick points at a slot, the D-pad and LB/RB step through all items including Back, A chooses, and B goes back or closes. A only works after the press that opened the menu has been released.
 
-**Selector marker:** a ring on the floor under the target, with a bobbing diamond above it.
+**Selector marker:** a ring on the floor under the target, with a bobbing marker above it (since Phase 7, the Simitone note; see §16).
 - **Green:** the target has interactions.
 - **Red:** it has none right now.
 - **White:** empty floor.
@@ -429,7 +429,7 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 | Engine `World` | `ProjectToScreen` / `ProjectTileToScreen` (tile → screen, the inverse of `EstTileAtPosWithScroll`, in both 2D and 3D) |
 | Engine `GlobalSettings` | `UILayout` |
 | `UILotControlPadHelper` (new) | Everything in the live-mode table above, plus the selector marker |
-| `PadMath`, `PadGraphics` (new) | Selector geometry (screen ↔ tile movement, safe-area overflow, footprint distance, menu clamping) and the procedurally drawn ring and diamond |
+| `PadMath`, `PadGraphics` (new) | Selector geometry (screen ↔ tile movement, safe-area overflow, footprint distance, menu clamping) and the procedurally drawn ring and marker |
 | `UILotControl` | Hosts the helper. `ShowPieMenu` now picks with the mouse, then calls the new `OpenPieMenu(target, tile, position)` that the pad also uses. Mouse hover, edge scroll and mouse-driven cutaway are skipped while the pad drives the lot. |
 | `UIPieMenu` | Pad navigation |
 | `UIInteractionQueue` | Pad focus and a highlight ring |
@@ -821,8 +821,8 @@ Engine commit `da2f2f2` on `simitone/controller-phase7`; the rest is in Simitone
 
 The yellow box is gone. Focus is now shown as:
 
-- a soft plumbob-green frame with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
-- a small plumbob bobbing over the focused control, where there's room above it and the control isn't a large area (a carousel, a whole list).
+- a soft green frame with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
+- the Simitone note bobbing over the focused control, where there's room above it and the control isn't a large area (a carousel, a whole list). This is the musical note that forms the "t" of the Simitone logo. It's cut from the logo image when the game loads, keeping only its white top layer, with a dark outline added. If the logo can't be read, a plain drawn quaver is used instead. The lot's target marker uses it too. No Sims artwork or plumbob shapes are used, for copyright reasons.
 - round buttons (the neighbourhood buttons, family portraits) grow a little, as they do under the mouse. The focused house on the map opens up, as before.
 
 The engine draws it through a new hook (`UIFocusNavigator.FocusRenderer`), so it applies everywhere: dialogs, panels, the catalog, the neighbourhood and CAS. The on-screen keyboard uses the same green for its focused key.
@@ -874,16 +874,25 @@ Lot messages ("Direct control", "Cursor mode", "Pick it up with A, then Y sells 
 | The map overflowed the sides of screens narrower than 4:3 | It fits whichever dimension is tighter. |
 | The house panel drew over its own focus highlight | The screen navigator keeps itself on top of anything added after it. |
 | The focus highlight and tooltip showed under the on-screen keyboard | Both stand down while typing. |
+| Entering a lot with the pad crashed (found in the first Phase 7 test) | The neighbourhood's prompt function read the navigator through a field that entering the lot sets to null, during that navigator's own update. It now keeps its own reference, and a navigator removed while it updates stops there. |
+| Lots near the map's edge were drawn past it, onto the background beside the 4:3 map | Each lot picture is cropped to the map image, as the original 800x600 screen did, and the focus frame is clipped with it. |
+| Crashes left no record when the game was started from Steam (they went only to the console) | Unhandled exceptions are also appended to `crash.log` in the user directory, next to `simantics-errors.log`. |
 
 ### Verification
 
 - The full desktop build succeeds.
-- The harness now has 294 checks; the new ones cover the prompt bar's per-frame model. The drawing itself needs a graphics device, so the generated shapes (glow frame, plumbob, discs, the four symbols, stick ring, D-pad) were checked by rendering the same distance maths offline.
+- The harness now has 294 checks; the new ones cover the prompt bar's per-frame model. The drawing itself needs a graphics device, so the generated shapes (glow frame, discs, the four symbols, stick ring, D-pad, and the note cut from the logo) were checked by rendering the same distance maths offline.
 - **Not yet tested in the running game.**
+
+### Hardware results (first test)
+
+Better overall. Three follow-ups, all fixed above: use the Simitone note instead of a plumbob, lots drawn off the 4:3 map, and a crash entering a lot.
+
+Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_bg/plus/neg.png`) and the 3D marker over the active Sim (`arrow.fsom`). Neither was added by this work.
 
 ### To check on hardware
 
-1. The neighbourhood: the green frame and plumbob on houses and buttons, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
+1. The neighbourhood: the green frame and note on houses and buttons, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
 2. The prompt bar on the neighbourhood, CAS (each mode) and in a lot (live, pie menu, queue, needs panel, buy/build with nothing, an object, then a tool, the catalog).
 3. With a PlayStation pad, or `GamePadGlyphs = playstation`: the symbols instead of letters.
 4. The keyboard's look, and that no highlight or bubble shows under it.

@@ -1055,10 +1055,12 @@ namespace Simitone.Client.UI.Panels
 
             if (MarkerTop != null)
             {
-                var marker = PadGraphics.GetMarker(gd);
+                //the Simitone note, bobbing over the target
+                var note = PadGraphics.GetNote(gd);
+                var noteScale = 42f / note.Height;
                 var bob = (float)Math.Sin(AnimTime * 3) * 4;
-                DrawLocalTexture(batch, marker, null, GlobalPoint(MarkerTop.Value) - new Vector2(marker.Width / 2f, marker.Height - bob),
-                    Vector2.One, color);
+                DrawLocalTexture(batch, note, null, GlobalPoint(MarkerTop.Value) - new Vector2(note.Width * noteScale / 2f, note.Height * noteScale - bob),
+                    new Vector2(noteScale), color);
             }
         }
 
