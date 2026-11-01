@@ -89,6 +89,8 @@ namespace Simitone.Client.UI.Screens
         private int? MoveInFamily;
 
         private UICASMode Mode = UICASMode.FamilyEdit;
+        /// <summary>The stage of Create a Family showing (for Discord presence).</summary>
+        public UICASMode CurrentMode => Mode;
 
         public List<CASFamilyMember> WIPFamily = new List<CASFamilyMember>();
         public List<VMAvatar> RepresentFamily = new List<VMAvatar>();

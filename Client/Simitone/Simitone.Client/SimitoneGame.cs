@@ -379,6 +379,7 @@ namespace Simitone.Client
                 this.Window.Title = "Simitone";
                 HasUpdated = true;
                 GameFacade.Screens = uiLayer;
+                Simitone.Client.Services.Discord.DiscordPresence.Start(); //Discord Rich Presence, if discord.ini turns it on
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;
@@ -386,6 +387,7 @@ namespace Simitone.Client
             if (HITVM.Get() != null) HITVM.Get().Tick();
 
             base.Update(gameTime);
+            Simitone.Client.Services.Discord.DiscordPresence.Tick(gameTime.TotalGameTime.TotalSeconds);
             GameThread.UpdateExecuting = false;
         }
     }

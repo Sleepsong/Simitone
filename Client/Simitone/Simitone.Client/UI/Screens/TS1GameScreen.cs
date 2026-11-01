@@ -57,6 +57,8 @@ namespace Simitone.Client.UI.Screens
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
         public FAMI ActiveFamily;
+        /// <summary>The lot being played (its house number), or -1 (e.g. in the neighbourhood).</summary>
+        public short CurrentHouse { get; private set; } = -1;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
         // Weather effects state tracking
@@ -261,6 +263,7 @@ namespace Simitone.Client.UI.Screens
         public void PlayHouse(short house, UIElement switcher)
         {
             ActiveFamily = Content.Get().Neighborhood.GetFamilyForHouse((short)house);
+            CurrentHouse = house;
             CurrentNeighborhoodMode = GetNeighborhoodModeFromHouse(house);
             InitializeLot(Content.Get().Neighborhood.GetHousePath(house), false);// "UserData/Houses/House21.iff"
             Remove(TS1NeighPanel);
@@ -425,6 +428,7 @@ namespace Simitone.Client.UI.Screens
             if (SwitchLot > 0)
             {
                 if (!Downtown) SavedLot = vm.Save();
+                CurrentHouse = (short)SwitchLot;
                 if (SwitchLot == ActiveFamily.HouseNumber && SavedLot != null)
                 {
                     Downtown = false;

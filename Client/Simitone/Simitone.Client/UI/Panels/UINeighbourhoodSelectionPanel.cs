@@ -149,6 +149,9 @@ namespace Simitone.Client.UI.Panels
         private Texture2D texture;
         private int Mode;
 
+        /// <summary>Which neighbourhood map is shown (1-based, as PopulateScreen takes it).</summary>
+        public int NeighbourhoodMode => Mode;
+
         public void PopulateScreen(ushort mode)
         {
             var childClone = new List<UIElement>(Children);
