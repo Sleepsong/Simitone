@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading.Tasks;
 using FSO.Common.Rendering.Framework.Model;
 using FSO.Common.Rendering.Framework.IO;
+using Simitone.Client.UI.Model;
 
 namespace Simitone.Client.UI.Controls
 {
@@ -25,6 +26,14 @@ namespace Simitone.Client.UI.Controls
         public bool DrawBounds = true;
         public int Margin;
         public bool VerticalMode;
+
+        /// <summary>
+        /// Gamepad: directions move a highlight over the items without selecting them, and Confirm selects the
+        /// highlighted one. For lists where selecting does something costly or irreversible, like the catalog (it
+        /// creates the object). Otherwise directions select as they move.
+        /// </summary>
+        public bool PadHighlightOnly;
+        private int PadIndex = -1;
 
         private UIMouseEventRef HitTest;
 
@@ -246,7 +255,22 @@ namespace Simitone.Client.UI.Controls
         }
 
         public bool PadFocusable => Visible && LengthProvider() > 0;
-        public Rectangle PadBounds => new Rectangle(0, 0, (int)Size.X, (int)Size.Y);
+
+        /// <summary>The whole list, or in <see cref="PadHighlightOnly"/> mode the highlighted item (clipped to the list).</summary>
+        public Rectangle PadBounds
+        {
+            get
+            {
+                if (!PadHighlightOnly) return new Rectangle(0, 0, (int)Size.X, (int)Size.Y);
+                return PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
+            }
+        }
+
+        /// <summary>The item the highlight is on: where the pad left it, else the selected item, else the first.</summary>
+        private int HighlightedIndex()
+        {
+            return PadMath.ClampIndex((PadIndex >= 0) ? PadIndex : (LastSelected?.ItemID ?? 0), LengthProvider());
+        }
 
         /// <summary>
         /// Gamepad: directions along the list move the selection (and scroll to it); at either end, or across the
@@ -259,6 +283,16 @@ namespace Simitone.Client.UI.Controls
             else step = (direction == PadDirection.Left) ? -1 : ((direction == PadDirection.Right) ? 1 : 0);
             if (step == 0) return false;
 
+            if (PadHighlightOnly)
+            {
+                var to = PadMath.HighlightStep(HighlightedIndex(), step, LengthProvider());
+                if (to < 0) return false;
+                PadIndex = to;
+                ScrollToItem(to);
+                HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                return true;
+            }
+
             var current = LastSelected?.ItemID ?? -1;
             var next = (current < 0) ? 0 : current + step;
             if (next < 0 || next >= LengthProvider()) return false;
@@ -268,10 +302,22 @@ namespace Simitone.Client.UI.Controls
             return true;
         }
 
-        /// <summary>Gamepad Confirm: selects the first item if nothing is selected yet.</summary>
+        /// <summary>
+        /// Gamepad Confirm: selects the highlighted item in <see cref="PadHighlightOnly"/> mode; otherwise selects the
+        /// first item if nothing is selected yet.
+        /// </summary>
         public void PadActivate()
         {
-            if (LastSelected != null || LengthProvider() == 0) return;
+            if (LengthProvider() == 0) return;
+            if (PadHighlightOnly)
+            {
+                var index = HighlightedIndex();
+                PadIndex = index;
+                ScrollToItem(index);
+                SelectItem(index);
+                return;
+            }
+            if (LastSelected != null) return;
             SelectItem(0);
             ScrollToItem(0);
         }
@@ -284,6 +330,7 @@ namespace Simitone.Client.UI.Controls
                 Remove(child);
             }
             LastSelected = null;
+            PadIndex = -1;
         }
     }
 

@@ -3,6 +3,7 @@ using System.Linq;
 using FSO.Client;
 using FSO.Client.UI.Framework;
 using FSO.Client.UI.Model;
+using FSO.Client.UI.Panels.LotControls;
 using FSO.Common;
 using FSO.Common.Rendering.Framework.IO;
 using FSO.Common.Rendering.Framework.Model;
@@ -15,6 +16,7 @@ using FSO.SimAntics.NetPlay.Model.Commands;
 using FSO.LotView.Utils.Camera;
 using Microsoft.Xna.Framework;
 using Simitone.Client.UI.Model;
+using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Screens;
 
 namespace Simitone.Client.UI.Panels
@@ -42,8 +44,19 @@ namespace Simitone.Client.UI.Panels
     /// the Sim relative to the camera (running at full tilt), the camera follows them, and A opens the menu of the
     /// object or person just in front of them.</item>
     /// </list>
-    /// In Options mode the panel's buttons are navigated directly (B returns to live mode). In buy and build mode the
-    /// pad is left to the virtual cursor, except for the shared buttons above, none of which it uses.
+    /// In Options mode the panel's buttons are navigated directly (B returns to live mode).
+    ///
+    /// In buy and build mode the pad works on the lot or on the catalog:
+    /// <list type="bullet">
+    /// <item>lot: a cursor fixed at the screen centre, with the left stick scrolling the lot under it. A is the mouse
+    /// button: pick up or place, or hold to drag a wall or floor tool. LB/RB rotate what you hold, Y sells it, B puts it
+    /// back (or puts the tool away) and returns to the catalog. With nothing held, X is the eyedropper. While a build
+    /// tool is out, hold X for its Shift form (whole room / fill) and Y for its Ctrl form (erase / delete).</item>
+    /// <item>catalog: LT moves the pad into and out of it, RT changes category. The D-pad or stick move between
+    /// subcategories and along the items without buying anything; A picks one (the pad goes to the lot to place it);
+    /// B goes back from items to subcategories, then to the lot. After a new item is placed, the pad returns to the
+    /// catalog on the same item.</item>
+    /// </list>
     /// </summary>
     public class UILotControlPadHelper : UIElement
     {
@@ -63,10 +76,12 @@ namespace Simitone.Client.UI.Panels
         private const float RunOff = 0.75f; //...and below which it walks again
         private const float DirectCameraRate = 15f; //camera follow, fraction of the gap closed per second (exponential)
         private const float DirectCameraSnapTiles = 3f; //further than this (stairs, a new Sim) the camera jumps
+        private const float BuildScrollSpeed = 640f; //buy/build: UI px per second the lot scrolls at full deflection
+        private const float BuildCursorSize = 22f;
 
         private readonly UILotControl Master;
 
-        /// <summary>The lot owns the pad this frame: live mode, and no modal dialog or text field has focus.</summary>
+        /// <summary>The lot owns the pad this frame: live, buy or build mode, and no modal dialog or text field has focus.</summary>
         public bool Capturing { get; private set; }
 
         /// <summary>Capturing, and the pad is the device in use: show the selector and hide mouse affordances.</summary>
@@ -89,7 +104,17 @@ namespace Simitone.Client.UI.Panels
         private VMEntity LastActive;
         private bool RotateArmed = true;
         private bool QueueFocus;
-        private bool PanelFocus; //live mode: the needs panel has the pad
+        private bool PanelFocus; //live mode: the needs panel has the pad; buy/build: the catalog has it
+
+        //buy/build
+        private bool BuildConfirmDown; //A went down on the lot (the holder or tool got a mouse down) and hasn't come up
+        private bool ConfirmNeedsRelease; //the A press that picked a catalog item mustn't also place it
+        private bool EyedropDown;
+        private UIObjectSelection LastHolding;
+        private bool HeldFromCatalog; //what's held is a new item from the catalog (not an object being moved)
+        private Vector2? BuildCursor; //UI coordinates of the centre cursor, set in Update for Draw
+        private float CatalogEmptyTime; //how long the catalog has had nothing to focus while it has the pad
+        private const float CatalogEmptyGrace = 1f; //it fades between subcategories and items; don't drop out mid-fade
 
         private bool DirectMode; //X: the player chose direct control. It applies only in live mode with the 3D camera.
         private VMAvatar DirectAvatar; //the avatar direct control is currently enabled on
@@ -120,6 +145,9 @@ namespace Simitone.Client.UI.Panels
             PadActive = false;
             CutawayFocus = null;
             MarkerBase = MarkerTop = null;
+            BuildCursor = null;
+            Master.PadCursor = null;
+            Master.PadModifiers = 0;
 
             var screen = Master.Parent as TS1GameScreen;
             var vm = Master.vm;
@@ -151,7 +179,8 @@ namespace Simitone.Client.UI.Panels
             }
 
             var panel = frontend.MainPanel;
-            if (!Master.LiveMode || !panel.PanelActive) PanelFocus = false;
+            var buildMode = !Master.LiveMode && (panel.Mode == UIMainPanelMode.BUY || panel.Mode == UIMainPanelMode.BUILD);
+            if (!(Master.LiveMode || buildMode) || !panel.PanelActive) PanelFocus = false;
             var optionsNav = !Master.LiveMode && panel.Mode == UIMainPanelMode.OPTIONS && panel.PanelActive;
             var panelNav = optionsNav || PanelFocus;
             if (!panelNav) frontend.PanelNavigator.Clear();
@@ -170,7 +199,16 @@ namespace Simitone.Client.UI.Panels
                 if (padInUse) UpdateCamera(pad, dt, screen);
                 HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav);
             }
+            var catalogFocusBefore = PanelFocus;
+            if (!PanelFocus) CatalogEmptyTime = 0;
+            var selectionBefore = BuildSelection();
             if (panelNav) UpdatePanelNavigation(state, frontend, optionsNav);
+
+            if (buildMode)
+            {
+                UpdateBuild(state, frontend, padInUse, dt, catalogFocusBefore, selectionBefore);
+                return;
+            }
 
             var active = Master.ActiveEntity;
             if (!Master.LiveMode || active == null)
@@ -221,6 +259,176 @@ namespace Simitone.Client.UI.Panels
             //In direct control, A with nothing in front of the Sim does nothing (there's no "go here").
             if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm) && (!direct || Target != null)) OpenMenu(state);
         }
+
+        #region Buy and build
+
+        /// <summary>What the player has in hand: the held object's group, the build tool, or null.</summary>
+        private object BuildSelection()
+        {
+            return (object)Master.ObjectHolder.Holding?.Group ?? Master.CustomControl;
+        }
+
+        private void UpdateBuild(UpdateState state, UISimitoneFrontend frontend, bool padInUse, float dt,
+            bool catalogFocusBefore, object selectionBefore)
+        {
+            var pad = state.Pad;
+            var holder = Master.ObjectHolder;
+            Capturing = true;
+            state.PadCaptured = true;
+            PadActive = padInUse;
+
+            //picking something in the catalog hands the pad to the lot to place it. The A press that picked it is
+            //still down, and mustn't also place it.
+            var selection = BuildSelection();
+            if (PanelFocus && selection != null && selection != selectionBefore)
+            {
+                PanelFocus = false;
+                frontend.PanelNavigator.Clear();
+                ConfirmNeedsRelease = true;
+            }
+            if (holder.Holding != LastHolding)
+            {
+                LastHolding = holder.Holding;
+                HeldFromCatalog = holder.Holding != null && !holder.Holding.IsBought;
+            }
+
+            HandlePanelTriggers(pad, frontend, canClose: false);
+
+            if (!PadActive || PanelFocus || catalogFocusBefore)
+            {
+                EndBuildPointer(state); //nothing is dragged while the catalog or the mouse has control
+                return;
+            }
+
+            var centre = new Vector2(ScreenWidth, ScreenHeight) / 2;
+            var level = World.State.Level;
+            var centreTile = World.EstTileAtPosWithScroll(FromUI(centre));
+            Master.PadCursor = centre.ToPoint();
+            if (Master.CustomControl != null)
+            {
+                Master.PadModifiers = (pad.IsDown(PadAction.FaceLeft) ? UILotControlModifiers.SHIFT : 0)
+                    | (pad.IsDown(PadAction.FaceTop) ? UILotControlModifiers.CTRL : 0);
+            }
+            CutawayFocus = centreTile;
+            BuildCursor = centre;
+            AnimTime += dt;
+
+            ScrollLot(pad.LeftStick, dt, centreTile, level);
+
+            //A: the mouse button
+            if (ConfirmNeedsRelease)
+            {
+                if (!pad.IsDown(PadAction.Confirm)) ConfirmNeedsRelease = false;
+            }
+            else if (pad.Pressed(PadAction.Confirm) && !BuildConfirmDown && !EyedropDown)
+            {
+                Master.SimulateMD(state);
+                BuildConfirmDown = true;
+            }
+            if (BuildConfirmDown && !pad.IsDown(PadAction.Confirm))
+            {
+                var wasHolding = holder.Holding;
+                var fromCatalog = HeldFromCatalog;
+                BuildConfirmDown = false;
+                Master.SimulateMU(state);
+                //placed a new item: back to the catalog, on the same item, to pick another
+                if (wasHolding != null && holder.Holding == null && fromCatalog) FocusCatalog(frontend);
+            }
+
+            if (BuildConfirmDown) return; //mid-click or mid-drag: only the stick and A apply
+
+            if (holder.Holding != null)
+            {
+                if (pad.Pressed(PadAction.ShoulderLeft)) holder.RotateObject(-2);
+                if (pad.Pressed(PadAction.ShoulderRight)) holder.RotateObject(2);
+                if (pad.Pressed(PadAction.FaceTop))
+                {
+                    var fromCatalog = HeldFromCatalog;
+                    holder.SellBack(null);
+                    if (fromCatalog && holder.Holding == null) FocusCatalog(frontend);
+                }
+                else if (pad.Pressed(PadAction.Cancel))
+                {
+                    var fromCatalog = HeldFromCatalog;
+                    holder.Cancel();
+                    if (fromCatalog) FocusCatalog(frontend);
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+            }
+            else if (Master.CustomControl != null)
+            {
+                //X and Y are the tool's modifiers (above)
+                if (pad.Pressed(PadAction.Cancel))
+                {
+                    Master.ReleaseCustomControl();
+                    FocusCatalog(frontend);
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+            }
+            else
+            {
+                //X: eyedropper on whatever is under the cursor; it picks the same item from the catalog
+                if (pad.Pressed(PadAction.FaceLeft))
+                {
+                    holder.EyedropperMode = true;
+                    Master.SimulateMD(state);
+                    EyedropDown = true;
+                }
+                if (pad.Pressed(PadAction.FaceTop))
+                {
+                    ShowHint("Pick it up with A, then Y sells it.");
+                    HITVM.Get().PlaySoundEvent(UISounds.Error);
+                }
+                if (pad.Pressed(PadAction.Cancel))
+                {
+                    FocusCatalog(frontend);
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+            }
+            if (EyedropDown && !pad.IsDown(PadAction.FaceLeft))
+            {
+                EyedropDown = false;
+                Master.SimulateMU(state);
+                holder.EyedropperMode = false;
+            }
+        }
+
+        /// <summary>Lets go of anything the pad is pressing on the lot (A or the eyedropper).</summary>
+        private void EndBuildPointer(UpdateState state)
+        {
+            if (BuildConfirmDown)
+            {
+                BuildConfirmDown = false;
+                Master.SimulateMU(state);
+            }
+            if (EyedropDown)
+            {
+                EyedropDown = false;
+                Master.SimulateMU(state);
+                Master.ObjectHolder.EyedropperMode = false;
+            }
+        }
+
+        /// <summary>Gives the catalog the pad, if the panel is open and has anything to select.</summary>
+        private void FocusCatalog(UISimitoneFrontend frontend)
+        {
+            var panel = frontend.MainPanel;
+            if (panel.PanelActive && UIFocusNavigator.HasFocusable(panel.SubPanel)) PanelFocus = true;
+        }
+
+        /// <summary>Scrolls the lot under the centre cursor, screen-relative, keeping the cursor over the lot.</summary>
+        private void ScrollLot(Vector2 stick, float dt, Vector2 centreTile, sbyte level)
+        {
+            if (stick == Vector2.Zero) return;
+            var screenDelta = new Vector2(stick.X, -stick.Y) * (BuildScrollSpeed * stick.Length() * dt);
+            var tileDelta = ScreenToTileDelta(centreTile, screenDelta, level);
+            tileDelta = ClampToLot(centreTile + tileDelta) - centreTile;
+            World.State.CenterTile += tileDelta;
+            World.State.ScrollAnchor = null;
+            FollowSim = false;
+        }
+
+        #endregion
 
         #region Direct control
 
@@ -391,14 +599,20 @@ namespace Simitone.Client.UI.Panels
             if (subpanel == null || !frontend.PanelNavigator.Update(state, subpanel))
             {
                 frontend.PanelNavigator.Clear();
-                PanelFocus = false; //nothing to navigate on this tab
+                //the catalog cross-fades between subcategories and items, and may briefly have nothing to focus
+                CatalogEmptyTime += (float)state.Time.ElapsedGameTime.TotalSeconds;
+                var fading = subpanel is UIBuyBrowsePanel && CatalogEmptyTime < CatalogEmptyGrace;
+                if (!fading || state.Pad.Pressed(PadAction.Cancel)) PanelFocus = false; //nothing to navigate on this tab
+                else state.PadCaptured = true;
                 return;
             }
+            CatalogEmptyTime = 0;
             state.PadCaptured = true;
 
             if (state.Pad.Pressed(PadAction.Cancel))
             {
                 if (optionsMode) frontend.SetModeDirect(UIMainPanelMode.LIVE);
+                else if (subpanel is UIBuyBrowsePanel browse && !browse.ChoosingSub) browse.Reset(); //items -> subcategories
                 else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
@@ -427,21 +641,33 @@ namespace Simitone.Client.UI.Panels
                 frontend.CycleSim(pad.Pressed(PadAction.ShoulderLeft) ? -1 : 1);
             }
 
+            HandlePanelTriggers(pad, frontend, canClose: true);
+
+            if (!PanelFocus && pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
+        }
+
+        /// <summary>
+        /// LT: panel closed, then open, then focused (if this tab has anything to select), then closed again, or
+        /// unfocused when <paramref name="canClose"/> is false (buy/build, where closing the panel drops the catalog).
+        /// RT: next tab.
+        /// </summary>
+        private void HandlePanelTriggers(GamePadInput pad, UISimitoneFrontend frontend, bool canClose)
+        {
             var panel = frontend.MainPanel;
             if (pad.Pressed(PadAction.TriggerLeft))
             {
-                //closed -> open -> focused (if this tab has anything to select) -> closed
                 if (!panel.PanelActive)
                 {
                     OpenPanel(panel);
                     PanelFocus = false;
                 }
                 else if (!PanelFocus && UIFocusNavigator.HasFocusable(panel.SubPanel)) PanelFocus = true;
-                else
+                else if (canClose)
                 {
                     panel.Close();
                     PanelFocus = false;
                 }
+                else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
             if (pad.Pressed(PadAction.TriggerRight))
@@ -455,8 +681,6 @@ namespace Simitone.Client.UI.Panels
                 }
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
-
-            if (!PanelFocus && pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
         }
 
         private static void OpenPanel(UIMainPanel panel)
@@ -747,6 +971,13 @@ namespace Simitone.Client.UI.Panels
 
         public override void Draw(UISpriteBatch batch)
         {
+            if (BuildCursor != null)
+            {
+                var cursorRing = PadGraphics.GetRing(GameFacade.GraphicsDevice);
+                var cursorPulse = 0.75f + 0.25f * (float)Math.Sin(AnimTime * 5);
+                DrawLocalTexture(batch, cursorRing, null, GlobalPoint(BuildCursor.Value) - new Vector2(BuildCursorSize / 2),
+                    new Vector2(BuildCursorSize / cursorRing.Width), Color.White * cursorPulse);
+            }
             if (MarkerBase == null) return;
             var gd = GameFacade.GraphicsDevice;
             var pulse = 0.8f + 0.2f * (float)Math.Sin(AnimTime * 5);

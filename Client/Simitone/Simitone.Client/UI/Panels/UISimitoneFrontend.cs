@@ -170,6 +170,8 @@ namespace Simitone.Client.UI.Panels
         /// </summary>
         public void SwitchMode(UIMainPanelMode mode)
         {
+            //with the pad, skip the mode-selection animation: the pad can't drive it.
+            if (Game.LotControl.PadHelper.PadActive && SetModeDirect(mode)) return;
             LiveButtonClicked(mode);
         }
 

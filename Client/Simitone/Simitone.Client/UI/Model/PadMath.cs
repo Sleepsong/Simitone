@@ -131,6 +131,33 @@ namespace Simitone.Client.UI.Model
             return current + (target - current) * (1f - (float)Math.Exp(-rate * dt));
         }
 
+        /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>
+        public static int ClampIndex(int index, int length)
+        {
+            return Math.Max(0, Math.Min(length - 1, index));
+        }
+
+        /// <summary>The index a highlight moves to from <paramref name="from"/> by <paramref name="step"/>, or -1 past either end.</summary>
+        public static int HighlightStep(int from, int step, int length)
+        {
+            var to = from + step;
+            return (to < 0 || to >= length) ? -1 : to;
+        }
+
+        /// <summary>
+        /// On-screen rectangle of item <paramref name="index"/> in a scrolling list of
+        /// <paramref name="itemSize"/>-wide (or tall) items, clipped to the list's <paramref name="width"/> x
+        /// <paramref name="height"/>. The whole list if the item is out of view.
+        /// </summary>
+        public static Rectangle ListItemBounds(int index, int itemSize, float scroll, int width, int height, bool vertical)
+        {
+            var whole = new Rectangle(0, 0, width, height);
+            var start = (int)(index * itemSize - scroll);
+            var item = vertical ? new Rectangle(0, start, width, itemSize) : new Rectangle(start, 0, itemSize, height);
+            var clipped = Rectangle.Intersect(item, whole);
+            return (clipped.Width > 0 && clipped.Height > 0) ? clipped : whole;
+        }
+
         /// <summary>
         /// Run/walk with hysteresis: start running past <paramref name="on"/> deflection, keep running until it drops
         /// below <paramref name="off"/>. A single threshold flips every frame on a stick resting near it.

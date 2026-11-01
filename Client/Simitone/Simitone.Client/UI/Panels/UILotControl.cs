@@ -86,6 +86,15 @@ namespace Simitone.Client.UI.Panels
         /// </summary>
         public event Action OnCustomControlReleased;
 
+        /// <summary>
+        /// Set by the pad helper while the pad drives buy or build mode: the cursor position (the screen centre) in
+        /// UI units, which the build tools and the object holder use instead of the mouse. Null otherwise.
+        /// </summary>
+        public Point? PadCursor;
+
+        /// <summary>Build tool modifiers held on the pad (they replace Shift/Ctrl while <see cref="PadCursor"/> is set).</summary>
+        public UILotControlModifiers PadModifiers;
+
         private int OldMX;
         private int OldMY;
         private bool FoundMe; //if false and avatar changes, center. Should center on join lot.
@@ -401,6 +410,15 @@ namespace Simitone.Client.UI.Panels
                 ShowTooltip = false;
                 TipIsError = false;
             }
+        }
+
+        /// <summary>Puts away the current build tool (wall, floor, wallpaper...), as Escape does.</summary>
+        public void ReleaseCustomControl()
+        {
+            if (CustomControl == null) return;
+            CustomControl.Release();
+            CustomControl = null;
+            OnCustomControlReleased?.Invoke();
         }
 
         public void SimulateMD(UpdateState state)
@@ -1028,13 +1046,16 @@ namespace Simitone.Client.UI.Panels
                     // ESC cancels floor/wallpaper/wall tools
                     if (state.KeyboardState.IsKeyDown(Keys.Escape))
                     {
-                        CustomControl.Release();
-                        CustomControl = null;
-                        OnCustomControlReleased?.Invoke();
+                        ReleaseCustomControl();
                     }
                     else
                     {
-                        if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2);
+                        if (PadCursor != null)
+                        {
+                            CustomControl.MousePosition = PadCursor.Value;
+                            CustomControl.Modifiers = PadModifiers;
+                        }
+                        else if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2);
                         else
                         {
                             CustomControl.Modifiers = 0;

@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–4 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3), and the submodule points at it (see §10–§13). Phases 1–4 have been tested on hardware (§11–§13); the Phase 4 camera and targeting fixes are waiting on a retest.
+**Status:** Phases 1–5 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3; Phase 5 needed no engine changes), and the submodule points at it (see §10–§14). Phases 1–4 have been tested on hardware (§11–§13). Phase 5 hasn't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -233,17 +233,19 @@ This is in the spirit of the console games. It is not a verified reproduction of
 
 **Pie menu:** the stick points at a slot; the D-pad and LB/RB step through every item, including overflow items and Back; A chooses; B goes back a level or closes.
 
-**Buy/Build:**
+**Buy/Build** (as built in Phase 5; see §14):
 
-| Input | Action |
-|---|---|
-| Left stick | Scroll under the centre cursor |
-| A | Place (hold to drag) |
-| B | Cancel, or back to the catalog |
-| LB / RB | Rotate |
-| Y | Sell / delete |
-| X | Eyedropper |
-| D-pad | Navigate the catalog when it's open |
+| Input | On the lot | In the catalog |
+|---|---|---|
+| Left stick | Scroll the lot under the centre cursor | Move (like the D-pad) |
+| A | Pick up / place; hold to drag a wall or floor tool | Choose (the pad goes to the lot to place it) |
+| B | Put back what you hold, or put the tool away, and go to the catalog | Items → subcategories → lot |
+| LB / RB | Rotate what you hold | — |
+| Y | Sell what you hold; hold with a tool for its erase/delete form (Ctrl) | — |
+| X | Eyedropper (nothing held); hold with a tool for its room/fill form (Shift) | — |
+| LT | Into the catalog | Out of the catalog |
+| RT | Next category | Next category |
+| D-pad ↑ / ↓ | Floor up / down | Move |
 
 ---
 
@@ -256,7 +258,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | 2 ✅ | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
 | 3 ✅ | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
 | 4 ✅ | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
-| 5 | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
+| 5 ✅ | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
 | 6 | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
 
 Phase 1 is the right first PR. It is small, stays inside the engine, is testable, and everything else depends on it.
@@ -643,10 +645,80 @@ Not suppressed explicitly. `EvaluateQueuePriorities` re-queues the direct contro
 - **Camera shake while running.** Diagnosed from the code, not measured. The likely cause is that the anchored camera (`World.CenterTo`) re-centres on the pelvis bone every frame, and the run cycle sways it. In direct control the pad helper now moves the camera itself, following the Sim's position with exponential smoothing (15/s; it jumps instead beyond 3 tiles), and sets the floor to the Sim's. Running also has hysteresis now (on at 0.9, off below 0.75). This rules out a second possible cause: acceleration ignores stick intensity, so a stick resting near a single threshold would flip between walk and run speeds, and the walk/run animation blend with them.
 - **Target to the side or through walls.** The old search took the nearest interactable within 0.9 tiles of a point 0.9 tiles ahead. That reaches about 0.9 tiles sideways, and it ignored walls. Now a target has to be in the Sim's room (walls and fences bound rooms; each tile of a multi-tile object is checked on its own) and within 1.25 tiles and 35° of their facing. The score is distance plus 1 per radian off centre. Along with the point nearest the Sim, the search tries the points nearest two spots straight ahead, so a long counter counts by its part ahead of the Sim and not the part beside them.
 
-### To check on retest
+### Retest results
+
+The camera is steady when running, and targeting picks what the Sim faces.
+
+### To check on retest (done)
 
 1. Run in a straight line and in circles, zoomed in: the camera should be steady.
 2. A stick held at full tilt keeps running, without flickering between walking and running.
 3. Walk alongside a counter or a row of objects: nothing beside the Sim gets the marker. Turn to face one and it does.
 4. Stand next to a wall with an object on the other side: it isn't picked.
 5. Face a corner between two objects: the one more squarely in front wins, and the marker doesn't flicker between them.
+
+---
+
+## 14. Phase 5 — what was built
+
+Buy and build mode with the pad. Everything is in Simitone; the engine didn't need changes. Before this, the pad drove buy and build through the virtual cursor (a mouse pointer moved by the stick).
+
+### How it plays
+
+The pad is either on the **lot** or in the **catalog**. Entering buy or build mode puts it on the lot.
+
+**On the lot:** a cursor sits at the screen centre (a white ring), and the left stick scrolls the lot under it at a screen-relative speed.
+
+- **A** is the mouse button. On an object, it picks it up. While holding something, it places it. With a wall, floor or wallpaper tool, press A at one end, scroll, and let go at the other end.
+- **LB / RB** rotate what you hold a quarter turn.
+- **Y** sells what you hold. A new catalog item is just put back. With nothing held, a hint says to pick the object up first. Selling an object you can't see first seemed too easy to do by mistake.
+- **B** puts back what you hold (a moved object returns to where it was) or puts the tool away, then goes to the catalog. With nothing held, B also goes to the catalog.
+- **X** with nothing held is the eyedropper: the object or floor under the cursor is picked from the catalog, switching between buy and build if needed.
+- **With a build tool out**, hold **X** for its Shift form (walls: a room; floors and wallpaper: fill) and **Y** for its Ctrl form (erase or delete).
+- **D-pad ↑/↓** change floors. The right stick, L3, R3, Select and Start work as in live mode.
+
+**In the catalog** (LT to enter or leave, RT for the next category):
+
+- The D-pad or stick move between the subcategory icons. A opens one. B goes back from items to subcategories, then out to the lot.
+- In a list of items, left and right move a highlight **without buying anything**, and A picks the highlighted item. The pad then goes to the lot to place it. The A press that picked the item doesn't also place it; A has to be released first.
+- After a new item is placed, the pad returns to the catalog on the same item, so A picks another of the same.
+
+### Code
+
+| Where | What |
+|---|---|
+| `UILotControl.PadCursor`, `PadModifiers` | Set by the pad helper while it drives buy/build. Build tools take their position and Shift/Ctrl from them instead of the mouse and keyboard. |
+| `UILotControl.ReleaseCustomControl` | Puts the tool away, as Escape does. |
+| `UIObjectHolder.PointerPosition` | The holder's pick-up GPU pick, placement position, eyedropper and error tooltips use the pad cursor when it's set. |
+| `UITouchScroll.PadHighlightOnly` | A highlight that moves without selecting, and A selects. Used by the catalog, where selecting creates the object. The focus outline is drawn around the highlighted item. |
+| `UILotControlPadHelper.UpdateBuild` | Lot/catalog focus, the centre cursor, scrolling, the buttons above. LT/RT come from `HandlePanelTriggers`, shared with live mode. |
+| `UISimitoneFrontend.SwitchMode` | With the pad, switches straight to the mode (the eyedropper's buy↔build switch). The pad can't drive the mode-selection animation the mouse path uses. |
+
+### Choices and departures from the plan (§5, S4)
+
+- **LT never closes the panel in buy or build mode.** Closing it removes the catalog and drops whatever you hold, which is why buy/build mode hides the close button. LT only moves the pad in and out of the catalog.
+- **Back to the catalog after placing.** The alternative was to keep holding another of the same item, like Shift-click. That turns a double press of A into an accidental second purchase.
+- **Y doesn't sell what's under the cursor.** You pick it up first (A), so you see what you're selling.
+- **The catalog fades** between subcategories and items, and may have nothing focusable for a moment. Catalog focus survives up to a second of that instead of dropping out.
+
+### Known limits
+
+- The catalog search field needs a keyboard (no on-screen keyboard yet).
+- There's no hover highlight before you pick up: aim the centre ring at the object. The pick is the same GPU pick the mouse uses.
+
+### Verification
+
+- The full desktop build succeeds.
+- The headless harness now has 236 checks. The new ones cover the catalog highlight: steps, both ends, clamping after a search shrinks the list, and the highlighted item's rectangle, including scrolled, clipped, out-of-view and vertical cases.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. Select into buy mode. The ring sits at the centre and the left stick scrolls the lot.
+2. LT into the catalog, RT through categories, choose a subcategory, move along the items (nothing should be bought while moving), and A on one. It should follow the ring without being placed by the same press.
+3. LB/RB rotate it. A places it, and the pad returns to the catalog on that item. A again picks another.
+4. B while holding a new item: it's put back and you're in the catalog. B in items: back to subcategories. B again: back on the lot.
+5. On the lot, A on a placed object picks it up. Move it, place it with A, or put it back with B. Pick one up and sell it with Y.
+6. Build mode: walls (A, scroll, release), and a room by holding X. Delete walls by holding Y. Floors and wallpaper the same way, including fill (X) and erase (Y).
+7. X on an object in buy mode, and on a floor (it should switch to build mode and pick that floor).
+8. Switch to the mouse in the middle of any of this. The mouse should work normally, and the pad should pick up again when you press something.
