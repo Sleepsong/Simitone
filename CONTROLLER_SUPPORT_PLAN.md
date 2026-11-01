@@ -912,6 +912,12 @@ Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_
 |---|---|
 | Green isn't Simitone's highlight colour, and the dark prompt bar and lot-name bubbles don't match Simitone's light UI | The pad UI now takes its palette from Simitone's own art and styles. Highlights (the focus frame, the note, the keyboard's focused key, the "has actions" floor ring) use the mint of Simitone's green buttons, (97, 240, 213). The prompt bar, tooltip bubbles, toasts and the keyboard are near-white panels with a blue-grey edge, like Simitone's buttons, with navy text (`UIStyle.BtnTxt`, (0, 31, 63)). Button icons on them are navy pills and navy discs (PlayStation symbols in bright colours on the discs), or coloured discs with white letters for Xbox naming. A faint navy shadow under the mint focus frame keeps it visible against light buttons. Red stays for "no actions", white for empty floor. |
 
+### Fifth round: hover looks instead of boxes
+
+| Feedback | Change |
+|---|---|
+| The focus box isn't needed where a control already has its own mouse-hover highlight (catalog and category buttons, the choices in popups), but is still wanted in character creation, the outfit picker and the neighbourhood | When focus lands on a button with a hover look of its own, the button is shown in that hover state (`ForceState`), as the mouse would show it, and no frame is drawn. Stencil and category buttons recolour, big dialog buttons switch to their hover image, and two-state buttons light up. Anything without one keeps the frame: catalog items, lists, the outfit carousel, text boxes, personality bars, houses, and round buttons whose hover is only a slight grow. The neighbourhood and CAS keep the frame on everything (`UIScreenPadNavigator.AlwaysFrame`). The note still marks the focused control everywhere. A forced hover is released as soon as focus moves or the pad stops drawing it. |
+
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 
 ### To check on hardware

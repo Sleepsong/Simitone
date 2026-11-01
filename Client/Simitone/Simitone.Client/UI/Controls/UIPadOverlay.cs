@@ -50,6 +50,7 @@ namespace Simitone.Client.UI.Controls
         {
             base.Update(state);
             PadPrompts.BeginFrame();
+            PadFocusStyle.BeginFrame();
             ScaleX = ScaleY = FSOEnvironment.DPIScaleFactor;
             PadInUse = state.LastInputDevice == InputDevice.GamePad && GlobalSettings.Default.GamePadEnabled && state.Pad.Connected;
             Pad = state.Pad;
