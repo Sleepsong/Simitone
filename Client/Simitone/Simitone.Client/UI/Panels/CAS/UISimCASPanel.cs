@@ -342,8 +342,30 @@ namespace Simitone.Client.UI.Panels.CAS
         }
     }
 
-    public class UICASPersonalityBar : UIElement
+    public class UICASPersonalityBar : UIElement, IPadNavigable
     {
+        public bool PadFocusable => Visible;
+        public Rectangle PadBounds => new Rectangle(-6, -6, 246, 32);
+
+        /// <summary>Gamepad: left/right take a point off or add one (within the points left to spend).</summary>
+        public bool PadMove(PadDirection direction)
+        {
+            if (direction != PadDirection.Left && direction != PadDirection.Right) return false;
+            var allowance = Math.Min(10, CAS.AllowedPoints - (CAS.TotalPoints - Points));
+            var newPTs = Math.Max(0, Math.Min(allowance, Points + ((direction == PadDirection.Right) ? 1 : -1)));
+            if (newPTs == Points)
+            {
+                HITVM.Get().PlaySoundEvent(UISounds.Error);
+                return true;
+            }
+            HITVM.Get().PlaySoundEvent(UISounds.CreateCharacterPersonality);
+            Points = newPTs;
+            CAS.UpdateTotalPoints();
+            return true;
+        }
+
+        public void PadActivate() { }
+
         private Texture2D BarItem;
         public int Points;
         private UIMouseEventRef ClickHandler;

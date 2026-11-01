@@ -116,7 +116,7 @@ namespace Simitone.Client.UI.Panels
         private float CatalogEmptyTime; //how long the catalog has had nothing to focus while it has the pad
         private const float CatalogEmptyGrace = 1f; //it fades between subcategories and items; don't drop out mid-fade
 
-        private bool DirectMode; //X: the player chose direct control. It applies only in live mode with the 3D camera.
+        private bool DirectMode = GlobalSettings.Default.GamePadDirectControl; //X: the player chose direct control. It applies only in live mode with the 3D camera.
         private VMAvatar DirectAvatar; //the avatar direct control is currently enabled on
         private int DirectInputID;
         private short DirectFacing; //last direction the Sim was walked in, in VMDirectControlInput units
@@ -376,7 +376,7 @@ namespace Simitone.Client.UI.Panels
                 }
                 if (pad.Pressed(PadAction.FaceTop))
                 {
-                    ShowHint("Pick it up with A, then Y sells it.");
+                    ShowHint($"Pick it up with {PadGlyphs.ActionName(PadAction.Confirm, pad)}, then {PadGlyphs.ActionName(PadAction.FaceTop, pad)} sells it.");
                     HITVM.Get().PlaySoundEvent(UISounds.Error);
                 }
                 if (pad.Pressed(PadAction.Cancel))
@@ -609,6 +609,14 @@ namespace Simitone.Client.UI.Panels
             CatalogEmptyTime = 0;
             state.PadCaptured = true;
 
+            //Y in the catalog: type a search (the on-screen keyboard comes up on the search box)
+            if (subpanel is UIBuyBrowsePanel && state.Pad.Pressed(PadAction.FaceTop) && frontend.MainPanel.VisibleSearchField != null)
+            {
+                state.InputManager.SetFocus(frontend.MainPanel.VisibleSearchField);
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                return;
+            }
+
             if (state.Pad.Pressed(PadAction.Cancel))
             {
                 if (optionsMode) frontend.SetModeDirect(UIMainPanelMode.LIVE);
@@ -746,7 +754,7 @@ namespace Simitone.Client.UI.Panels
 
             if (Math.Abs(stick.Y) >= Math.Abs(stick.X))
             {
-                Master.Touch.NudgeZoom(stick.Y * ZoomRate * dt);
+                Master.Touch.NudgeZoom((GlobalSettings.Default.GamePadInvertZoom ? -stick.Y : stick.Y) * ZoomRate * dt);
             }
             else if (Master.Touch._3D)
             {

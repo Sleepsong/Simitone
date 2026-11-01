@@ -56,6 +56,9 @@ namespace Simitone.Client.UI.Panels
         public UIMainPanelMode Mode;
 
         private UITextBox CatalogSearchField;
+
+        /// <summary>The catalog's search box, when it's shown (buy/build mode).</summary>
+        public UITextBox VisibleSearchField => (CatalogSearchField?.Visible ?? false) ? CatalogSearchField : null;
         private UILabel SearchPlaceholder;
         private bool _lastLeftButtonDown;
 

@@ -160,6 +160,9 @@ namespace Simitone.Client.UI.Panels.CAS
         private List<VMAvatar> Avatars;
         private List<UIAvatarSelectButton> Btns = new List<UIAvatarSelectButton>();
         private Texture2D Bg;
+
+        /// <summary>The "add a member" button at the end of the list.</summary>
+        public UIElement AddButton => Btns.LastOrDefault();
         public event Action<int> OnSelection;
         public UIAvatarListPanel(List<VMAvatar> avatar)
         {

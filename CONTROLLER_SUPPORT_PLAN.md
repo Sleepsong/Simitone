@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–5 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3; Phase 5 needed no engine changes), and the submodule points at it (see §10–§14). Phases 1–4 have been tested on hardware (§11–§13). Phase 5 hasn't been yet.
+**Status:** Phases 1–6 are done. The engine changes are on `simitone/controller-phase6` in `Sleepsong/FreeSO` (which includes Phases 1–5), and the submodule points at it (see §10–§15). Phases 1–5 have been tested on hardware (§11–§14). Phase 6 hasn't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -259,7 +259,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | 3 ✅ | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
 | 4 ✅ | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 ✅ | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
-| 6 | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
+| 6 ✅ | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
 
 Phase 1 is the right first PR. It is small, stays inside the engine, is testable, and everything else depends on it.
 
@@ -286,7 +286,7 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
   - SDL 2.32.2, which MonoGame bundles, has a Steam Controller driver, but it is off by default (`SDL_JOYSTICK_HIDAPI_STEAM`). In that version its packet reader only accepts Bluetooth LE reports, so it wouldn't help over the USB dongle or a cable.
   - Practical routes: add Simitone to Steam as a non-Steam game (Steam Input presents a standard gamepad), or run a standalone driver that creates a virtual gamepad.
 - **Pie menu anchor.** The menu is currently placed at the mouse. With E5 it will be placed at the target's projected screen position, which has to be clamped to the screen bounds.
-- **Text input.** No on-screen keyboard exists. Naming, cheats and catalog search all depend on a keyboard.
+- **Text input.** Resolved in Phase 6: an on-screen keyboard (§15). The cheat box still opens only from the keyboard shortcut.
 
 ---
 
@@ -712,7 +712,11 @@ The pad is either on the **lot** or in the **catalog**. Entering buy or build mo
 - The headless harness now has 236 checks. The new ones cover the catalog highlight: steps, both ends, clamping after a search shrinks the list, and the highlighted item's rectangle, including scrolled, clipped, out-of-view and vertical cases.
 - **Not yet tested in the running game.**
 
-### To check on hardware
+### Hardware results
+
+Everything on the list above works.
+
+### To check on hardware (done)
 
 1. Select into buy mode. The ring sits at the centre and the left stick scrolls the lot.
 2. LT into the catalog, RT through categories, choose a subcategory, move along the items (nothing should be bought while moving), and A on one. It should follow the ring without being placed by the same press.
@@ -722,3 +726,82 @@ The pad is either on the **lot** or in the **catalog**. Entering buy or build mo
 6. Build mode: walls (A, scroll, release), and a room by holding X. Delete walls by holding Y. Floors and wallpaper the same way, including fill (X) and erase (Y).
 7. X on an object in buy mode, and on a floor (it should switch to build mode and pick that floor).
 8. Switch to the mouse in the middle of any of this. The mouse should work normally, and the pad should pick up again when you press something.
+
+---
+
+## 15. Phase 6 — what was built
+
+Engine commit `6b30b0a` on `simitone/controller-phase6`. The rest is in Simitone. The neighbourhood, CAS and every text box now work with the pad, and button prompts use the pad's own naming.
+
+### On-screen keyboard
+
+It appears whenever a text box has keyboard focus and the pad is the device in use: in dialogs (naming a baby or pet), CAS names and bio, and catalog search. It sits in a new overlay slot in the UI layer, so it covers every screen and dialog and gets the pad first.
+
+| Input | Action |
+|---|---|
+| D-pad / left stick | Move between keys. Rows wrap, and up/down remember the column, so passing through Space comes back to the same letter. |
+| A | Press the key |
+| B | Delete. On an empty box, a fresh press closes the keyboard. |
+| Y | Space |
+| X | Shift (one key; it starts on for an empty box, to capitalise names) |
+| Start, or the Done key | Close |
+
+A preview line shows what's been typed, since the box itself may be under the keyboard. Closing releases the box's focus. A physical keyboard keeps working throughout, and using the mouse hides the on-screen one.
+
+To reach a text box: the focus navigator now includes editable text boxes, and A on one gives it focus. In a naming dialog the box already has focus when the dialog opens, so the keyboard is up straight away. In the buy/build catalog, **Y** opens the search box.
+
+### Neighbourhood
+
+- The D-pad/stick move between houses on the map and the neighbourhood buttons at the edges (CAS, back, other neighbourhoods). The focused house shows the same opened-up picture as mouse hover.
+- **A** opens the house panel; focus starts on Enter Lot (or More when Enter Lot isn't available).
+- **B** in the house panel goes from the More options back, then closes the panel. Focus returns to that house.
+- Focus starts on the last house selected, otherwise the one nearest the middle of the screen.
+
+### CAS
+
+Each mode navigates only its own panel plus Back and Accept. The other modes' panels stay on screen, slid away or faded, so they're excluded with `IPadScopeRoots`.
+
+- **Family select:** the family list (moving selects), New and Delete. **Start** moves the selected family in.
+- **Family edit:** the last-name box, the members and "+". A on a member shows Edit/Delete above it. **Start** accepts the family.
+- **Sim edit:** the tabs, first-name box, gender/age/skin and Random buttons, the personality bars (left/right take a point off or add one, within the points left), the bio box, and the head and body carousels. On a carousel, left/right turn it one place with a short glide. LB/RB turn the head carousel and LT/RT the body one from anywhere. **Start** accepts the Sim.
+- **B** is the Back button in every mode, including the confirmation it asks for when leaving family edit.
+- A prompt line along the bottom names the buttons. Back/Accept stay reachable with the D-pad.
+
+### Settings and prompts (S7)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `GamePadGlyphs` | `auto` | Button names in prompts: `auto` (from the pad's name), `xbox` or `playstation` |
+| `GamePadInvertZoom` | `false` | Right stick up zooms out instead of in |
+| `GamePadDirectControl` | `false` | Live mode starts in direct control (3D only) instead of cursor mode |
+
+Prompts name the button each action is bound to, so `GamePadSwapConfirmCancel` and `gamepad.ini` rebinding read correctly. PlayStation naming (Cross, Circle, L1, Options...) is chosen when the pad's name looks like a Sony pad, including Sony's generic "Wireless Controller". Everything else, including Steam Input's virtual pad, gets Xbox names. Prompts are text only; there is no button artwork.
+
+Not done from S7: a settings screen (these are `config.ini` keys) and a separate cursor/pan speed for the lot (the stick speeds are constants).
+
+### Engine changes
+
+| Change | Why |
+|---|---|
+| `UITextEdit.PadType` / `PadBackspace` / `IsReadOnly` | Typing that respects `MaxChars`, validation and `OnChange` (catalog search filters live). Injecting characters into the text input would have worked for letters but not Backspace, which `ApplyKeyboardInput` only takes from a physically pressed key. |
+| `UIFocusNavigator`: text boxes; `IPadScopeRoots` | Text boxes are reachable. Scopes can name exactly what to navigate. |
+| `UILayer.Overlay`, `UpdateState.PadTextEntry` | The keyboard must be updated before screens and dialogs (to take the pad) but drawn after them; one tree can't do both. Dialog navigation stands down while the flag is set. |
+| `PadGlyphs`, `GamePadInput.DisplayName`, settings | Prompts in the pad's naming. |
+
+### Verification
+
+- The full desktop build succeeds.
+- The headless harness now has 289 checks. The new ones cover keyboard movement (wrapping, wide keys, the remembered column, ties), shifted characters, that every row tiles ten columns, button naming (auto-detection, overrides, swapped bindings) and the carousel glide (lands exactly, never overshoots, short).
+- `UITextEdit` can't be constructed without graphics, so `PadType`/`PadBackspace` have no harness coverage; they were checked by reading them against `ApplyKeyboardInput`.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. Start up: the neighbourhood map takes the pad without the virtual cursor. Move between houses (they open up as focused), A opens a house, B closes it, and More/Back work.
+2. Move to the CAS button at the left edge and press A.
+3. Create a family: last name (A on the box, type, Start), "+" for a new Sim. Name them, change gender/age/skin, turn the head and body carousels (left/right on them, and LB/RB and LT/RT), set personality points and type a bio. Start accepts.
+4. Edit and delete a member from the family edit screen. B on the family edit screen asks before discarding the family.
+5. Accept the family, pick it in family select, move it into a house, and play.
+6. In buy mode, LT into the catalog and Y to search, then type a few letters. The list should filter as you type.
+7. Name a baby or pet if you can: the keyboard should be up as the dialog opens. Done, then OK with the pad.
+8. With a PlayStation pad (or `GamePadGlyphs = playstation`), the prompts say Cross/Circle.

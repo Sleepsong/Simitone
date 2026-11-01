@@ -25,6 +25,7 @@ using FSO.Vitaboy;
 using FSO.Content.TS1;
 using Simitone.Client.UI.Panels.CAS;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using FSO.SimAntics.Model;
 using FSO.Files.Formats.IFF.Chunks;
 using Simitone.Client.UI.Panels;
@@ -33,11 +34,19 @@ using Simitone.Client.Utils;
 using FSO.SimAntics.Utils;
 using FSO.SimAntics.Model.TS1Platform;
 using FSO.LotView;
+using FSO.Common.Rendering.Framework.IO;
 
 namespace Simitone.Client.UI.Screens
 {
-    public class TS1CASScreen : UIScreen
+    public class TS1CASScreen : UIScreen, IPadScope, IPadScopeRoots
     {
+        //gamepad
+        private UIScreenPadNavigator PadNav;
+        private UICASCarouselPadTarget HeadPadTarget;
+        private UICASCarouselPadTarget BodyPadTarget;
+        private float? HeadPadGoal; //carousel position a pad step is gliding to
+        private float? BodyPadGoal;
+
         private FSO.LotView.World World;
         public FSO.SimAntics.VM vm { get; set; }
         public VMNetDriver Driver;
@@ -299,6 +308,12 @@ namespace Simitone.Client.UI.Screens
                 HeadSpeed = (float)Math.Max(-minSpeed, Math.Min(minSpeed, targInt - HeadPosition));
             }
 
+            //a drag takes over from a pad step
+            if (moving == 1) BodyPadGoal = null;
+            if (moving == 2) HeadPadGoal = null;
+            BodySpeed = PadMath.Glide(ref BodyPadGoal, BodyPosition, BodySpeed, (float)minSpeed);
+            HeadSpeed = PadMath.Glide(ref HeadPadGoal, HeadPosition, HeadSpeed, (float)minSpeed);
+
             HeadPosition += HeadSpeed;
             BodyPosition += BodySpeed;
 
@@ -462,7 +477,119 @@ namespace Simitone.Client.UI.Screens
 
             BackButton.OnButtonClick += GoBack;
             AcceptButton.OnButtonClick += Accept;
+
+            HeadPadTarget = new UICASCarouselPadTarget(StepHead);
+            Add(HeadPadTarget);
+            BodyPadTarget = new UICASCarouselPadTarget(StepBody);
+            Add(BodyPadTarget);
+            PadNav = new UIScreenPadNavigator(() => (Dead || !Initialized) ? null : this);
+            PadNav.Prompts = CASPrompts;
+            Add(PadNav); //last, so its outline draws over the panels
         }
+
+        #region Gamepad
+
+        /// <summary>Only the current mode's panel, the carousels in Sim edit, and Back/Accept are navigated.</summary>
+        public IEnumerable<UIElement> PadRoots
+        {
+            get
+            {
+                switch (Mode)
+                {
+                    case UICASMode.FamilySelect:
+                        yield return FamiliesPanel;
+                        break;
+                    case UICASMode.FamilyEdit:
+                        yield return FamilyPanel;
+                        break;
+                    case UICASMode.SimEdit:
+                        yield return CASPanel;
+                        yield return HeadPadTarget;
+                        yield return BodyPadTarget;
+                        break;
+                }
+                yield return BackButton;
+                yield return AcceptButton;
+            }
+        }
+
+        public UIElement PadDefaultFocus
+        {
+            get
+            {
+                switch (Mode)
+                {
+                    case UICASMode.FamilySelect:
+                        return (FamiliesPanel.Families.Count > 0) ? FamiliesPanel.FamilyList : (UIElement)FamiliesPanel.NewButton;
+                    case UICASMode.FamilyEdit:
+                        return FamilyPanel.AvatarList.AddButton;
+                    case UICASMode.SimEdit:
+                        return CASPanel.FirstNameTextBox;
+                }
+                return null;
+            }
+        }
+
+        /// <summary>B: the same as the Back button.</summary>
+        public bool PadCancel()
+        {
+            if (BackButton.Disabled) return false;
+            GoBack(BackButton);
+            return true;
+        }
+
+        private bool PadFree(UpdateState state)
+        {
+            return state.Pad.Connected && !state.PadTextEntry && state.InputManager?.GetFocus() == null
+                && !GameFacade.Screens.HasModalDialog;
+        }
+
+        /// <summary>
+        /// Start accepts (like the Accept button). In Sim edit, LB/RB turn the head carousel and LT/RT the body one,
+        /// wherever the focus is. Also keeps the carousel targets over the carousels.
+        /// </summary>
+        private void UpdatePad(UpdateState state)
+        {
+            var w = 360;
+            var split = (int)(ScreenHeight * 0.625f); //where the mouse switches between the head and body carousels
+            HeadPadTarget.Area = new Rectangle((ScreenWidth - w) / 2, 290, w, Math.Max(40, split - 294));
+            BodyPadTarget.Area = new Rectangle((ScreenWidth - w) / 2, split + 4, w, (int)(ScreenHeight * 0.3f));
+            if (!Initialized || Dead || !PadFree(state)) return;
+
+            var pad = state.Pad;
+            if (Mode == UICASMode.SimEdit)
+            {
+                if (pad.PressedRepeat(PadAction.ShoulderLeft)) StepHead(-1);
+                if (pad.PressedRepeat(PadAction.ShoulderRight)) StepHead(1);
+                if (pad.PressedRepeat(PadAction.TriggerLeft)) StepBody(-1);
+                if (pad.PressedRepeat(PadAction.TriggerRight)) StepBody(1);
+            }
+            if (pad.Pressed(PadAction.Start) && !AcceptButton.Disabled) Accept(AcceptButton);
+        }
+
+        private string CASPrompts(GamePadInput pad)
+        {
+            string P(PadAction action) => PadGlyphs.ActionName(action, pad);
+            var basic = $"{P(PadAction.Confirm)} Select    {P(PadAction.Cancel)} Back";
+            var accept = AcceptButton.Disabled ? "" : $"    {P(PadAction.Start)} Accept";
+            if (Mode == UICASMode.SimEdit)
+                return basic + $"    {P(PadAction.ShoulderLeft)}/{P(PadAction.ShoulderRight)} Head    {P(PadAction.TriggerLeft)}/{P(PadAction.TriggerRight)} Body" + accept;
+            return basic + accept;
+        }
+
+        /// <summary>Turns the head carousel one place (1 = the next one along, as dragging left does).</summary>
+        public void StepHead(int step)
+        {
+            HeadPadGoal = (HeadPadGoal ?? (float)Math.Round(HeadPosition)) + step;
+        }
+
+        public void StepBody(int step)
+        {
+            BodyPadGoal = (BodyPadGoal ?? (float)Math.Round(BodyPosition)) + step;
+        }
+
+
+        #endregion
 
         private int EditIndex = -1;
 
@@ -665,6 +792,7 @@ namespace Simitone.Client.UI.Screens
             ModePositions[3].Y = 11;
             ModeTargets[3].Y = 7.896059f;
             if (Dead) return;
+            UpdatePad(state);
             if (vm == null) InitializeLot();
             vm.Update();
             if (World != null && !Initialized)
@@ -1081,6 +1209,33 @@ namespace Simitone.Client.UI.Screens
         public string Bio;
         public uint RefGUID; //for family editing. TODO.
         public int ReplaceIndex; //for editing existing sims
+    }
+
+    /// <summary>Gamepad stand-in for a CAS carousel (heads or bodies): left/right turn it one place.</summary>
+    public class UICASCarouselPadTarget : UIElement, IPadNavigable
+    {
+        private readonly Action<int> Step;
+        public Rectangle Area;
+
+        public UICASCarouselPadTarget(Action<int> step)
+        {
+            Step = step;
+        }
+
+        public bool PadFocusable => Visible;
+        public Rectangle PadBounds => Area;
+
+        public bool PadMove(PadDirection direction)
+        {
+            if (direction == PadDirection.Left) Step(-1);
+            else if (direction == PadDirection.Right) Step(1);
+            else return false;
+            return true;
+        }
+
+        public void PadActivate() { }
+
+        public override void Draw(UISpriteBatch batch) { }
     }
 
     public enum UICASMode : int

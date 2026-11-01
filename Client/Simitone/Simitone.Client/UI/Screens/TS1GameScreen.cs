@@ -41,7 +41,7 @@ using System.Threading.Tasks;
 
 namespace Simitone.Client.UI.Screens
 {
-    public class TS1GameScreen : FSO.Client.UI.Framework.GameScreen
+    public class TS1GameScreen : FSO.Client.UI.Framework.GameScreen, IPadScope
     {
         public UIContainer WindowContainer;
         public bool Downtown;
@@ -62,6 +62,7 @@ namespace Simitone.Client.UI.Screens
 
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
+        private UIScreenPadNavigator NeighPadNav; //gamepad on the neighbourhood map and house panel
         public FAMI ActiveFamily;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
@@ -262,7 +263,46 @@ namespace Simitone.Client.UI.Screens
             };
             Add(TS1NeighPanel);
             Add(switcher);
+
+            if (NeighPadNav != null) Remove(NeighPadNav);
+            NeighPadNav = new UIScreenPadNavigator(NeighbourhoodPadScope);
+            NeighPadNav.Prompts = (pad) => $"{PadGlyphs.ActionName(PadAction.Confirm, pad)} Select    {PadGlyphs.ActionName(PadAction.Cancel, pad)} Back";
+            NeighPadNav.FocusChanged += (previous, current) =>
+            {
+                (previous as UINeighborhoodHouseButton)?.SetPadHover(false);
+                (current as UINeighborhoodHouseButton)?.SetPadHover(true);
+            };
+            Add(NeighPadNav);
         }
+
+        /// <summary>
+        /// What the pad navigates on the neighbourhood screen: the open house panel, or else the whole screen (the
+        /// houses on the map and the neighbourhood buttons). Null outside the neighbourhood.
+        /// </summary>
+        private UIElement NeighbourhoodPadScope()
+        {
+            if (TS1NeighPanel?.Parent == null) return null;
+            var house = TS1NeighPanel.LastHS;
+            if (house?.Parent != null) return house;
+            return this;
+        }
+
+        /// <summary>Neighbourhood map: start on the house last selected, or the one nearest the middle.</summary>
+        public UIElement PadDefaultFocus
+        {
+            get
+            {
+                var panel = TS1NeighPanel;
+                if (panel == null || panel.HouseButtons.Count == 0) return null;
+                if (panel.HouseButtons.TryGetValue(panel.LastHouse, out var last)) return last;
+                var middle = new Vector2(ScreenWidth, ScreenHeight) / 2;
+                return panel.HouseButtons.Values
+                    .OrderBy(b => Vector2.DistanceSquared(UIFocusNavigator.GlobalRect(b).Center.ToVector2(), middle))
+                    .First();
+            }
+        }
+
+        public bool PadCancel() => false;
 
         public void PlayHouse(short house, UIElement switcher)
         {
@@ -270,6 +310,11 @@ namespace Simitone.Client.UI.Screens
             CurrentNeighborhoodMode = GetNeighborhoodModeFromHouse(house);
             InitializeLot(Content.Get().Neighborhood.GetHousePath(house), false);// "UserData/Houses/House21.iff"
             Remove(TS1NeighPanel);
+            if (NeighPadNav != null)
+            {
+                Remove(NeighPadNav);
+                NeighPadNav = null;
+            }
             if (switcher != null) Remove(switcher);
         }
 

@@ -84,6 +84,8 @@ namespace Simitone.Client.UI.Panels
         public event Action<int> OnHouseSelect;
         public HITSound BgSound;
         public Dictionary<int, Vector2> HousePositions;
+        public Dictionary<int, UINeighborhoodHouseButton> HouseButtons = new Dictionary<int, UINeighborhoodHouseButton>();
+        public int LastHouse = -1; //the house last selected, where gamepad focus returns
 
         private Vector2 _cp = new Vector2(800, 600) / 2;
         public float CenterPositionX
@@ -169,6 +171,8 @@ namespace Simitone.Client.UI.Panels
             });
 
             HousePositions = new Dictionary<int, Vector2>();
+            HouseButtons = new Dictionary<int, UINeighborhoodHouseButton>();
+            LastHouse = -1;
             var locationIff = Content.Get().Neighborhood.LotLocations;
             var locations = locationIff.Get<STR>(mode);
             if (locations == null) return;
@@ -183,6 +187,7 @@ namespace Simitone.Client.UI.Panels
                 var button = new UINeighborhoodHouseButton(num, SelectHouse, config.Scale);
                 button.Position = new Vector2(int.Parse(loc[1].TrimStart()), int.Parse(loc[2].TrimStart()));
                 HousePositions[num] = button.Position;
+                HouseButtons[num] = button;
                 buttons.Add(button);
             }
 
@@ -222,6 +227,7 @@ namespace Simitone.Client.UI.Panels
 
         public void SelectHouse(int house)
         {
+            LastHouse = house;
             if (LastHS != null && LastHS.HouseID == house)
             {
                 ResetZoom();
@@ -236,6 +242,7 @@ namespace Simitone.Client.UI.Panels
                     { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
                     { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
 
+                LastHS.OnClose += ResetZoom;
                 LastHS.OnSelected += (h) =>
                 {
                     OnHouseSelect?.Invoke(h);
@@ -331,7 +338,7 @@ namespace Simitone.Client.UI.Panels
         }
     }
 
-    public class UINeighborhoodHouseButton : UIElement
+    public class UINeighborhoodHouseButton : UIElement, IPadNavigable
     {
         private Texture2D HouseTex;
         private Texture2D HouseOpenTex;
@@ -340,8 +347,31 @@ namespace Simitone.Client.UI.Panels
         private THMB Offsets;
         public float AlphaTime { get; set; }
 
+        private readonly int HouseNumber;
+        private readonly Action<int> SelectionCallback;
+        private Rectangle HitRect;
+
+        public bool PadFocusable => Visible;
+        public Rectangle PadBounds => HitRect;
+        public bool PadMove(PadDirection direction) => false;
+
+        public void PadActivate()
+        {
+            HITVM.Get().PlaySoundEvent(FSO.Client.UI.Model.UISounds.NeighborhoodClick);
+            SelectionCallback(HouseNumber);
+        }
+
+        /// <summary>Gamepad focus: shows the house opened up, as hovering with the mouse does.</summary>
+        public void SetPadHover(bool hover)
+        {
+            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "AlphaTime", hover ? 1f : 0f } });
+            if (hover) HITVM.Get().PlaySoundEvent(FSO.Client.UI.Model.UISounds.NeighborhoodRollover);
+        }
+
         public UINeighborhoodHouseButton(int houseNumber, Action<int> selectionCallback, float scale)
         {
+            HouseNumber = houseNumber;
+            SelectionCallback = selectionCallback;
             if (houseNumber == 71) { }
             AlphaTime = 0;
             var house = Content.Get().Neighborhood.GetHouse(houseNumber);
@@ -360,8 +390,9 @@ namespace Simitone.Client.UI.Panels
 
             var w = (int)(HouseTex.Width / HouseScale);
             var h = (int)(HouseTex.Height / HouseScale);
+            HitRect = new Rectangle(w / -2, w / -4, w, h / 2);
             var clickHandler =
-                ListenForMouse(new Rectangle(w / -2, w / -4, w, h/2), (evt, state) =>
+                ListenForMouse(HitRect, (evt, state) =>
                 {
                     switch (evt)
                     {

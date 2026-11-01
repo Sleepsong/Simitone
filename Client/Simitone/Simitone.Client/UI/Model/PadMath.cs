@@ -131,6 +131,24 @@ namespace Simitone.Client.UI.Model
             return current + (target - current) * (1f - (float)Math.Exp(-rate * dt));
         }
 
+        /// <summary>
+        /// Speed this frame for something gliding to <paramref name="goal"/> (a carousel stepped with the pad): a fifth of
+        /// the remaining way, at least <paramref name="minSpeed"/>, never overshooting. Landing clears the goal. With no
+        /// goal, <paramref name="speed"/> is returned unchanged.
+        /// </summary>
+        public static float Glide(ref float? goal, float position, float speed, float minSpeed)
+        {
+            if (goal == null) return speed;
+            var diff = goal.Value - position;
+            if (Math.Abs(diff) < 0.01f)
+            {
+                goal = null;
+                return diff; //land exactly on it
+            }
+            var step = Math.Max(minSpeed, Math.Abs(diff) * 0.2f);
+            return Math.Sign(diff) * Math.Min(Math.Abs(diff), step);
+        }
+
         /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>
         public static int ClampIndex(int index, int length)
         {

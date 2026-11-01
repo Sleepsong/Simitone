@@ -384,6 +384,7 @@ namespace Simitone.Client
                 this.Window.Title = "Simitone";
                 HasUpdated = true;
                 GameFacade.Screens = uiLayer;
+                uiLayer.Overlay = new UI.Controls.UIPadKeyboard(); //on-screen keyboard for the gamepad
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;
