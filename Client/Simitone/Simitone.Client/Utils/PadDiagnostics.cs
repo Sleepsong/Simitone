@@ -51,6 +51,29 @@ namespace Simitone.Client.Utils
                 any = true;
             }
             if (!any) log.AppendLine("  (none: not started by Steam)");
+            //Steam tells whether the game is in front through its overlay, and switches the controller to the game's
+            //layout only then; without it the Desktop Layout (stick as mouse, triggers as clicks) stays on
+            log.AppendLine("Steam overlay and display (without the overlay, Steam keeps the controller on its Desktop Layout):");
+            var preload = Environment.GetEnvironmentVariable("LD_PRELOAD") ?? "";
+            log.AppendLine($"  Steam asked to load the overlay (LD_PRELOAD): {(preload.Contains("gameoverlayrenderer") ? "yes" : "no")}" +
+                ((preload.Length > 0) ? $" [{Shorten(preload, 300)}]" : ""));
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                var loaded = false;
+                try
+                {
+                    foreach (var line in File.ReadLines("/proc/self/maps"))
+                    {
+                        if (line.Contains("gameoverlayrenderer")) { loaded = true; break; }
+                    }
+                }
+                catch { }
+                log.AppendLine($"  Overlay library loaded in the game: {(loaded ? "yes" : "no")}");
+                log.AppendLine($"  Session: {Environment.GetEnvironmentVariable("XDG_SESSION_TYPE") ?? "?"}, " +
+                    $"DISPLAY={Environment.GetEnvironmentVariable("DISPLAY") ?? "(unset)"}, " +
+                    $"WAYLAND_DISPLAY={Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? "(unset)"}");
+            }
+            log.AppendLine($"  SDL video driver: {SDL.VideoDriver()}");
             log.AppendLine($"Pad support enabled: {FSO.Common.Rendering.Framework.IO.GamePadSettings.Enabled}, " +
                 $"ignore keyboard/mouse while held: {FSO.Common.Rendering.Framework.IO.GamePadSettings.IgnoreEchoes}");
             try
@@ -125,6 +148,12 @@ namespace Simitone.Client.Utils
         /// <summary>What SDL (under MonoGame) sees, read straight from SDL so devices MonoGame skips show up too.</summary>
         private static class SDL
         {
+            public static string VideoDriver()
+            {
+                try { return Marshal.PtrToStringUTF8(Native.GetCurrentVideoDriver()) ?? "(none)"; }
+                catch (Exception e) { return "unknown (" + e.GetType().Name + ")"; }
+            }
+
             public static int JoystickCount()
             {
                 try { return Native.NumJoysticks(); }
@@ -158,6 +187,7 @@ namespace Simitone.Client.Utils
             private static readonly bool Windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
             private static readonly bool Mac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
+            public static IntPtr GetCurrentVideoDriver() => Windows ? W.SDL_GetCurrentVideoDriver() : Mac ? M.SDL_GetCurrentVideoDriver() : L.SDL_GetCurrentVideoDriver();
             public static int NumJoysticks() => Windows ? W.SDL_NumJoysticks() : Mac ? M.SDL_NumJoysticks() : L.SDL_NumJoysticks();
             public static IntPtr JoystickNameForIndex(int i) => Windows ? W.SDL_JoystickNameForIndex(i) : Mac ? M.SDL_JoystickNameForIndex(i) : L.SDL_JoystickNameForIndex(i);
             public static ushort JoystickGetDeviceVendor(int i) => Windows ? W.SDL_JoystickGetDeviceVendor(i) : Mac ? M.SDL_JoystickGetDeviceVendor(i) : L.SDL_JoystickGetDeviceVendor(i);
@@ -168,6 +198,7 @@ namespace Simitone.Client.Utils
             {
                 private const string Lib = "libSDL2-2.0.so.0";
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
+                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
@@ -178,6 +209,7 @@ namespace Simitone.Client.Utils
             {
                 private const string Lib = "libSDL2-2.0.0.dylib"; //as MonoGame ships it
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
+                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
@@ -188,6 +220,7 @@ namespace Simitone.Client.Utils
             {
                 private const string Lib = "SDL2.dll";
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern int SDL_NumJoysticks();
+                [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_GetCurrentVideoDriver();
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr SDL_JoystickNameForIndex(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceVendor(int index);
                 [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)] public static extern ushort SDL_JoystickGetDeviceProduct(int index);
