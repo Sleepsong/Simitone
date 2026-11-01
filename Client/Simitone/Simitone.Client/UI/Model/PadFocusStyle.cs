@@ -23,6 +23,14 @@ namespace Simitone.Client.UI.Model
     /// </list>
     /// It also records what it drew and where the other targets are, for the focus tooltip.
     /// </summary>
+    /// <summary>
+    /// A pad target the focus tooltip may cover, e.g. a lot picture on a map: they overlap one another anyway, so
+    /// dodging them only pushes the bubble off to the side.
+    /// </summary>
+    public interface IPadLabelCoverable
+    {
+    }
+
     /// <summary>A pad target that can show it has the focus by itself, so no frame is needed while it does.</summary>
     public interface IPadOwnFocus
     {
@@ -158,7 +166,8 @@ namespace Simitone.Client.UI.Model
             {
                 foreach (var target in navigator.Targets)
                 {
-                    if (target != element && target.WillDraw()) Neighbours.Add(UIFocusNavigator.GlobalRect(target));
+                    if (target != element && target.WillDraw() && !(target is IPadLabelCoverable))
+                        Neighbours.Add(UIFocusNavigator.GlobalRect(target));
                 }
             }
 

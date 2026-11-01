@@ -359,7 +359,7 @@ namespace Simitone.Client.UI.Panels
         }
     }
 
-    public class UINeighborhoodHouseButton : UIElement, IPadNavigable
+    public class UINeighborhoodHouseButton : UIElement, IPadNavigable, Simitone.Client.UI.Model.IPadLabelCoverable
     {
         private Texture2D HouseTex;
         private Texture2D HouseOpenTex;
@@ -434,6 +434,7 @@ namespace Simitone.Client.UI.Panels
                     if (int.TryParse(assignment, out var street))
                         name = neigh.StreetNames.Get<STR>(2000).GetString(street - 1).Replace("%s", houseNumber.ToString());
                 }
+                name = name?.Trim().TrimEnd(':').TrimEnd(); //some lot names end in a colon ("Reclaimed Public Beach:")
                 var family = neigh.GetFamilyForHouse((short)houseNumber);
                 var familyName = family?.ChunkParent.Get<FAMs>(family.ChunkID)?.GetString(0);
                 if (!string.IsNullOrEmpty(familyName)) name = string.IsNullOrEmpty(name) ? familyName : name + " - " + familyName;

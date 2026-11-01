@@ -350,9 +350,10 @@ namespace Simitone.Client.UI.Panels
             });
             Parent.Remove(TS1NeighSelector);
             TS1NeighSelector = null;
-            if (house <= 0 && Parent is TS1GameScreen screen)
+            if (Parent is TS1GameScreen screen)
             {
-                //no trip after all: the lot comes back (a trip loads the new lot, which brings its own)
+                //back to the lot: the Sim sets off from it, and the new lot loads when they leave. If the trip fails
+                //(an interaction error), the player is left on the lot rather than an empty background.
                 screen.Bg.Visible = false;
                 screen.LotControl.Visible = true;
                 if (screen.Frontend != null) screen.Frontend.Visible = true;

@@ -381,8 +381,7 @@ namespace Simitone.Client.UI.Screens
             if (hovered != null)
             {
                 //name it, as the focus does in browse mode, clear of the other lots
-                PadFocusStyle.Label(hovered, UIFocusNavigator.GlobalRect(hovered),
-                    panel.HouseButtons.Values.Where(b => b != hovered && b.Visible).Select(b => UIFocusNavigator.GlobalRect(b)));
+                PadFocusStyle.Label(hovered, UIFocusNavigator.GlobalRect(hovered), null); //lot pictures may be covered
             }
             PadPrompts.Set(PadPrompt.For(PadStick.Left, "Cursor"),
                 PadPrompt.Of(PadAction.Confirm, hovered?.PadLabel(MoveInFamily != null) ?? "Select"),
