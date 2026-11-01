@@ -957,6 +957,13 @@ The first log (Bazzite, the new twin-stick Steam Controller, started from Steam)
 
 With the pad found, the right stick still moved the system cursor (out of the window, clicking on other monitors) and the triggers clicked, although Simitone's Steam layout has no mouse bindings. That is Steam's Desktop Layout. Shift+Tab and the Steam button do nothing in Simitone, so the Steam overlay isn't running in it. Steam relies on the overlay to know the game is in front; without it Steam keeps the controller on the Desktop Layout. Simitone isn't in the way: the native launcher `execv`s the game (same process), the game doesn't restart itself, SDL 2.32 picks X11 before Wayland, and MonoGame doesn't change the video driver. To find where the overlay fails, gamepad.log now also records whether Steam asked to load it (`LD_PRELOAD`), whether the library is actually loaded in the game (`/proc/self/maps`), the session type and display variables, and SDL's video driver.
 
+The next log: Steam asked to load the overlay and it is loaded in the game, SDL is on X11 (XWayland, in a Wayland session), and only one copy of the controller showed up. Shift+Tab still doesn't open the overlay, which this setup doesn't explain, but the cursor no longer leaves the window: Steam is applying Simitone's layout.
+
+| Feedback | Change |
+|---|---|
+| With the pad, the camera can keep drifting while a popup is up | The lot scrolls when the hardware cursor is at a window edge (and on right-drag). That was skipped only while the pad helper was active, and the helper stands down while a popup is open, so a cursor parked at an edge (where Steam's mouse stick or the virtual cursor left it) scrolled the camera under the popup. Edge and right-drag scrolling now only happen while the mouse is the device in use. |
+| Live mode doesn't say what RT and R3 do | Added to the live prompts: RT "Sim info" (opens the info panel) or "Next: Job" etc. (its next tab), and R3 "Find Sim" (the cursor back on the active Sim; cursor mode only). Select, Start and the d-pad are still left out to keep the bar short. The prompt bar now wraps onto more rows, evenly filled and stacked upwards, when it's too wide for the screen (`PadMath.WrapRows`, 5 new harness checks, 341 in all). |
+
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 

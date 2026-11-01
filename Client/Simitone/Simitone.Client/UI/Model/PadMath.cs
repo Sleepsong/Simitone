@@ -215,6 +215,48 @@ namespace Simitone.Client.UI.Model
             return best;
         }
 
+        /// <summary>
+        /// Splits a bar of items (each <paramref name="widths"/> wide, <paramref name="gap"/> apart, with
+        /// <paramref name="pad"/> at each end of a row) into rows no wider than <paramref name="maxWidth"/>, keeping
+        /// their order. Rows are filled as evenly as the count of rows allows, so a wrapped bar doesn't end in a stub.
+        /// Each row is (first item, item count, row width); an item wider than the limit gets a row of its own.
+        /// </summary>
+        public static List<(int first, int count, float width)> WrapRows(float[] widths, float gap, float pad, float maxWidth)
+        {
+            float RowWidth(int first, int count)
+            {
+                var w = pad * 2 + gap * (count - 1);
+                for (int i = first; i < first + count; i++) w += widths[i];
+                return w;
+            }
+            var rows = new List<(int, int, float)>();
+            var n = widths.Length;
+            if (n == 0) return rows;
+
+            //how many rows a greedy fill needs
+            int needed = 1;
+            for (int i = 0, start = 0; i < n; i++)
+            {
+                if (i > start && RowWidth(start, i - start + 1) > maxWidth) { needed++; start = i; }
+            }
+            //then aim each row at an even share of the total, without going over the limit
+            var target = Math.Min(maxWidth, RowWidth(0, n) / needed + pad * 2);
+            var first = 0;
+            while (first < n)
+            {
+                var count = 1;
+                var rowsLeft = needed - rows.Count;
+                while (first + count < n && RowWidth(first, count + 1) <= maxWidth
+                    && (rowsLeft <= 1 || RowWidth(first, count + 1) <= target))
+                {
+                    count++;
+                }
+                rows.Add((first, count, RowWidth(first, count)));
+                first += count;
+            }
+            return rows;
+        }
+
         /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>
         public static int ClampIndex(int index, int length)
         {

@@ -948,7 +948,11 @@ namespace Simitone.Client.UI.Panels
                     World.Scroll(scrollBy * (60f / FSOEnvironment.RefreshRate));
                     scrolled = true;
                 }
-                if (MouseIsOn)
+                //the hardware cursor only scrolls the lot while the mouse is the device in use. With the pad, it's
+                //parked (hidden) wherever it was left, maybe at a window edge, and the pad helper stands down while a
+                //popup is open: checking only the helper let the camera drift under popups.
+                var mouseInUse = state.LastInputDevice != InputDevice.GamePad;
+                if (MouseIsOn && mouseInUse)
                 {
                     if (state.MouseState.RightButton == ButtonState.Pressed)
                     {
@@ -961,8 +965,7 @@ namespace Simitone.Client.UI.Panels
                     }
                     else
                     {
-                        //the parked hardware cursor may sit at a window edge while the pad drives the lot.
-                        if (!scrolled && GlobalSettings.Default.EdgeScroll && !state.TouchMode && !PadHelper.PadActive) scrolled = World.TestScroll(state);
+                        if (!scrolled && GlobalSettings.Default.EdgeScroll && !state.TouchMode) scrolled = World.TestScroll(state);
                     }
                 }
 

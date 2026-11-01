@@ -272,11 +272,14 @@ namespace Simitone.Client.UI.Panels
             //the press that hands control to the pad only reveals the selector; it doesn't act on whatever is under it.
             //In direct control, A with nothing in front of the Sim does nothing (there's no "go here").
             if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm) && (!direct || Target != null)) OpenMenu(state);
-            SetLivePrompts(direct, is3D);
+            SetLivePrompts(direct, is3D, panel);
         }
 
-        /// <summary>Prompts for live mode, cursor or direct control, naming what A does on the current target.</summary>
-        private void SetLivePrompts(bool direct, bool is3D)
+        /// <summary>
+        /// Prompts for live mode, cursor or direct control, naming what A does on the current target and what RT shows
+        /// next. Select (mode), Start (pause) and the d-pad (floors, speed) are left out to keep the bar short.
+        /// </summary>
+        private void SetLivePrompts(bool direct, bool is3D, UIMainPanel panel)
         {
             var items = new System.Collections.Generic.List<PadPrompt>();
             items.Add(PadPrompt.For(PadStick.Left, direct ? "Walk" : "Move"));
@@ -286,9 +289,21 @@ namespace Simitone.Client.UI.Panels
             else if (is3D) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Direct control"));
             items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
             items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
+            items.Add(PadPrompt.Of(PadAction.TriggerRight, NextPanelLabel(panel)));
             items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
             items.Add(PadPrompt.Of(PadAction.LeftStickClick, "Walls"));
+            if (!direct) items.Add(PadPrompt.Of(PadAction.RightStickClick, "Find Sim")); //the cursor back on the Sim
             PadPrompts.Set(items.ToArray());
+        }
+
+        /// <summary>What RT does in live mode: opens the Sim info panel, or shows its next tab ("Next: Job").</summary>
+        private static string NextPanelLabel(UIMainPanel panel)
+        {
+            if (!panel.PanelActive) return "Sim info";
+            var categories = panel.Switcher.Categories;
+            if (categories == null || categories.Count == 0) return "Next tab";
+            var index = categories.FindIndex(x => x.ID == panel.Switcher.ActiveCategory);
+            return "Next: " + categories[(index + 1) % categories.Count].Name;
         }
 
         #region Buy and build

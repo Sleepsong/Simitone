@@ -92,43 +92,45 @@ namespace Simitone.Client.UI.Controls
             if (items.Length == 0) return;
 
             //measure
-            const float pad = 14f, gap = 20f, labelGap = 7f;
+            const float pad = 14f, gap = 20f, labelGap = 7f, rowGap = 6f;
             var widths = new float[items.Length];
-            var total = pad * 2;
             for (int i = 0; i < items.Length; i++)
             {
                 var icon = PadDraw.DrawPromptButtons(this, null, items[i], Pad, 0, 0, GlyphSize);
                 widths[i] = icon + labelGap + LabelStyle.MeasureString(items[i].Label ?? "").X;
-                total += widths[i] + ((i > 0) ? gap : 0);
             }
+            //too wide for the screen (a narrow window, or many prompts): wrap onto more rows, stacked upwards
+            var rows = PadMath.WrapRows(widths, gap, pad, screen.ScreenWidth - 30f);
 
             //in a lot: bottom right, above the main panel when it's open (the clock and queue have the top, the mode
             //button and money the bottom left). Elsewhere: bottom centre.
-            float x, y;
-            if (screen is TS1GameScreen game && !game.InNeighbourhood && game.Frontend != null)
+            var inLot = screen is TS1GameScreen game && !game.InNeighbourhood && game.Frontend != null;
+            var bottom = screen.ScreenHeight;
+            if (inLot)
             {
-                var panel = game.Frontend.MainPanel;
-                var bottom = panel.PanelActive ? panel.Y : screen.ScreenHeight;
-                y = bottom - BarHeight - 10f;
-                x = screen.ScreenWidth - total - 15f;
+                var panel = ((TS1GameScreen)screen).Frontend.MainPanel;
+                if (panel.PanelActive) bottom = (int)panel.Y;
             }
-            else
+            BarRect = Rectangle.Empty;
+            for (int r = 0; r < rows.Count; r++)
             {
-                y = screen.ScreenHeight - BarHeight - 10f;
-                x = (screen.ScreenWidth - total) / 2f;
-            }
-            BarRect = new Rectangle((int)x, (int)y, (int)total, (int)BarHeight);
-            PadDraw.DrawPanel(this, batch, BarRect);
+                var (first, count, total) = rows[r];
+                var y = bottom - 10f - BarHeight - (rows.Count - 1 - r) * (BarHeight + rowGap);
+                var x = inLot ? screen.ScreenWidth - total - 15f : (screen.ScreenWidth - total) / 2f;
+                var rect = new Rectangle((int)x, (int)y, (int)total, (int)BarHeight);
+                BarRect = BarRect.IsEmpty ? rect : Rectangle.Union(BarRect, rect);
+                PadDraw.DrawPanel(this, batch, rect);
 
-            x += pad;
-            var centreY = y + BarHeight / 2f;
-            for (int i = 0; i < items.Length; i++)
-            {
-                var icon = PadDraw.DrawPromptButtons(this, batch, items[i], Pad, x, centreY, GlyphSize);
-                DrawLocalString(batch, items[i].Label ?? "", Vector2.Zero, LabelStyle,
-                    new Rectangle((int)(x + icon + labelGap), (int)y, (int)(widths[i] - icon - labelGap + 4), (int)BarHeight),
-                    TextAlignment.Left | TextAlignment.Middle);
-                x += widths[i] + gap;
+                x += pad;
+                var centreY = y + BarHeight / 2f;
+                for (int i = first; i < first + count; i++)
+                {
+                    var icon = PadDraw.DrawPromptButtons(this, batch, items[i], Pad, x, centreY, GlyphSize);
+                    DrawLocalString(batch, items[i].Label ?? "", Vector2.Zero, LabelStyle,
+                        new Rectangle((int)(x + icon + labelGap), (int)y, (int)(widths[i] - icon - labelGap + 4), (int)BarHeight),
+                        TextAlignment.Left | TextAlignment.Middle);
+                    x += widths[i] + gap;
+                }
             }
         }
 
