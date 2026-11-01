@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework;
 namespace Simitone.Client.UI.Model
 {
     /// <summary>
-    /// Simitone's gamepad focus highlight, in place of the engine's plain outline: a soft green frame with rounded
+    /// Simitone's gamepad focus highlight, in place of the engine's plain outline: a soft mint frame (Simitone's highlight colour) with rounded
     /// corners that breathes gently and pops out a little when focus arrives, and the Simitone note (from the logo)
     /// bobbing over the focused element. It also records what it drew, for the focus tooltip.
     /// </summary>
@@ -37,6 +37,10 @@ namespace Simitone.Client.UI.Model
             var frame = rect;
             frame.Inflate(pad, pad);
             var pulse = 0.82f + 0.18f * (float)Math.Sin(now * 4f);
+            //a faint navy shadow first, so the mint frame still shows against light buttons and backgrounds
+            var shadow = frame;
+            shadow.Inflate((int)(2 * dpi), (int)(2 * dpi));
+            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, shadow, PadDraw.Ink * 0.45f, dpi);
             PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, frame, PadDraw.Accent * pulse, dpi);
 
             //the Simitone note, where there's room above and the element isn't a large area (a carousel, a whole list)

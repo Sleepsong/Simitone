@@ -821,7 +821,7 @@ Engine commit `da2f2f2` on `simitone/controller-phase7`; the rest is in Simitone
 
 The yellow box is gone. Focus is now shown as:
 
-- a soft green frame with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
+- a soft mint frame (Simitone's highlight colour) with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
 - the Simitone note bobbing over the focused control, where there's room above it and the control isn't a large area (a carousel, a whole list). This is the musical note that forms the "t" of the Simitone logo. It's cut from the logo image when the game loads, keeping only its white top layer, with a dark outline added. If the logo can't be read, a plain drawn quaver is used instead. The lot's target marker uses it too. No Sims artwork or plumbob shapes are used, for copyright reasons.
 - round buttons (the neighbourhood buttons, family portraits) grow a little, as they do under the mouse. The focused house on the map opens up, as before.
 
@@ -905,6 +905,12 @@ Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_
 | The ring was far too big | It was a circle round the diagonal of the whole object group, and stairs, railings and long counters are huge groups. Now it's an oval hugging the footprint: the whole object only if it's at most 2x2 tiles (a sofa, a bed), otherwise just the tile pointed at. One tile gives a ring just over a tile across, and a Sim a small circle. |
 | It looked odd at some camera angles, and huge and blurry close up | It was one ring texture stretched over the ellipse that the circle's two projected radii span: only approximately right in 3D, and its band grew with it. It's now a line through 48 points round the oval, each projected exactly, with a fixed thickness on screen: a glow, a dark rim, then the bright band. Points behind a 3D camera are skipped, using a new engine projection that keeps depth (`World.ProjectTileToScreenWithDepth`, engine `simitone/controller-phase7`). |
 | The beam was slanted, and the note sat far above the target | The beam went from the ring's centre to the targeted tile, and the height counted the lot's terrain twice: `VisualPosition.Z` already includes it, and the projection adds it again. The beam now goes straight up from the ring's centre. Its height counts only what the item sits on (a counter or shelf), measured from the bottom of that stack. |
+
+### Fourth round: Simitone's colours
+
+| Feedback | Change |
+|---|---|
+| Green isn't Simitone's highlight colour, and the dark prompt bar and lot-name bubbles don't match Simitone's light UI | The pad UI now takes its palette from Simitone's own art and styles. Highlights (the focus frame, the note, the keyboard's focused key, the "has actions" floor ring) use the mint of Simitone's green buttons, (97, 240, 213). The prompt bar, tooltip bubbles, toasts and the keyboard are near-white panels with a blue-grey edge, like Simitone's buttons, with navy text (`UIStyle.BtnTxt`, (0, 31, 63)). Button icons on them are navy pills and navy discs (PlayStation symbols in bright colours on the discs), or coloured discs with white letters for Xbox naming. A faint navy shadow under the mint focus frame keeps it visible against light buttons. Red stays for "no actions", white for empty floor. |
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 

@@ -166,7 +166,7 @@ namespace Simitone.Client.UI.Controls
             var caret = ((int)(Time * 2) % 2 == 0) ? "_" : " ";
             var previewPos = Origin + new Vector2(Margin, Margin);
             var previewRect = ToRect(previewPos, new Vector2(width - Margin * 2, PreviewHeight));
-            PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, previewRect, Color.Black * 0.45f);
+            PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, previewRect, new Color(222, 230, 242));
             DrawLocalString(batch, text + caret, Vector2.Zero, PreviewStyle,
                 ToRect(previewPos + new Vector2(12, 0), new Vector2(width - Margin * 2 - 24, PreviewHeight)), TextAlignment.Left | TextAlignment.Middle);
 
@@ -184,11 +184,11 @@ namespace Simitone.Client.UI.Controls
                     var focused = r == Layout.Row && i == Layout.Index;
                     var on = key.Action == PadKeyAction.Shift && Shift;
                     if (focused) focusedRect = rect;
-                    var fill = focused ? PadDraw.Accent : (on ? PadDraw.Accent * 0.45f : Color.White * 0.13f);
+                    var fill = focused ? PadDraw.Accent : (on ? new Color(196, 246, 234) : new Color(228, 235, 245));
                     PadDraw.NineSlice(this, batch, rounded, PadGraphics.RoundedCorner, rect, fill);
 
                     var label = (key.Action == PadKeyAction.Char) ? key.Type(Shift) : key.Label;
-                    KeyStyle.Color = focused ? PadDraw.Dark : Color.White;
+                    KeyStyle.Color = PadDraw.Ink;
                     DrawLocalString(batch, label, Vector2.Zero, KeyStyle, rect, TextAlignment.Center | TextAlignment.Middle);
                 }
             }
@@ -247,10 +247,10 @@ namespace Simitone.Client.UI.Controls
             KeyStyle.Size = 16;
             PreviewStyle = TextStyle.DefaultLabel.Clone();
             PreviewStyle.Size = 16;
-            PreviewStyle.Color = UIStyle.Current.Text;
+            PreviewStyle.Color = PadDraw.Ink;
             HintStyle = TextStyle.DefaultLabel.Clone();
             HintStyle.Size = 12;
-            HintStyle.Color = Color.White;
+            HintStyle.Color = PadDraw.Ink;
         }
     }
 }

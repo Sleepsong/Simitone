@@ -154,7 +154,7 @@ namespace Simitone.Client.UI.Controls
             var fade = Math.Min(1f, ToastTime / 0.3f);
             var rect = new Rectangle((int)((screenWidth - width) / 2f), (int)(screenHeight * 0.2f), (int)width, (int)height);
             PadDraw.DrawPanel(this, batch, rect, fade);
-            ToastStyle.Color = Color.White * fade;
+            ToastStyle.Color = PadDraw.Ink * fade;
             DrawLocalString(batch, Toast, Vector2.Zero, ToastStyle, rect, TextAlignment.Center | TextAlignment.Middle);
         }
 
@@ -163,10 +163,10 @@ namespace Simitone.Client.UI.Controls
             if (LabelStyle != null) return;
             LabelStyle = TextStyle.DefaultLabel.Clone();
             LabelStyle.Size = 13;
-            LabelStyle.Color = Color.White;
+            LabelStyle.Color = PadDraw.Ink;
             ToastStyle = TextStyle.DefaultLabel.Clone();
             ToastStyle.Size = 16;
-            ToastStyle.Color = Color.White;
+            ToastStyle.Color = PadDraw.Ink;
         }
     }
 }

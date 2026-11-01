@@ -15,15 +15,18 @@ namespace Simitone.Client.UI.Model
     public static class PadDraw
     {
         /// <summary>The highlight green (focus frame, focused keyboard key, the note).</summary>
-        public static readonly Color Accent = new Color(112, 226, 80);
-        public static readonly Color Panel = new Color(16, 34, 62) * 0.9f;
-        public static readonly Color PanelEdge = new Color(120, 190, 255) * 0.35f;
-        public static readonly Color Light = new Color(232, 236, 242);
-        public static readonly Color Dark = new Color(24, 28, 38);
+        //Simitone's own palette: the mint of its green buttons for anything active or highlighted, near-white
+        //panels like its buttons, and the navy of its button text (UIStyle.BtnTxt) for text and icons on them.
+        public static readonly Color Accent = new Color(97, 240, 213);
+        public static readonly Color Panel = new Color(246, 249, 252) * 0.96f;
+        public static readonly Color PanelEdge = new Color(150, 172, 204) * 0.9f;
+        public static readonly Color Ink = new Color(0, 31, 63);
+        public static readonly Color Light = new Color(246, 249, 252);
+        public static readonly Color Dark = Ink;
 
         private static TextStyle GlyphText;
 
-        /// <summary>A panel: rounded, Sims blue, with a faint light edge. In <paramref name="host"/>'s local units.</summary>
+        /// <summary>A panel: rounded and near-white like Simitone's buttons, with a soft blue-grey edge. In <paramref name="host"/>'s local units.</summary>
         public static void DrawPanel(UIElement host, UISpriteBatch batch, Rectangle dest, float opacity = 1f)
         {
             var gd = GameFacade.GraphicsDevice;
@@ -117,7 +120,7 @@ namespace Simitone.Client.UI.Model
                     var pos = new Vector2(left, centreY - size / 2);
                     if (set == PadGlyphSet.PlayStation)
                     {
-                        host.DrawLocalTexture(batch, disc, null, pos, new Vector2(scale), Light);
+                        host.DrawLocalTexture(batch, disc, null, pos, new Vector2(scale), Ink);
                         var shape = PadGraphics.GetShape(gd, ShapeFor(b));
                         host.DrawLocalTexture(batch, shape, null, pos, new Vector2(size / shape.Width), ShapeColour(b));
                     }
@@ -139,7 +142,7 @@ namespace Simitone.Client.UI.Model
                 if (batch != null)
                 {
                     var plus = PadGraphics.GetDPad(gd);
-                    host.DrawLocalTexture(batch, plus, null, new Vector2(left, centreY - size / 2), new Vector2(size / plus.Width), Light);
+                    host.DrawLocalTexture(batch, plus, null, new Vector2(left, centreY - size / 2), new Vector2(size / plus.Width), Ink);
                 }
                 return size;
             }
@@ -156,13 +159,13 @@ namespace Simitone.Client.UI.Model
                 if (stick == PadStick.DPad)
                 {
                     var plus = PadGraphics.GetDPad(gd);
-                    host.DrawLocalTexture(batch, plus, null, new Vector2(left, centreY - size / 2), new Vector2(size / plus.Width), Light);
+                    host.DrawLocalTexture(batch, plus, null, new Vector2(left, centreY - size / 2), new Vector2(size / plus.Width), Ink);
                 }
                 else
                 {
                     var ring = PadGraphics.GetStickRing(gd);
-                    host.DrawLocalTexture(batch, ring, null, new Vector2(left, centreY - size / 2), new Vector2(size / ring.Width), Light);
-                    GlyphText.Color = Light;
+                    host.DrawLocalTexture(batch, ring, null, new Vector2(left, centreY - size / 2), new Vector2(size / ring.Width), Ink);
+                    GlyphText.Color = Ink;
                     GlyphText.Size = Math.Max(8, (int)(size * 0.42f));
                     host.DrawLocalString(batch, (stick == PadStick.Left) ? "L" : "R", Vector2.Zero, GlyphText,
                         new Rectangle((int)left, (int)(centreY - size / 2), (int)size, (int)size), TextAlignment.Center | TextAlignment.Middle);
@@ -177,8 +180,8 @@ namespace Simitone.Client.UI.Model
             var width = MeasurePill(label, size);
             var height = size * 0.78f;
             var rect = new Rectangle((int)left, (int)(centreY - height / 2), (int)width, (int)height);
-            NineSlice(host, batch, PadGraphics.GetRounded(GameFacade.GraphicsDevice), PadGraphics.RoundedCorner, rect, Light);
-            GlyphText.Color = Dark;
+            NineSlice(host, batch, PadGraphics.GetRounded(GameFacade.GraphicsDevice), PadGraphics.RoundedCorner, rect, Ink);
+            GlyphText.Color = Color.White;
             GlyphText.Size = Math.Max(8, (int)(size * 0.4f));
             host.DrawLocalString(batch, label, Vector2.Zero, GlyphText, rect, TextAlignment.Center | TextAlignment.Middle);
         }
@@ -205,10 +208,10 @@ namespace Simitone.Client.UI.Model
         {
             switch (b)
             {
-                case Buttons.A: return new Color(78, 132, 214);
-                case Buttons.B: return new Color(214, 70, 76);
-                case Buttons.X: return new Color(204, 104, 176);
-                default: return new Color(46, 168, 140);
+                case Buttons.A: return new Color(130, 180, 255);
+                case Buttons.B: return new Color(255, 112, 118);
+                case Buttons.X: return new Color(242, 146, 214);
+                default: return new Color(90, 226, 196);
             }
         }
 
