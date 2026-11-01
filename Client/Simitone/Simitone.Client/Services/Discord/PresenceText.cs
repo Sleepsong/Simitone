@@ -15,8 +15,10 @@ namespace Simitone.Client.Services.Discord
     public class PresenceInfo
     {
         public PresencePlace Place;
-        /// <summary>Neighbourhood map number (1-based), in the neighbourhood.</summary>
+        /// <summary>Neighbourhood map number (1-based): the map shown, or on a lot, the town it's in.</summary>
         public int Neighbourhood;
+        /// <summary>In the neighbourhood place: it's a town map a Sim is travelling to from a lot, not the neighbourhood screen.</summary>
+        public bool Travelling;
         /// <summary>Create a Family: 0 choosing a family, 1 the family, 2 a Sim.</summary>
         public int CasStage;
         /// <summary>On a lot: the family playing (raw name, e.g. "Goth"), or null.</summary>
@@ -46,7 +48,7 @@ namespace Simitone.Client.Services.Discord
 
         public PresenceActivity Build(PresenceInfo info, DateTimeOffset now)
         {
-            var key = info.Place + "|" + info.Neighbourhood + "|" + info.Lot;
+            var key = info.Place + "|" + info.Neighbourhood + "|" + info.Travelling + "|" + info.Lot;
             if (key != PlaceKey)
             {
                 PlaceKey = key;
@@ -57,7 +59,7 @@ namespace Simitone.Client.Services.Discord
             switch (info.Place)
             {
                 case PresencePlace.Neighbourhood:
-                    details = "In the neighbourhood";
+                    details = info.Travelling ? "Travelling" : "In the neighbourhood";
                     state = NeighbourhoodName(info.Neighbourhood);
                     break;
                 case PresencePlace.CreateFamily:
@@ -95,14 +97,7 @@ namespace Simitone.Client.Services.Discord
                 case PresencePlace.CreateFamily:
                     return ("cas", "Create a Family");
                 case PresencePlace.Neighbourhood:
-                    switch (info.Neighbourhood)
-                    {
-                        case 2: return ("downtown", "Downtown");
-                        case 3: return ("vacation", "Vacation Island");
-                        case 5: return ("studio", "Studio Town");
-                        case 7: return ("magic", "Magic Town");
-                    }
-                    break;
+                    return TownImage(info.Neighbourhood);
                 case PresencePlace.Lot:
                     switch (info.Mode)
                     {
@@ -110,7 +105,19 @@ namespace Simitone.Client.Services.Discord
                         case "Build mode": return ("build", "Build mode");
                         case "Options": return ("options", "Options");
                     }
-                    break;
+                    return TownImage(info.Neighbourhood); //live mode: the town the lot is in, if not the main one
+            }
+            return (null, null);
+        }
+
+        private static (string image, string text) TownImage(int neighbourhood)
+        {
+            switch (neighbourhood)
+            {
+                case 2: return ("downtown", "Downtown");
+                case 3: return ("vacation", "Vacation Island");
+                case 5: return ("studio", "Studio Town");
+                case 7: return ("magic", "Magic Town");
             }
             return (null, null);
         }

@@ -8,8 +8,8 @@ using FSO.Common;
 namespace Simitone.Client.Services.Discord
 {
     /// <summary>
-    /// Discord Rich Presence: shows what the player is doing in Simitone on their Discord profile. Off unless
-    /// discord.ini (in the user folder, written as a template on first run) enables it and gives an application ID.
+    /// Discord Rich Presence: shows what the player is doing in Simitone on their Discord profile. On unless
+    /// discord.ini (in the user folder, written on first run) turns it off; it shows as Simitone's Discord application.
     /// The game thread only hands over the wanted activity (<see cref="Tick"/>); a background task owns the connection,
     /// so a slow or absent Discord never stalls the game. It reconnects when Discord starts later, sends only changes,
     /// and no more often than Discord allows (5 updates per 20 s). Notes go to discord.log next to it.
@@ -38,7 +38,8 @@ namespace Simitone.Client.Services.Discord
             try
             {
                 var settings = ReadSettings();
-                if (!IsOn(settings, "enabled")) return;
+                //on unless discord.ini turns it off
+                if (settings.ContainsKey("enabled") && !IsOn(settings, "enabled")) return;
                 if (!settings.TryGetValue("client_id", out var clientId) || string.IsNullOrWhiteSpace(clientId))
                     clientId = SimitoneApplicationId;
                 Text = new PresenceText();
@@ -111,8 +112,8 @@ namespace Simitone.Client.Services.Discord
         public const string Template =
             "# Discord Rich Presence: shows what you're doing in Simitone on your Discord profile\n" +
             "# (\"Playing Simitone\", the neighbourhood or the family you're playing, and for how long).\n" +
-            "# It needs the Discord app running on this computer. Set enabled=true and restart Simitone.\n" +
-            "enabled=false\n" +
+            "# It needs the Discord app running on this computer. Set enabled=false to turn it off.\n" +
+            "enabled=true\n" +
             "# Leave empty for Simitone's own Discord application, or put another application's ID here.\n" +
             "client_id=\n" +
             "# The pictures: art assets uploaded to the application (small_images: buy, build, options, cas,\n" +

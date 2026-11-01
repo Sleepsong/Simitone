@@ -185,7 +185,8 @@ namespace Simitone.Client.UI.Screens
             }
         }
 
-        private ushort GetNeighborhoodModeFromHouse(short house)
+        /// <summary>Which neighbourhood map a lot belongs to, by its house number (2 Downtown, 3 Vacation, 5 Studio Town, 7 Magic Town, 4 the main one).</summary>
+        public static ushort GetNeighborhoodModeFromHouse(short house)
         {
             // House number ranges match the lot types
             if (house >= 21 && house <= 31) return 2;  // Downtown

@@ -17,8 +17,9 @@ namespace Simitone.Client.Services.Discord
 
             if (screen is TS1GameScreen game)
             {
-                if (game.InNeighbourhood)
-                    return new PresenceInfo { Place = PresencePlace.Neighbourhood, Neighbourhood = game.TS1NeighPanel.NeighbourhoodMode };
+                var map = game.ActiveNeighPanel; //the neighbourhood, or a town map a Sim is travelling to
+                if (map != null)
+                    return new PresenceInfo { Place = PresencePlace.Neighbourhood, Neighbourhood = map.NeighbourhoodMode, Travelling = !game.InNeighbourhood };
                 if (game.vm != null && game.vm.Ready && game.Frontend != null)
                 {
                     return new PresenceInfo
@@ -26,7 +27,8 @@ namespace Simitone.Client.Services.Discord
                         Place = PresencePlace.Lot,
                         Family = FamilyName(game.ActiveFamily),
                         Lot = LotName(game.CurrentHouse),
-                        Mode = ModeName(game.Frontend.MainPanel.Mode)
+                        Mode = ModeName(game.Frontend.MainPanel.Mode),
+                        Neighbourhood = (game.CurrentHouse > 0) ? TS1GameScreen.GetNeighborhoodModeFromHouse(game.CurrentHouse) : 0
                     };
                 }
             }

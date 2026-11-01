@@ -6,6 +6,7 @@ Shows what you're doing in Simitone on your Discord profile, under "Playing Simi
 |---|---|---|
 | Starting | Starting up | |
 | Neighbourhood | In the neighbourhood | Old Town, Downtown, Vacation Island, Studio Town, Magic Town |
+| A town's map, travelling from a lot | Travelling | Vacation Island, Studio Town, Magic Town... |
 | Create a Family | Create a Family | Choosing a family, Editing a family, Making a Sim |
 | A family's lot | Playing the Goth family | Live mode at 5 Sim Lane (Buy mode, Build mode, Options) |
 | A lot without a family | the lot's name | the mode |
@@ -16,7 +17,7 @@ It's part of Simitone only; the FreeSO engine isn't changed.
 
 ## Turning it on
 
-Simitone's Discord application (ID `1566559628077047818`) is built in, so it's only a switch: start Simitone once and it writes `discord.ini` in the user folder (`~/.local/share/Simitone/` on Linux); set `enabled=true` and restart. The Discord app has to be running on the same computer. `client_id=` can point it at a different application.
+It's on by default, as Simitone's Discord application (ID `1566559628077047818`, built in). The Discord app has to be running on the same computer. To turn it off, set `enabled=false` in `discord.ini` in the user folder (`~/.local/share/Simitone/` on Linux; Simitone writes it on first run). `client_id=` can point it at a different application.
 
 ## Art assets
 
@@ -30,7 +31,7 @@ In the [Discord Developer Portal](https://discord.com/developers/applications), 
 | Rich Presence → Art Assets | `cas.png` | `cas` (Create a Family) |
 | Rich Presence → Art Assets | `downtown.png`, `vacation.png`, `studio.png`, `magic.png` | `downtown`, `vacation`, `studio`, `magic` (those neighbourhoods) |
 
-The asset name is what Simitone asks for, so it has to match exactly (Discord fills it in from the file name). New assets can take a few minutes to show up. Live mode and the main neighbourhood have no small picture. If the small ones aren't uploaded, set `small_images=false`.
+The asset name is what Simitone asks for, so it has to match exactly (Discord fills it in from the file name). New assets can take a few minutes to show up. In buy, build and options the small picture is the mode; otherwise it's the town (in a town's neighbourhood, on its map while travelling, and in live mode on its lots); in the main neighbourhood and live mode on its lots there's none. If the small ones aren't uploaded, set `small_images=false`.
 
 The pictures are scaled up from the 256×256 app icon and the 96–128 px buttons, because Discord asks for at least 512×512; it only ever shows them at 30–120 px, where they look sharp. The small ones sit on a white disc, since Discord crops small pictures to a circle.
 
