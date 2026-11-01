@@ -978,6 +978,7 @@ The next log: Steam asked to load the overlay and it is loaded in the game, SDL 
 | Feedback | Change |
 |---|---|
 | Travelling from a lot (the Magic Town hole; vacations and Studio Town work the same way), the town map came up with the lot's UI showing over it, and the pad only had the cursor | The lot shows the destination's map over itself (a VM dialog) and hid the lot, but not its bar and clock, and nothing navigated it. The bar is now hidden while the map is up (and the lot comes back if the trip is called off). The neighbourhood's pad navigation now works on whichever map is up (`TS1GameScreen.ActiveNeighPanel`: the neighbourhood, or the lot's `TravelSelector`): the same lot browsing, prompts, house panel and X cursor mode. Its navigator is made when a travel map appears and removed when it goes. |
+| After travelling to another lot, direct control was off again | Each lot gets new lot controls, and they started from the `GamePadDirectControl` setting. The player's choice (X) is now kept for the session, so it carries over to the next lot; until X is pressed, the setting applies. (FISH EYE still ends when the lot changes: B turns it back on.) |
 
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.

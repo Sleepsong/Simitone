@@ -139,7 +139,16 @@ namespace Simitone.Client.UI.Panels
         private float CatalogEmptyTime; //how long the catalog has had nothing to focus while it has the pad
         private const float CatalogEmptyGrace = 1f; //it fades between subcategories and items; don't drop out mid-fade
 
-        private bool DirectMode = GlobalSettings.Default.GamePadDirectControl; //X: the player chose direct control. It applies only in live mode with the 3D camera.
+        /// <summary>
+        /// X: the player chose direct control (it applies only in live mode with the 3D camera). Kept for the session,
+        /// not per lot, so it survives travelling (each lot gets new lot controls); until X is pressed, the setting.
+        /// </summary>
+        private static bool? SessionDirectMode;
+        private bool DirectMode
+        {
+            get => SessionDirectMode ?? GlobalSettings.Default.GamePadDirectControl;
+            set => SessionDirectMode = value;
+        }
         private VMAvatar DirectAvatar; //the avatar direct control is currently enabled on
         private int DirectInputID;
         private short DirectFacing; //last direction the Sim was walked in, in VMDirectControlInput units
