@@ -26,14 +26,17 @@ In the [Discord Developer Portal](https://discord.com/developers/applications), 
 | Where | File | Name to give it |
 |---|---|---|
 | General Information → App Icon | `app_icon.png` (1024×1024) | — |
-| Rich Presence → Art Assets | `simitone.png` (1024×1024) | `simitone` (the large picture) |
-| Rich Presence → Art Assets | `buy.png`, `build.png`, `options.png` (512×512) | `buy`, `build`, `options` (the small picture in those modes) |
-| Rich Presence → Art Assets | `cas.png` | `cas` (Create a Family) |
-| Rich Presence → Art Assets | `downtown.png`, `vacation.png`, `studio.png`, `magic.png` | `downtown`, `vacation`, `studio`, `magic` (those neighbourhoods) |
+| Rich Presence → Art Assets | `simitone.png` (1024×1024) | `simitone` (large, where there's no place picture) |
+| Rich Presence → Art Assets | `simitone_small.png` (512×512) | `simitone_small` (in the corner of a place picture) |
+| Rich Presence → Art Assets | `buy.png`, `build.png`, `options.png` (1024×1024) | `buy`, `build`, `options` (large, in those modes) |
+| Rich Presence → Art Assets | `cas.png` | `cas` (large, in Create a Family) |
+| Rich Presence → Art Assets | `downtown.png`, `vacation.png`, `studio.png`, `magic.png` | `downtown`, `vacation`, `studio`, `magic` (large, for those towns) |
 
-The asset name is what Simitone asks for, so it has to match exactly (Discord fills it in from the file name). New assets can take a few minutes to show up. In buy, build and options the small picture is the mode; otherwise it's the town (in a town's neighbourhood, on its map while travelling, and in live mode on its lots); in the main neighbourhood and live mode on its lots there's none. If the small ones aren't uploaded, set `small_images=false`.
+The asset name is what Simitone asks for, so it has to match exactly (Discord fills it in from the file name; replacing an asset means deleting the old one first). New assets can take a few minutes to show up.
 
-The pictures are scaled up from the 256×256 app icon and the 96–128 px buttons, because Discord asks for at least 512×512; it only ever shows them at 30–120 px, where they look sharp. The small ones sit on a white disc, since Discord crops small pictures to a circle.
+The large picture is where you are, with Simitone's in its corner: the mode in buy, build and options; otherwise the town (its neighbourhood, its map while travelling, and live mode on its lots); Create a Family. In the main neighbourhood, and live mode on its lots, Simitone's picture is the large one, alone. `place_images=false` shows Simitone's picture only.
+
+The pictures are scaled up from the 256×256 app icon and the 96–128 px buttons, because Discord asks for at least 512×512; it shows them at 30–120 px, so the large place pictures are close to their original size. `simitone_small` sits on a white disc, since Discord crops small pictures to a circle.
 
 ## How it works
 

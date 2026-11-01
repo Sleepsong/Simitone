@@ -35,13 +35,16 @@ namespace Simitone.Client.Services.Discord
     /// </summary>
     public class PresenceText
     {
+        /// <summary>Simitone's picture: the large one when there's no place picture, else the small one in its corner.</summary>
         public string LargeImage = "simitone";
+        public string SmallLogo = "simitone_small";
         public string LargeText = "Simitone";
         /// <summary>
-        /// The small picture in the corner of the large one, naming where the player is: buy, build, options; cas;
+        /// Show where the player is as the large picture, with Simitone's in its corner: buy, build, options; cas;
         /// downtown, vacation, studio, magic. Art assets of those names must be uploaded to the Discord application.
+        /// Off: Simitone's picture only.
         /// </summary>
-        public bool SmallImages = true;
+        public bool PlaceImages = true;
 
         private string PlaceKey;
         private long Start;
@@ -76,21 +79,25 @@ namespace Simitone.Client.Services.Discord
                     state = null;
                     break;
             }
-            var (small, smallText) = SmallImages ? SmallImage(info) : (null, null);
-            return new PresenceActivity
+            var (place, placeText) = PlaceImages ? PlaceImage(info) : (null, null);
+            var activity = new PresenceActivity { Details = details, State = state, Start = Start };
+            if (place != null)
             {
-                Details = details,
-                State = state,
-                Start = Start,
-                LargeImage = LargeImage,
-                LargeText = LargeText,
-                SmallImage = small,
-                SmallText = smallText
-            };
+                activity.LargeImage = place;
+                activity.LargeText = placeText;
+                activity.SmallImage = SmallLogo;
+                activity.SmallText = LargeText;
+            }
+            else
+            {
+                activity.LargeImage = LargeImage;
+                activity.LargeText = LargeText;
+            }
+            return activity;
         }
 
-        /// <summary>The small picture's asset name and hover text for a place, or nulls (live mode, the main neighbourhood).</summary>
-        public static (string image, string text) SmallImage(PresenceInfo info)
+        /// <summary>A place's picture (asset name) and hover text, or nulls (live mode in the main neighbourhood).</summary>
+        public static (string image, string text) PlaceImage(PresenceInfo info)
         {
             switch (info.Place)
             {

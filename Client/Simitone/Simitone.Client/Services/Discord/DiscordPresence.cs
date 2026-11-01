@@ -44,7 +44,8 @@ namespace Simitone.Client.Services.Discord
                     clientId = SimitoneApplicationId;
                 Text = new PresenceText();
                 if (settings.TryGetValue("large_image", out var image) && image.Length > 0) Text.LargeImage = image;
-                if (settings.ContainsKey("small_images")) Text.SmallImages = IsOn(settings, "small_images");
+                if (settings.ContainsKey("place_images")) Text.PlaceImages = IsOn(settings, "place_images");
+                else if (settings.ContainsKey("small_images")) Text.PlaceImages = IsOn(settings, "small_images"); //its old name
                 Stop = new CancellationTokenSource();
                 File.WriteAllText(LogPath, $"Simitone Discord log, {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
                 var link = new DiscordLink(new DiscordRpcClient(clientId.Trim())) { Log = Log };
@@ -116,10 +117,11 @@ namespace Simitone.Client.Services.Discord
             "enabled=true\n" +
             "# Leave empty for Simitone's own Discord application, or put another application's ID here.\n" +
             "client_id=\n" +
-            "# The pictures: art assets uploaded to the application (small_images: buy, build, options, cas,\n" +
-            "# downtown, vacation, studio, magic, shown in the corner of the large one).\n" +
+            "# The pictures: art assets uploaded to the application. place_images shows where you are as the\n" +
+            "# large picture (buy, build, options, cas, downtown, vacation, studio, magic), with Simitone's\n" +
+            "# (simitone_small) in its corner; off, or where there's no place picture, it's large_image alone.\n" +
             "large_image=simitone\n" +
-            "small_images=true\n";
+            "place_images=true\n";
 
         private static void Log(string line)
         {
