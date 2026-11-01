@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–4 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3), and the submodule points at it (see §10–§13). Phases 1–3 have been tested on hardware (§11, §12). Phase 4 hasn't been yet.
+**Status:** Phases 1–4 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3), and the submodule points at it (see §10–§13). Phases 1–4 have been tested on hardware (§11–§13); the Phase 4 camera and targeting fixes are waiting on a retest.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -575,9 +575,9 @@ Engine commits `b28765a` and `6167223` on `simitone/controller-phase4`. Simitone
 ### How it plays
 
 - **X** in live mode with the 3D camera switches to direct control. A short hint ("Direct control" / "Cursor mode") shows near the top of the screen. In 2D, X shows "Direct control needs the 3D camera." and plays the error sound.
-- **Left stick:** walks the Sim relative to the camera (stick up = away from the camera), through `World.Transform` like FreeSO's keyboard direct control. Past 0.9 deflection the Sim runs. Letting go stops them; they keep facing the way they last walked.
-- **Camera:** stays anchored on the Sim. The right stick still zooms and rotates.
-- **A:** opens the menu of the object or person within 0.9 tiles of a point 0.9 tiles in front of the Sim. The marker shows what that is. With nothing there, A does nothing (there's no "go here" in direct control). Choosing an interaction queues it as usual; the Sim walks over and does it, then direct control resumes.
+- **Left stick:** walks the Sim relative to the camera (stick up = away from the camera), through `World.Transform` like FreeSO's keyboard direct control. Past 0.9 deflection the Sim runs, and keeps running until it drops below 0.75. Letting go stops them; they keep facing the way they last walked.
+- **Camera:** follows the Sim's position with light smoothing, and follows them up and down stairs. The right stick still zooms and rotates.
+- **A:** opens the menu of what the Sim is facing: in their room, within 1.25 tiles and 35° of their facing, the best by distance plus angle. The marker shows what that is. With nothing there, A does nothing (there's no "go here" in direct control). Choosing an interaction queues it as usual; the Sim walks over and does it, then direct control resumes.
 - **Everything else** (LB/RB, Y, LT/RT, D-pad, Start, Back) works as in cursor mode. Direct control follows the active Sim: switching Sims hands it to the new one and releases the old one.
 - It's switched off (and the Sim stops) in buy/build/options mode and when the camera goes 2D, and comes back when they return, until X turns it off. Leaving it in live mode puts the selector on the Sim.
 
@@ -597,7 +597,7 @@ Engine commits `b28765a` and `6167223` on `simitone/controller-phase4`. Simitone
 - **Routine in code, not a PIFF.** The PIFF route was chosen so saved actions would resolve. Handling saves on load is simpler and needs no content patch: a saved TS1 direct control action is dropped by its flag (`0x2329` might exist in TS1 content as something unrelated, so resolving isn't enough), and if it was running, the Sim's stack is cleared and restarted. The pad helper turns direct control back on if the player still has it selected.
 - **No cancel before save.** The load-side cleanup covers it, including saves made by other code paths.
 - **`TryMove` quirks left alone.** Both are harmless. The missing `else` gives a stopped Sim one zero-length step, and the `2500` threshold only adds collision substeps. Changing the step count would change movement results, and a TSO client built from this fork would then disagree with upstream servers.
-- **Target selection** is the nearest interactable to a point just in front of the Sim, reusing cursor mode's scoring, instead of an angle-weighted search over 2 tiles. It's predictable and needs no new tuning. Revisit if it feels too short.
+- **Target selection** is a 35° cone out to 1.25 tiles rather than the plan's 2 tiles, which would reach past the adjacent tile. The first version (nearest to a point in front) was replaced after the hardware test; see below.
 
 ### Autonomy
 
@@ -611,8 +611,7 @@ Not suppressed explicitly. `EvaluateQueuePriorities` re-queues the direct contro
 ### Verification
 
 - The full desktop build succeeds.
-- The headless harness now has 207 checks. The new ones cover direction conversion (each direction, wrapping, round trips through the frame's own sin/cos), the facing vector, and the TS1 stand-in routine.
-- **Not yet tested in the running game.**
+- The headless harness now has 226 checks. The new ones cover direction conversion (each direction, wrapping, round trips through the frame's own sin/cos), the facing vector, the TS1 stand-in routine, the facing cone (beside, behind, diagonal, out of reach, a long counter alongside), the camera follow and run/walk hysteresis.
 
 ### To check on hardware
 
@@ -625,3 +624,29 @@ Not suppressed explicitly. `EvaluateQueuePriorities` re-queues the direct contro
 7. X again: cursor mode, with the selector at the Sim. Switch to 2D while in direct control: the cursor appears at the Sim. X in 2D: the hint and error sound. Back to 3D: direct control resumes.
 8. Buy mode while in direct control: the Sim stops. Back to live: it resumes.
 9. Save while in direct control, quit, load: no new entries in `simantics-errors.log`, the Sim isn't stuck, and X still works.
+
+### Hardware results (first test)
+
+| Check | Result |
+|---|---|
+| Walking relative to the camera | Works, but the camera shook a lot while running |
+| Run / walk / stop | Works |
+| Doors and stairs | Works |
+| A on what's in front | Works, but the target was often to the Sim's side or through a wall |
+| Switching Sims with LB/RB | Works |
+| Free will while in direct control | The Sim stays put |
+| X / 2D / 3D switching, buy mode | Works |
+| Save and load in direct control | Works |
+
+### Fixes after the first hardware test
+
+- **Camera shake while running.** Diagnosed from the code, not measured. The likely cause is that the anchored camera (`World.CenterTo`) re-centres on the pelvis bone every frame, and the run cycle sways it. In direct control the pad helper now moves the camera itself, following the Sim's position with exponential smoothing (15/s; it jumps instead beyond 3 tiles), and sets the floor to the Sim's. Running also has hysteresis now (on at 0.9, off below 0.75). This rules out a second possible cause: acceleration ignores stick intensity, so a stick resting near a single threshold would flip between walk and run speeds, and the walk/run animation blend with them.
+- **Target to the side or through walls.** The old search took the nearest interactable within 0.9 tiles of a point 0.9 tiles ahead. That reaches about 0.9 tiles sideways, and it ignored walls. Now a target has to be in the Sim's room (walls and fences bound rooms; each tile of a multi-tile object is checked on its own) and within 1.25 tiles and 35° of their facing. The score is distance plus 1 per radian off centre. Along with the point nearest the Sim, the search tries the points nearest two spots straight ahead, so a long counter counts by its part ahead of the Sim and not the part beside them.
+
+### To check on retest
+
+1. Run in a straight line and in circles, zoomed in: the camera should be steady.
+2. A stick held at full tilt keeps running, without flickering between walking and running.
+3. Walk alongside a counter or a row of objects: nothing beside the Sim gets the marker. Turn to face one and it does.
+4. Stand next to a wall with an object on the other side: it isn't picked.
+5. Face a corner between two objects: the one more squarely in front wins, and the marker doesn't flicker between them.

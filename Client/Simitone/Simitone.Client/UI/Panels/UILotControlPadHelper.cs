@@ -55,9 +55,14 @@ namespace Simitone.Client.UI.Panels
         private const float ZoomRate = 1600f; //wheel units per second at full deflection
         private const float RotateRate3D = 2.2f; //radians per second at full deflection
         private const int MaxFloor = 5; //matches the mobile layout's floor buttons
-        private const float DirectReach = 0.9f; //tiles in front of a directly controlled Sim where its target is looked for
-        private const float DirectSnapTiles = 0.9f;
-        private const float RunThreshold = 0.9f; //stick deflection at which a directly controlled Sim runs
+        //direct control target: within DirectReach tiles of the Sim and DirectMaxAngle of its facing, in its room
+        private const float DirectReach = 1.25f;
+        private const float DirectMaxAngle = 0.61f; //35 degrees
+        private const float DirectAnglePenalty = 1f; //score per radian off centre (score is in tiles)
+        private const float RunOn = 0.9f; //stick deflection at which a directly controlled Sim starts running...
+        private const float RunOff = 0.75f; //...and below which it walks again
+        private const float DirectCameraRate = 15f; //camera follow, fraction of the gap closed per second (exponential)
+        private const float DirectCameraSnapTiles = 3f; //further than this (stairs, a new Sim) the camera jumps
 
         private readonly UILotControl Master;
 
@@ -90,6 +95,8 @@ namespace Simitone.Client.UI.Panels
         private VMAvatar DirectAvatar; //the avatar direct control is currently enabled on
         private int DirectInputID;
         private short DirectFacing; //last direction the Sim was walked in, in VMDirectControlInput units
+        private bool DirectRunning;
+        private Vector2? DirectCamera; //smoothed camera centre while in direct control
 
         private string Hint; //short message shown near the top of the screen
         private float HintTime;
@@ -186,7 +193,7 @@ namespace Simitone.Client.UI.Panels
             if (!SelectorPlaced) PlaceSelectorOn(active, true);
 
             var direct = DirectAvatar != null && DirectAvatar == active;
-            if (direct && World.State.ScrollAnchor != (active.WorldUI as AvatarComponent)) PlaceSelectorOn(active, true); //camera stays on the Sim
+            if (direct) FollowDirect(active, dt);
 
             var recentlyMoved = !direct && now - LastSelectorMove < CutawayFocusSeconds;
             CutawayFocus = recentlyMoved ? SelectorOrTargetTile() : new Vector2(active.VisualPosition.X, active.VisualPosition.Y);
@@ -207,16 +214,8 @@ namespace Simitone.Client.UI.Panels
             }
             if (QueueFocus || PanelFocus || wasPanelFocus) return; //the stick and A belong to the panel
 
-            if (direct)
-            {
-                var front = new Vector2(active.VisualPosition.X, active.VisualPosition.Y) + PadMath.Forward(active.RadianDirection) * DirectReach;
-                UpdateTarget(active, front, DirectSnapTiles, skipActive: true);
-            }
-            else
-            {
-                var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, World.State.Level), SnapPixels, MinSnapTiles, MaxSnapTiles);
-                UpdateTarget(active, Selector, snapRadius, skipActive: false);
-            }
+            if (direct) UpdateTargetInFront(active);
+            else UpdateTargetAtSelector(active);
             UpdateMarker(state, dt, floorRing: !direct);
             //the press that hands control to the pad only reveals the selector; it doesn't act on whatever is under it.
             //In direct control, A with nothing in front of the Sim does nothing (there's no "go here").
@@ -237,6 +236,8 @@ namespace Simitone.Client.UI.Panels
             if (DirectAvatar != null && wanted == null && Master.LiveMode && Master.ActiveEntity != null)
                 PlaceSelectorOn(Master.ActiveEntity, true);
             DirectAvatar = wanted;
+            DirectCamera = null;
+            DirectRunning = false;
             if (wanted != null)
             {
                 SendToggle(screen, wanted, true);
@@ -251,14 +252,19 @@ namespace Simitone.Client.UI.Panels
             screen.Driver.SendCommand(new VMNetDirectControlToggleCommand { ActorUID = avatar.PersistID, Enable = enable });
         }
 
-        /// <summary>Walks the Sim in the stick's direction relative to the camera, running past <see cref="RunThreshold"/>.</summary>
+        /// <summary>Walks the Sim in the stick's direction relative to the camera, running at nearly full tilt.</summary>
         private void DriveDirect(Vector2 stick)
         {
-            if (stick == Vector2.Zero) return; //the stand-still input sent at the start of the frame applies
+            if (stick == Vector2.Zero) //the stand-still input sent at the start of the frame applies
+            {
+                DirectRunning = false;
+                return;
+            }
             //(x, -y) like the keyboard axes FreeSO's own direct control uses: screen up is -y.
             var move = World.Transform(new Vector2(stick.X, -stick.Y));
             if (move == Vector2.Zero) return;
             DirectFacing = PadMath.DirectionToShort(move);
+            DirectRunning = PadMath.Run(DirectRunning, stick.Length(), RunOn, RunOff);
             SendDirectInput(new VMDirectControlInput
             {
                 ID = DirectInputID++,
@@ -267,8 +273,27 @@ namespace Simitone.Client.UI.Panels
                 //the frame turns the body towards LookDirectionInt; pointing it where the Sim walks gives a
                 //third-person feel (TSO used the first-person camera's facing here).
                 LookDirectionInt = DirectFacing,
-                Sprint = stick.Length() > RunThreshold
+                Sprint = DirectRunning
             });
+        }
+
+        /// <summary>
+        /// Keeps the camera on a directly controlled Sim. Rather than anchoring it (World.CenterTo), which locks onto the
+        /// pelvis bone every frame and so shakes with the running animation's sway, this follows the Sim's position with
+        /// a little smoothing.
+        /// </summary>
+        private void FollowDirect(VMEntity sim, float dt)
+        {
+            World.State.ScrollAnchor = null;
+            if (sim.Position == LotTilePos.OUT_OF_WORLD) return;
+            var target = new Vector2(sim.VisualPosition.X, sim.VisualPosition.Y);
+            var current = DirectCamera ?? World.State.CenterTile;
+            DirectCamera = (Vector2.Distance(current, target) > DirectCameraSnapTiles)
+                ? target
+                : PadMath.Follow(current, target, DirectCameraRate, dt);
+            World.State.CenterTile = DirectCamera.Value;
+            if (World.State.Level != sim.Position.Level) World.State.Level = sim.Position.Level; //up and down stairs
+            Selector = target;
         }
 
         private void SendDirectInput(VMDirectControlInput input)
@@ -593,34 +618,64 @@ namespace Simitone.Client.UI.Panels
         }
 
         /// <summary>
-        /// Picks the interactable object or person nearest to <paramref name="point"/> within <paramref name="snapRadius"/>
-        /// tiles of its footprint. In cursor mode the radius comes from a fixed on-screen distance (a fixed tile radius
-        /// felt sticky up close, e.g. with the 3D camera); the tie-break biases scale with it.
+        /// Cursor mode: the interactable object or person nearest the selector, within a snap radius of its footprint.
+        /// The radius comes from a fixed on-screen distance (a fixed tile radius felt sticky up close, e.g. with the 3D
+        /// camera); the tie-break biases scale with it.
         /// </summary>
-        private void UpdateTarget(VMEntity active, Vector2 point, float snapRadius, bool skipActive)
+        private void UpdateTargetAtSelector(VMEntity active)
+        {
+            var point = Selector;
+            var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, World.State.Level), SnapPixels, MinSnapTiles, MaxSnapTiles);
+            PickTarget(active, World.State.Level, Math.Min(1f, snapRadius / MaxSnapTiles), (entity, x1, y1, x2, y2) =>
+            {
+                var distance = PadMath.DistanceToFootprint(point, x1, y1, x2, y2);
+                return (distance > snapRadius) ? float.PositiveInfinity : distance;
+            });
+        }
+
+        /// <summary>
+        /// Direct control: what the Sim is facing. Only things in the Sim's own room count, so nothing is picked through
+        /// a wall (walls and fences bound rooms, and each tile of a multi-tile object is checked on its own).
+        /// </summary>
+        private void UpdateTargetInFront(VMEntity active)
+        {
+            var context = Master.vm.Context;
+            var sim = new Vector2(active.VisualPosition.X, active.VisualPosition.Y);
+            var forward = PadMath.Forward(active.RadianDirection);
+            var room = context.GetObjectRoom(active);
+            PickTarget(active, active.Position.Level, 1f, (entity, x1, y1, x2, y2) =>
+            {
+                if (entity == active || context.GetObjectRoom(entity) != room) return float.PositiveInfinity;
+                return PadMath.FrontScore(sim, forward, x1, y1, x2, y2, DirectReach, DirectMaxAngle, DirectAnglePenalty);
+            });
+        }
+
+        /// <summary>
+        /// Picks the interactable object or person with the lowest score on <paramref name="level"/>. The score
+        /// function gets the entity and its footprint (1/16 tiles) and returns PositiveInfinity to skip it; people,
+        /// things on surfaces and the current target get small bonuses, scaled by <paramref name="bias"/>.
+        /// </summary>
+        private void PickTarget(VMEntity active, sbyte level, float bias, Func<VMEntity, int, int, int, int, float> scoreOf)
         {
             var vm = Master.vm;
-            var level = World.State.Level;
             VMEntity best = null;
             var bestScore = float.MaxValue;
-            var bias = Math.Min(1f, snapRadius / MaxSnapTiles);
 
             foreach (var entity in vm.Entities)
             {
-                if (entity == Master.GotoObject || entity.Dead || (skipActive && entity == active)) continue;
+                if (entity == Master.GotoObject || entity.Dead) continue;
                 var pos = entity.Position;
                 if (pos == LotTilePos.OUT_OF_WORLD || pos.Level != level) continue;
 
                 var footprint = entity.Footprint;
-                var distance = (footprint != null)
-                    ? PadMath.DistanceToFootprint(point, footprint.x1, footprint.y1, footprint.x2, footprint.y2)
-                    : PadMath.DistanceToFootprint(point, pos.x, pos.y, pos.x, pos.y);
-                if (distance > snapRadius) continue;
+                var score = (footprint != null)
+                    ? scoreOf(entity, footprint.x1, footprint.y1, footprint.x2, footprint.y2)
+                    : scoreOf(entity, pos.x, pos.y, pos.x, pos.y);
+                if (float.IsPositiveInfinity(score)) continue;
 
                 var leader = entity.MultitileGroup.GetInteractionGroupLeader(entity);
                 if ((leader.TreeTable?.Interactions.Length ?? 0) == 0 && (entity.TreeTable?.Interactions.Length ?? 0) == 0) continue;
 
-                var score = distance;
                 if (entity is VMAvatar) score += ((entity == active) ? 0.3f : -0.15f) * bias; //people over furniture, but not yourself
                 if (entity.Container != null) score -= 0.1f * bias; //things sitting on surfaces over the surface
                 if (entity == TargetPart) score -= 0.15f * bias; //hysteresis, so the target doesn't flicker between neighbours

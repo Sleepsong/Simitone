@@ -80,6 +80,66 @@ namespace Simitone.Client.UI.Model
             return new Vector2((float)Math.Sin(radianDirection), -(float)Math.Cos(radianDirection));
         }
 
+        /// <summary>The point of a footprint (1/16 tile units) closest to <paramref name="tile"/>, in tiles.</summary>
+        public static Vector2 ClosestOnFootprint(Vector2 tile, int x1, int y1, int x2, int y2)
+        {
+            return new Vector2(Math.Max(x1, Math.Min(x2, tile.X * 16f)), Math.Max(y1, Math.Min(y2, tile.Y * 16f))) / 16f;
+        }
+
+        /// <summary>Angle in radians (0..pi) between a unit vector and any non-zero vector.</summary>
+        public static float AngleBetween(Vector2 unit, Vector2 other)
+        {
+            var length = other.Length();
+            if (length < 1e-6f) return 0;
+            return (float)Math.Acos(Math.Max(-1f, Math.Min(1f, Vector2.Dot(unit, other / length))));
+        }
+
+        /// <summary>
+        /// How squarely a footprint (1/16 tile units) sits in front of a Sim at <paramref name="sim"/> facing
+        /// <paramref name="forward"/> (a unit vector): the distance to its best point that is within
+        /// <paramref name="reach"/> tiles and <paramref name="maxAngle"/> radians of the facing, plus
+        /// <paramref name="anglePenalty"/> per radian off centre. Lower is better; PositiveInfinity if no part qualifies.
+        /// Besides the point nearest the Sim, the points nearest two spots straight ahead are tried, so a long counter
+        /// counts by its part ahead of the Sim rather than its part beside them.
+        /// </summary>
+        public static float FrontScore(Vector2 sim, Vector2 forward, int x1, int y1, int x2, int y2,
+            float reach, float maxAngle, float anglePenalty)
+        {
+            var best = float.PositiveInfinity;
+            for (int i = 0; i < 3; i++)
+            {
+                var probe = sim + forward * (reach * i / 2f);
+                var to = ClosestOnFootprint(probe, x1, y1, x2, y2) - sim;
+                var distance = to.Length();
+                if (distance > reach) continue;
+                //touching or standing in it: the direction to its nearest point means nothing, so use its centre
+                var direction = (distance < 0.05f) ? new Vector2(x1 + x2, y1 + y2) / 32f - sim : to;
+                var angle = AngleBetween(forward, direction);
+                if (angle > maxAngle) continue;
+                best = Math.Min(best, distance + angle * anglePenalty);
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Moves <paramref name="current"/> towards <paramref name="target"/>, covering the same fraction of the gap per
+        /// second at any frame rate (<paramref name="rate"/> per second, exponential).
+        /// </summary>
+        public static Vector2 Follow(Vector2 current, Vector2 target, float rate, float dt)
+        {
+            if (dt <= 0) return current;
+            return current + (target - current) * (1f - (float)Math.Exp(-rate * dt));
+        }
+
+        /// <summary>
+        /// Run/walk with hysteresis: start running past <paramref name="on"/> deflection, keep running until it drops
+        /// below <paramref name="off"/>. A single threshold flips every frame on a stick resting near it.
+        /// </summary>
+        public static bool Run(bool running, float deflection, float on, float off)
+        {
+            return running ? deflection >= off : deflection > on;
+        }
+
         /// <summary>
         /// Clamps a menu anchor so a menu reaching <paramref name="marginX"/>/<paramref name="marginY"/> out from it
         /// stays on a screen of the given size. If the screen is too small, the anchor is centred on that axis.
