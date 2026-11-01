@@ -815,7 +815,7 @@ Everything worked except the focus outline on the neighbourhood's round buttons,
 
 ## 16. Phase 7 — UI polish and bug fixes
 
-Engine commit `da2f2f2` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+Engine commits `da2f2f2`, `aaee59d` and `c7ff5b9` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
 
 ### Focus highlight
 
@@ -929,6 +929,15 @@ Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_
 
 The hover cycle can't be run in the harness: `UIButton`'s static initializer needs a graphics device.
 
+### Seventh round: CAS buttons and the name bubble
+
+| Feedback | Change |
+|---|---|
+| CAS and the family picker still box buttons that tint under the mouse (Back, Accept, the family buttons, gender, age, skin colour, the tabs) | CAS no longer forces the frame, so those use their hover look like everywhere else. That was the last screen using `AlwaysFrame`, so it's gone. The frame and note remain for what has no hover look: family member portraits, the head and body carousels, name boxes, personality bars, the families list. |
+| The name bubble ("Child") covered the button above it | The bubble goes on whichever side of the focused control (above, below, right, left, in that order of preference) covers least of the other controls the pad can move to, each counted by the fraction of it covered, so grazing a carousel matters less than hiding a button. It never covers the prompt bar, or the control itself. It measures from the frame and note when they're drawn. For this the engine now exposes the navigator's targets to the focus renderer (`UIFocusNavigator.Targets`, `UIFocusNavigator.Drawing`, commit `c7ff5b9`). Placement is `PadMath.PlaceLabel`; the harness has 8 new checks for it (306 in all). |
+
+Known limit: Simitone's hover tint for stencil buttons (mint, (128, 255, 192)) is close to its selected tint (green, (0, 255, 128)). With the mouse the cursor shows which is which; with the pad, a focused unselected gender or age button can look selected next to the selected one. A focused selected button shows the hover tint in place of its selected tint while focused, as in the catalog.
+
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 
 ### To check on hardware
@@ -940,3 +949,4 @@ Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `U
 4. The keyboard's look, and that no highlight or bubble shows under it.
 5. Mouse hover on the neighbourhood buttons, mode buttons and catalog tabs shows their names.
 6. The lot toasts (X in 2D, X in 3D).
+8. CAS and the family picker: hover tints on Back, Accept, the family buttons, gender, age, skin colour and the tabs, no box or note on them; the name bubble beside, not over, its neighbours (Child, Adult, Male, the bottom-left Back).

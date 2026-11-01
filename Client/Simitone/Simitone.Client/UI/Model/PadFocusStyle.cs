@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FSO.Client;
 using FSO.Client.UI.Controls;
 using FSO.Client.UI.Framework;
@@ -11,26 +12,23 @@ namespace Simitone.Client.UI.Model
     /// <summary>
     /// Simitone's gamepad focus highlight, in place of the engine's plain outline:
     /// <list type="bullet">
-    /// <item>a button with a hover look of its own (catalog and panel buttons, the choices in a popup, the house
+    /// <item>a button with a hover look of its own (catalog and panel buttons, CAS buttons, the choices in a popup, the house
     /// panel's buttons) is put in its real hover state, exactly as the mouse would show it, caption colour
     /// included;</item>
     /// <item>anything else (lists, carousels, text boxes, houses, round buttons whose hover is only a slight grow) gets
     /// a soft mint frame (Simitone's highlight colour) that breathes gently and pops out when focus arrives, with the
     /// Simitone note (from the logo) bobbing over it.</item>
     /// </list>
-    /// Screens can ask for the frame on everything (<see cref="AlwaysFrame"/>): CAS does.
-    /// It also records what it drew, for the focus tooltip.
+    /// It also records what it drew and where the other targets are, for the focus tooltip.
     /// </summary>
     public static class PadFocusStyle
     {
         public static UIElement Focus { get; private set; }
-        public static Rectangle FocusRect { get; private set; }
         public static int FocusFrame { get; private set; } = -1;
-        /// <summary>Whether the note was drawn over the focus this frame (the tooltip bubble keeps clear of it).</summary>
-        public static bool NoteShown { get; private set; }
-
-        /// <summary>Set by a navigator while it draws, for the frame even on buttons that have a hover look.</summary>
-        public static bool AlwaysFrame;
+        /// <summary>Screen area the focus look takes up at rest: the control, plus the frame and note if drawn.</summary>
+        public static Rectangle FocusOuter { get; private set; }
+        /// <summary>Screen rectangles of the other things the pad can move to, for labels to keep clear of.</summary>
+        public static readonly List<Rectangle> Neighbours = new List<Rectangle>();
 
         private static UIButton Hovered; //the button forced into its hover state for the pad
         private static int HoveredFrame = -1;
@@ -95,8 +93,8 @@ namespace Simitone.Client.UI.Model
             frame.Inflate(pad, pad);
             var pulse = 0.82f + 0.18f * (float)Math.Sin(now * 4f);
             var button = element as UIButton;
-            NoteShown = false;
-            if (!AlwaysFrame && button != null && HasHoverLook(button))
+            var outer = rect;
+            if (button != null && HasHoverLook(button))
             {
                 SetHover(button); //its own hover look shows the focus; nothing else is drawn
             }
@@ -108,6 +106,8 @@ namespace Simitone.Client.UI.Model
                 shadow.Inflate((int)(2 * dpi), (int)(2 * dpi));
                 PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, shadow, PadDraw.Ink * 0.45f, dpi);
                 PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, frame, PadDraw.Accent * pulse, dpi);
+                var rest = (int)((PadGraphics.GlowInset + 3f) * dpi);
+                outer.Inflate(rest, rest);
 
                 //the Simitone note, where there's room above and the element isn't a large area (a carousel, a whole list)
                 var note = PadGraphics.GetNote(gd);
@@ -118,12 +118,24 @@ namespace Simitone.Client.UI.Model
                 if (top > 2 * dpi && rect.Width < 420 * dpi)
                 {
                     batch.Draw(note, new Rectangle((int)(rect.Center.X - mw / 2), (int)top, (int)mw, (int)mh), PadDraw.Accent);
-                    NoteShown = true;
+                    //at rest, at the top of its bob
+                    var restTop = rect.Top - 3f * dpi - mh - 3f * dpi - 2.5f * dpi;
+                    outer = Rectangle.Union(outer, new Rectangle((int)(rect.Center.X - mw / 2), (int)restTop, (int)mw, (int)(mh + 5f * dpi)));
+                }
+            }
+
+            Neighbours.Clear();
+            var navigator = UIFocusNavigator.Drawing;
+            if (navigator != null)
+            {
+                foreach (var target in navigator.Targets)
+                {
+                    if (target != element && target.WillDraw()) Neighbours.Add(UIFocusNavigator.GlobalRect(target));
                 }
             }
 
             Focus = element;
-            FocusRect = rect;
+            FocusOuter = outer;
             FocusFrame = PadPrompts.Frame;
         }
     }

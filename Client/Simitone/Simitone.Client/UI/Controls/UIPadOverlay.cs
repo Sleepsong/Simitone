@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FSO.Client;
 using FSO.Client.UI.Framework;
 using FSO.Common;
@@ -30,6 +31,9 @@ namespace Simitone.Client.UI.Controls
         private float ToastTime;
         private TextStyle LabelStyle;
         private TextStyle ToastStyle;
+        private Rectangle BarRect; //this frame's prompt bar, in UI units (empty if none)
+        private readonly List<Rectangle> Avoid = new List<Rectangle>();
+        private readonly List<Rectangle> KeepClear = new List<Rectangle>();
 
         public UIPadOverlay()
         {
@@ -66,9 +70,10 @@ namespace Simitone.Client.UI.Controls
                 var screen = GameFacade.Screens.CurrentUIScreen;
                 if (screen != null)
                 {
-                    if (!Keyboard.Active) DrawFocusTooltip(batch);
+                    BarRect = Rectangle.Empty;
+                    if (!Keyboard.Active) DrawPromptBar(batch, screen); //first, so the tooltip can keep clear of it
+                    if (!Keyboard.Active) DrawFocusTooltip(batch, screen);
                     if (ToastTime > 0 && !string.IsNullOrEmpty(Toast)) DrawToast(batch, screen.ScreenWidth, screen.ScreenHeight);
-                    if (!Keyboard.Active) DrawPromptBar(batch, screen);
                 }
             }
             Keyboard.Draw(batch);
@@ -111,7 +116,8 @@ namespace Simitone.Client.UI.Controls
                 y = screen.ScreenHeight - BarHeight - 10f;
                 x = (screen.ScreenWidth - total) / 2f;
             }
-            PadDraw.DrawPanel(this, batch, new Rectangle((int)x, (int)y, (int)total, (int)BarHeight));
+            BarRect = new Rectangle((int)x, (int)y, (int)total, (int)BarHeight);
+            PadDraw.DrawPanel(this, batch, BarRect);
 
             x += pad;
             var centreY = y + BarHeight / 2f;
@@ -125,24 +131,27 @@ namespace Simitone.Client.UI.Controls
             }
         }
 
-        /// <summary>Names the focused control (its tooltip) in a bubble over it, as mouse hover would.</summary>
-        private void DrawFocusTooltip(UISpriteBatch batch)
+        /// <summary>
+        /// Names the focused control (its tooltip) in a bubble beside it, as mouse hover would: above it if that's
+        /// clear, otherwise on whichever side covers least of the other controls (and never the prompt bar).
+        /// </summary>
+        private void DrawFocusTooltip(UISpriteBatch batch, UIScreen screen)
         {
             if (PadFocusStyle.FocusFrame != PadPrompts.Frame) return;
             var text = PadFocusStyle.Focus?.Tooltip;
             if (string.IsNullOrEmpty(text)) return;
 
             var dpi = FSOEnvironment.DPIScaleFactor;
-            var rect = PadFocusStyle.FocusRect;
+            Rectangle ToUI(Rectangle r) => new Rectangle((int)(r.X / dpi), (int)(r.Y / dpi),
+                (int)Math.Ceiling(r.Width / dpi), (int)Math.Ceiling(r.Height / dpi));
+            Avoid.Clear();
+            foreach (var other in PadFocusStyle.Neighbours) Avoid.Add(ToUI(other));
+            KeepClear.Clear();
+            if (BarRect.Width > 0) KeepClear.Add(BarRect);
+
             var size = LabelStyle.MeasureString(text);
-            var width = size.X + 22f;
-            const float height = 30f;
-            var centreX = rect.Center.X / dpi;
-            var above = rect.Top / dpi - (PadFocusStyle.NoteShown ? 40f : 12f) - height; //clear of the note
-            var y = (above > 4) ? above : rect.Bottom / dpi + 12f;
-            var screen = GameFacade.Screens.CurrentUIScreen;
-            var x = Math.Max(4f, Math.Min(screen.ScreenWidth - width - 4f, centreX - width / 2f));
-            var bubble = new Rectangle((int)x, (int)y, (int)width, (int)height);
+            var bubble = PadMath.PlaceLabel(ToUI(PadFocusStyle.FocusOuter), new Point((int)(size.X + 22f), 30), 6,
+                screen.ScreenWidth, screen.ScreenHeight, Avoid, KeepClear);
             PadDraw.DrawPanel(this, batch, bubble);
             DrawLocalString(batch, text, Vector2.Zero, LabelStyle, bubble, TextAlignment.Center | TextAlignment.Middle);
         }

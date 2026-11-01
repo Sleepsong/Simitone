@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 
 namespace Simitone.Client.UI.Model
@@ -160,6 +161,58 @@ namespace Simitone.Client.UI.Model
             var centre = new Vector2(x1 + x2, y1 + y2) / 32f;
             float Axis(int length) => Math.Max(min, Math.Min(max, length / 32f * grow + margin));
             return (centre, Axis(x2 - x1), Axis(y2 - y1));
+        }
+
+        /// <summary>
+        /// Where to put a label of <paramref name="size"/> beside <paramref name="target"/>: above, below, right or left
+        /// of it, <paramref name="gap"/> away and kept 4 units inside a <paramref name="screenWidth"/> x
+        /// <paramref name="screenHeight"/> screen. The side chosen is the one covering least of
+        /// <paramref name="avoid"/>, each counted by the fraction of it covered, so grazing a big area (a carousel)
+        /// matters less than hiding a button. Touching a <paramref name="keepClear"/> rectangle costs more than any
+        /// amount of that, and covering the target itself (when the screen edge pushes the label back) more again.
+        /// Ties go to the earlier side, in that order.
+        /// </summary>
+        public static Rectangle PlaceLabel(Rectangle target, Point size, int gap, int screenWidth, int screenHeight,
+            IList<Rectangle> avoid, IList<Rectangle> keepClear = null)
+        {
+            var best = Rectangle.Empty;
+            var bestScore = float.MaxValue;
+            for (int side = 0; side < 4; side++)
+            {
+                int x, y;
+                switch (side)
+                {
+                    case 0: x = target.Center.X - size.X / 2; y = target.Top - gap - size.Y; break;
+                    case 1: x = target.Center.X - size.X / 2; y = target.Bottom + gap; break;
+                    case 2: x = target.Right + gap; y = target.Center.Y - size.Y / 2; break;
+                    default: x = target.Left - gap - size.X; y = target.Center.Y - size.Y / 2; break;
+                }
+                x = Math.Max(4, Math.Min(screenWidth - size.X - 4, x));
+                y = Math.Max(4, Math.Min(screenHeight - size.Y - 4, y));
+                var rect = new Rectangle(x, y, size.X, size.Y);
+
+                var score = rect.Intersects(target) ? 1000f : 0f;
+                if (keepClear != null)
+                {
+                    foreach (var clear in keepClear) if (rect.Intersects(clear)) score += 100f;
+                }
+                if (avoid != null)
+                {
+                    foreach (var other in avoid)
+                    {
+                        if (other.Width <= 0 || other.Height <= 0) continue;
+                        var overlap = Rectangle.Intersect(rect, other);
+                        if (overlap.Width > 0 && overlap.Height > 0)
+                            score += (float)overlap.Width * overlap.Height / ((float)other.Width * other.Height);
+                    }
+                }
+                if (score < bestScore - 1e-4f)
+                {
+                    bestScore = score;
+                    best = rect;
+                }
+            }
+            return best;
         }
 
         /// <summary>Clamps a list index into 0..length-1 (0 for an empty list).</summary>
