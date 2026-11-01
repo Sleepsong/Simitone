@@ -270,6 +270,9 @@ namespace Simitone.Client.UI.Screens
 
             if (NeighPadNav != null) Remove(NeighPadNav);
             var nav = new UIScreenPadNavigator(NeighbourhoodPadScope);
+            //the house panel's buttons show focus with their own hover look; the houses and the round buttons, which
+            //have none to speak of, still get the frame
+            nav.AlwaysFrame = false;
             NeighPadNav = nav;
             //uses its own navigator, not the field: entering a lot clears the field while this navigator is updating
             nav.Prompts = () =>

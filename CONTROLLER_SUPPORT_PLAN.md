@@ -822,7 +822,7 @@ Engine commit `da2f2f2` on `simitone/controller-phase7`; the rest is in Simitone
 The yellow box is gone. Focus is now shown as:
 
 - a soft mint frame (Simitone's highlight colour) with rounded corners, breathing gently, around the focused control. It pops out a little when focus arrives.
-- the Simitone note bobbing over the focused control, where there's room above it and the control isn't a large area (a carousel, a whole list). This is the musical note that forms the "t" of the Simitone logo. It's cut from the logo image when the game loads, keeping only its white top layer, with a dark outline added. If the logo can't be read, a plain drawn quaver is used instead. The lot's target marker uses it too. No Sims artwork or plumbob shapes are used, for copyright reasons.
+- the Simitone note bobbing over the focused control (with the frame only, see the sixth round below), where there's room above it and the control isn't a large area (a carousel, a whole list). This is the musical note that forms the "t" of the Simitone logo. It's cut from the logo image when the game loads, keeping only its white top layer, with a dark outline added. If the logo can't be read, a plain drawn quaver is used instead. The lot's target marker uses it too. No Sims artwork or plumbob shapes are used, for copyright reasons.
 - round buttons (the neighbourhood buttons, family portraits) grow a little, as they do under the mouse. The focused house on the map opens up, as before.
 
 The engine draws it through a new hook (`UIFocusNavigator.FocusRenderer`), so it applies everywhere: dialogs, panels, the catalog, the neighbourhood and CAS. The on-screen keyboard uses the same green for its focused key.
@@ -918,11 +918,22 @@ Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_
 |---|---|
 | The focus box isn't needed where a control already has its own mouse-hover highlight (catalog and category buttons, the choices in popups), but is still wanted in character creation, the outfit picker and the neighbourhood | When focus lands on a button with a hover look of its own, the button is shown in that hover state (`ForceState`), as the mouse would show it, and no frame is drawn. Stencil and category buttons recolour, big dialog buttons switch to their hover image, and two-state buttons light up. Anything without one keeps the frame: catalog items, lists, the outfit carousel, text boxes, personality bars, houses, and round buttons whose hover is only a slight grow. The neighbourhood and CAS keep the frame on everything (`UIScreenPadNavigator.AlwaysFrame`). The note still marks the focused control everywhere. A forced hover is released as soon as focus moves or the pad stops drawing it. |
 
+### Sixth round: the house panel and popup buttons
+
+| Feedback | Change |
+|---|---|
+| The house panel's Enter Lot / More buttons should use their hover look too, not the box | The neighbourhood no longer frames buttons that have a hover look (`AlwaysFrame` off there). Only the house panel's big buttons are affected: the houses and the round buttons have no hover look to speak of and keep the frame. CAS still frames everything. |
+| Pad focus on popup buttons doesn't fully look like mouse hover | `ForceState` only switched the button's image; the caption colour follows the mouse state (`CurrentFrame`), so it stayed as normal. The pad now also sets `CurrentFrame` to hover while focused, and puts it back on release (unless the mouse is really over it or holding it down), so image and caption match mouse hover exactly. |
+| (found while fixing the above) | Mouse hover on the big buttons turned the caption the engine's default white, which all but vanished on the paler hover image (Enter Lot, OK). `UIBigButton` now sets its hover caption colour: the normal caption colour 35% of the way to Simitone's green, (0, 109, 86) on white buttons and (0, 130, 55) on green ones. Readable, and the same hint of green the icon buttons get on hover. This changes mouse hover too. |
+| The note is redundant where the hover look shows focus | The note is drawn only with the frame. The focus tooltip bubble sits closer when there's no note. |
+
+The hover cycle can't be run in the harness: `UIButton`'s static initializer needs a graphics device.
+
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 
 ### To check on hardware
 
-1. The neighbourhood: the green frame and note on houses and buttons, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
+1. The neighbourhood: the frame and note on houses and round buttons, the hover look (green-tinted caption, no note) on the house panel's Enter Lot / More / option buttons, the same look under the mouse, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
 2. The prompt bar on the neighbourhood, CAS (each mode) and in a lot (live, pie menu, queue, needs panel, buy/build with nothing, an object, then a tool, the catalog).
 7. The floor ring on a one-tile object, a sofa or bed, a Sim, a wall mirror and something on a counter, in 2D and 3D, zoomed in and out. A on something with no actions. L3 in live mode.
 3. With a PlayStation pad, or `GamePadGlyphs = playstation`: the symbols instead of letters.

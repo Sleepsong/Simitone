@@ -76,7 +76,7 @@ namespace Simitone.Client.UI.Controls
             FocusChanged?.Invoke(previous, focused);
         }
 
-        /// <summary>Draw the focus frame on everything, even buttons with a hover look (the neighbourhood and CAS want it).</summary>
+        /// <summary>Draw the focus frame on everything, even buttons with a hover look (CAS wants it).</summary>
         public bool AlwaysFrame = true;
 
         public override void Draw(UISpriteBatch batch)
