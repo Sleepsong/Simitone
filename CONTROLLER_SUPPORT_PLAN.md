@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–3 are done. The engine changes are on `simitone/controller-phase3` in `Sleepsong/FreeSO` (which includes Phases 1 and 2), and the submodule points at it (see §10–§12). Phases 1 and 2 have been tested on hardware (§11). Phase 3 hasn't been yet.
+**Status:** Phases 1–4 are done. The engine changes are on `simitone/controller-phase4` in `Sleepsong/FreeSO` (which includes Phases 1–3), and the submodule points at it (see §10–§13). Phases 1–3 have been tested on hardware (§11, §12). Phase 4 hasn't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -216,11 +216,11 @@ This is in the spirit of the console games. It is not a verified reproduction of
 
 | Input | Cursor mode | Direct control |
 |---|---|---|
-| Left stick | Move the selector | Walk (run at full tilt) |
+| Left stick | Move the selector | Walk relative to the camera (run past ~0.9 deflection) |
 | Right stick | ↑↓ zoom, ←→ rotate | same |
-| A / Cross | Interact, or Go Here on empty floor | Interact with the target |
+| A / Cross | Interact, or Go Here on empty floor | Interact with whatever is just in front of the Sim; nothing if there's nothing there |
 | B / Circle | Cancel / close | Cancel / close |
-| X / Square | Toggle Cursor ↔ Direct (Phase 4) | Toggle Cursor ↔ Direct |
+| X / Square | Switch to direct control (3D camera only; in 2D a hint says so) | Back to cursor mode (the selector starts at the Sim) |
 | Y / Triangle | Focus the action queue | Focus the action queue |
 | LB / RB (L1 / R1) | Previous / next household Sim | same |
 | LT / RT (L2 / R2) | Needs panel: closed → open → focused → closed / next panel tab | same |
@@ -255,7 +255,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | 1 ✅ | E1, E2, E3 | <ul><li>Every screen can be reached with a pad via the virtual cursor.</li><li>Mouse/keyboard behaviour is unchanged.</li><li>Switching device mid-game works.</li></ul> |
 | 2 ✅ | S8 (mobile layout without touch input); E5; S1 (camera + cursor mode); S2; S3 (Sim cycling / speed / mode) | A household can play a full day in live mode without touching the mouse |
 | 3 ✅ | E4; S3 (panels); S5 | <ul><li>Every live-mode panel and VM dialog can be navigated.</li><li>The virtual cursor is no longer needed inside a lot.</li></ul> |
-| 4 | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
+| 4 ✅ | E6; S1 (direct control, 3D camera only) | <ul><li>The Sim can be walked through doors and stairs and can interact.</li><li>Autonomy doesn't fight the stick.</li><li>Save and load round-trip cleanly.</li></ul> |
 | 5 | S4 | Buy, place, rotate, sell, walls, floors and wallpaper all work with a pad only |
 | 6 | S6, S7, on-screen keyboard | Neighbourhood → CAS → lot works without a mouse |
 
@@ -274,9 +274,9 @@ Phase 1 is the right first PR. It is small, stays inside the engine, is testable
 
 ## 9. Risks and things to verify early
 
-- **Autonomy vs direct control.** The frame yields whenever any non-idle action is queued (`VMDirectControlFrame.cs:637`). If free will queues something for the controlled Sim, the player loses control mid-walk. Autonomous queueing needs to be suppressed for the active Sim while the stick is held, plus a short grace period. Prototype this first in Phase 4.
-- **BHAV 9001 via PIFF.** Confirm that PIFF `Add` works for semi-global files, and that `GetRoutineWithOwner` resolves `0x2329` against TS1's person semi-global.
-- **`PersonData[54]` in TS1.** If we keep using it at all, verify that no TS1 behaviour reads or writes that slot.
+- **Autonomy vs direct control.** The frame yields whenever any non-idle action is queued (`VMDirectControlFrame.cs:637`). If free will queues something for the controlled Sim, the player loses control mid-walk. Phase 4 doesn't suppress it explicitly; see §13 for why it's expected not to happen and what to check.
+- **BHAV 9001 via PIFF.** Superseded: Phase 4 builds the routine in code instead (§13).
+- **`PersonData[54]` in TS1.** Resolved: TS1 uses a runtime field instead (§13).
 - **Windows backend.** Windows defaults to WindowsDX (`Simitone.Windows/Program.cs:52`). Its `GamePad` support is expected to be XInput-only, so PlayStation pads may need Steam Input or DS4Windows there; DesktopGL (SDL2) should recognise them natively. Verify on hardware. If confirmed, document the existing `gl` launch argument for PlayStation pads.
 - **Neighbourhood person data is truncated (pre-existing, unverified impact).** `NBRS` loads only the first 88 person-data entries, although non-version-4 records store 256. On save it writes zeros for everything past 88. If the original game keeps anything there, saving in Simitone wipes it. This is worth checking separately; it isn't related to controller support.
 - **New (2026) Steam Controller.** SDL 2.32.2 predates it and has no driver or mapping for it. Through Steam Input it appears as a "Steam Virtual Gamepad", which SDL's mapping database covers, so launching Simitone from Steam is the supported route.
@@ -565,3 +565,63 @@ The engine commit is `931ccd7` on `simitone/controller-phase3` in `Sleepsong/Fre
 4. Needs panel: LT three times on the relationships and inventory tabs; RT while focused.
 5. Options: Select into Options, Save, then B back to live.
 6. After any dialog closes, the selector works again without touching the mouse.
+
+---
+
+## 13. Phase 4 — what was built
+
+Engine commits `b28765a` and `6167223` on `simitone/controller-phase4`. Simitone turns it on with `vm.AllowDirectControl = true` in `TS1GameScreen`.
+
+### How it plays
+
+- **X** in live mode with the 3D camera switches to direct control. A short hint ("Direct control" / "Cursor mode") shows near the top of the screen. In 2D, X shows "Direct control needs the 3D camera." and plays the error sound.
+- **Left stick:** walks the Sim relative to the camera (stick up = away from the camera), through `World.Transform` like FreeSO's keyboard direct control. Past 0.9 deflection the Sim runs. Letting go stops them; they keep facing the way they last walked.
+- **Camera:** stays anchored on the Sim. The right stick still zooms and rotates.
+- **A:** opens the menu of the object or person within 0.9 tiles of a point 0.9 tiles in front of the Sim. The marker shows what that is. With nothing there, A does nothing (there's no "go here" in direct control). Choosing an interaction queues it as usual; the Sim walks over and does it, then direct control resumes.
+- **Everything else** (LB/RB, Y, LT/RT, D-pad, Start, Back) works as in cursor mode. Direct control follows the active Sim: switching Sims hands it to the new one and releases the old one.
+- It's switched off (and the Sim stops) in buy/build/options mode and when the camera goes 2D, and comes back when they return, until X turns it off. Leaving it in live mode puts the selector on the Sim.
+
+### Engine (`tso.simantics`)
+
+| Change | Why |
+|---|---|
+| `VM.AllowDirectControl` | Explicit opt-in. Both direct control commands' `Verify` accept it as well as TSO's `aprilfools` tuning, so TSO is unchanged. |
+| `VMDirectControlFrame.TS1Routine` | A routine built in code: one Look Towards in `FSODirectControl` mode, which pushes the frame. `EnsureDirectControlAction` uses it under TS1 instead of looking up `0x2329`. |
+| `VMAvatar.DirectControlEnabled` | The enable flag under TS1. It's a runtime field, so it never reaches save data (TSO still uses `PersonData[54]`). |
+| `VMThread.Load` | Drops saved direct control actions under TS1, and restarts the avatar if one was running. |
+| `VMNetChangeControlCmd` | Ends direct control on the Sim being let go. Its PersistID becomes 0, so a toggle sent afterwards could never reach it. |
+| `VMNetDirectControlToggleCommand.SetEnabled` | The toggle's body, shared with the control change. |
+
+### Changes from the plan (§4, E6)
+
+- **Routine in code, not a PIFF.** The PIFF route was chosen so saved actions would resolve. Handling saves on load is simpler and needs no content patch: a saved TS1 direct control action is dropped by its flag (`0x2329` might exist in TS1 content as something unrelated, so resolving isn't enough), and if it was running, the Sim's stack is cleared and restarted. The pad helper turns direct control back on if the player still has it selected.
+- **No cancel before save.** The load-side cleanup covers it, including saves made by other code paths.
+- **`TryMove` quirks left alone.** Both are harmless. The missing `else` gives a stopped Sim one zero-length step, and the `2500` threshold only adds collision substeps. Changing the step count would change movement results, and a TSO client built from this fork would then disagree with upstream servers.
+- **Target selection** is the nearest interactable to a point just in front of the Sim, reusing cursor mode's scoring, instead of an angle-weighted search over 2 tiles. It's predictable and needs no new tuning. Revisit if it feels too short.
+
+### Autonomy
+
+Not suppressed explicitly. `EvaluateQueuePriorities` re-queues the direct control action every tick, so the controlled Sim's queue is never empty. TS1's free will runs from the idle loop when the queue is empty, so it shouldn't fire while direct control is on. Interactions pushed onto the Sim by other objects or Sims (the phone, a visitor) still interrupt it, which is the game's normal behaviour. This is reasoning, not a test result: check it on hardware.
+
+### Known limits
+
+- Movement is bounded by the current room plus portals (doors, stairs). That's fine in houses but may feel restrictive on large outdoor community lots.
+- Direct control only runs while the Sim's posture is standing. After sitting or lying down, it resumes once they stand.
+
+### Verification
+
+- The full desktop build succeeds.
+- The headless harness now has 207 checks. The new ones cover direction conversion (each direction, wrapping, round trips through the frame's own sin/cos), the facing vector, and the TS1 stand-in routine.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. 3D camera, live mode: X, then walk. Stick up should go away from the camera. Rotate the camera with the right stick while walking.
+2. Full tilt runs; partial tilt walks; letting go stops.
+3. Walk through a door and up and down stairs.
+4. Walk up to the fridge or another Sim: the marker should show on it, A opens its menu, and after the interaction the stick works again. A facing nothing does nothing.
+5. LB/RB in direct control: the new Sim walks with the stick, and the old one goes back to normal (not frozen in place).
+6. Stand still for a few in-game hours with free will on: does the controlled Sim stay put?
+7. X again: cursor mode, with the selector at the Sim. Switch to 2D while in direct control: the cursor appears at the Sim. X in 2D: the hint and error sound. Back to 3D: direct control resumes.
+8. Buy mode while in direct control: the Sim stops. Back to live: it resumes.
+9. Save while in direct control, quit, load: no new entries in `simantics-errors.log`, the Sim isn't stuck, and X still works.

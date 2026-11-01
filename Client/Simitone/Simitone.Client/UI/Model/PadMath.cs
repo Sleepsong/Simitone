@@ -57,6 +57,30 @@ namespace Simitone.Client.UI.Model
         }
 
         /// <summary>
+        /// Converts a tile-space direction to VMDirectControlInput's direction units: -32767..32767 covering -pi..pi,
+        /// measured the way VMDirectControlFrame moves (x = sin, y = -cos).
+        /// </summary>
+        public static short DirectionToShort(Vector2 tileDirection)
+        {
+            return RadiansToDirection(Math.Atan2(tileDirection.X, -tileDirection.Y));
+        }
+
+        /// <summary>An angle in radians (any range, same convention as avatar RadianDirection) in direction units.</summary>
+        public static short RadiansToDirection(double radians)
+        {
+            var normalized = radians % (Math.PI * 2);
+            if (normalized > Math.PI) normalized -= Math.PI * 2;
+            if (normalized <= -Math.PI) normalized += Math.PI * 2;
+            return (short)Math.Round(normalized / Math.PI * 32767);
+        }
+
+        /// <summary>Unit tile-space vector an avatar with this RadianDirection faces.</summary>
+        public static Vector2 Forward(float radianDirection)
+        {
+            return new Vector2((float)Math.Sin(radianDirection), -(float)Math.Cos(radianDirection));
+        }
+
+        /// <summary>
         /// Clamps a menu anchor so a menu reaching <paramref name="marginX"/>/<paramref name="marginY"/> out from it
         /// stays on a screen of the given size. If the screen is too small, the anchor is centred on that axis.
         /// </summary>

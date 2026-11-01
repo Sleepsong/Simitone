@@ -588,6 +588,7 @@ namespace Simitone.Client.UI.Screens
             Driver = new VMServerDriver(globalLink);
 
             vm = new VM(new VMContext(World), Driver, new UIHeadlineRendererProvider());
+            vm.AllowDirectControl = true; //walking Sims with the gamepad (UILotControlPadHelper)
             vm.ListenBHAVChanges();
             vm.Init();
 

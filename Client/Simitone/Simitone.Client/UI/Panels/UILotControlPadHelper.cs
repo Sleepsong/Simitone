@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using FSO.Client;
 using FSO.Client.UI.Framework;
 using FSO.Client.UI.Model;
@@ -9,6 +10,9 @@ using FSO.HIT;
 using FSO.LotView.Components;
 using FSO.LotView.Model;
 using FSO.SimAntics;
+using FSO.SimAntics.Engine;
+using FSO.SimAntics.NetPlay.Model.Commands;
+using FSO.LotView.Utils.Camera;
 using Microsoft.Xna.Framework;
 using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Screens;
@@ -34,6 +38,9 @@ namespace Simitone.Client.UI.Panels
     /// <item>LT: needs panel closed, then open, then focused (D-pad/stick move between its buttons and lists,
     /// A activates, B leaves the panel), then closed; RT: next panel tab</item>
     /// <item>Y: focus the action queue (left/right to choose, A cancels the action, B or Y to leave)</item>
+    /// <item>X: switch between cursor mode and direct control (3D camera only). In direct control the left stick walks
+    /// the Sim relative to the camera (running at full tilt), the camera follows them, and A opens the menu of the
+    /// object or person just in front of them.</item>
     /// </list>
     /// In Options mode the panel's buttons are navigated directly (B returns to live mode). In buy and build mode the
     /// pad is left to the virtual cursor, except for the shared buttons above, none of which it uses.
@@ -48,6 +55,9 @@ namespace Simitone.Client.UI.Panels
         private const float ZoomRate = 1600f; //wheel units per second at full deflection
         private const float RotateRate3D = 2.2f; //radians per second at full deflection
         private const int MaxFloor = 5; //matches the mobile layout's floor buttons
+        private const float DirectReach = 0.9f; //tiles in front of a directly controlled Sim where its target is looked for
+        private const float DirectSnapTiles = 0.9f;
+        private const float RunThreshold = 0.9f; //stick deflection at which a directly controlled Sim runs
 
         private readonly UILotControl Master;
 
@@ -75,6 +85,14 @@ namespace Simitone.Client.UI.Panels
         private bool RotateArmed = true;
         private bool QueueFocus;
         private bool PanelFocus; //live mode: the needs panel has the pad
+
+        private bool DirectMode; //X: the player chose direct control. It applies only in live mode with the 3D camera.
+        private VMAvatar DirectAvatar; //the avatar direct control is currently enabled on
+        private int DirectInputID;
+        private short DirectFacing; //last direction the Sim was walked in, in VMDirectControlInput units
+
+        private string Hint; //short message shown near the top of the screen
+        private float HintTime;
         private int SpeedBeforePause = 1;
 
         private Vector2? MarkerBase; //UI coordinates, set in Update for Draw
@@ -105,6 +123,14 @@ namespace Simitone.Client.UI.Panels
             }
 
             var frontend = screen.Frontend;
+
+            //direct control follows the active Sim, and is off outside live mode and in 2D. Every frame starts by
+            //telling the Sim to stand still; it only walks if the stick drives it further down.
+            var is3D = World.State.Cameras.ActiveType == CameraControllerType._3D;
+            SyncDirectControl(screen, (DirectMode && is3D && Master.LiveMode) ? Master.ActiveEntity as VMAvatar : null);
+            SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = DirectFacing });
+            UpdateHint(state);
+
             ReleaseDetachedFocus(state);
             var lotHasPad = !GameFacade.Screens.HasModalDialog
                 && state.InputManager?.GetFocus() == null
@@ -159,7 +185,10 @@ namespace Simitone.Client.UI.Panels
             }
             if (!SelectorPlaced) PlaceSelectorOn(active, true);
 
-            var recentlyMoved = now - LastSelectorMove < CutawayFocusSeconds;
+            var direct = DirectAvatar != null && DirectAvatar == active;
+            if (direct && World.State.ScrollAnchor != (active.WorldUI as AvatarComponent)) PlaceSelectorOn(active, true); //camera stays on the Sim
+
+            var recentlyMoved = !direct && now - LastSelectorMove < CutawayFocusSeconds;
             CutawayFocus = recentlyMoved ? SelectorOrTargetTile() : new Vector2(active.VisualPosition.X, active.VisualPosition.Y);
 
             if (Master.PieMenuOpen) return; //the pie menu reads the pad itself
@@ -169,16 +198,104 @@ namespace Simitone.Client.UI.Panels
             if (QueueFocus) UpdateQueueFocus(pad);
             else
             {
-                HandleLiveButtons(pad, frontend);
-                if (!PanelFocus) MoveSelector(pad.LeftStick, dt, now);
+                HandleLiveButtons(pad, frontend, is3D);
+                if (!PanelFocus)
+                {
+                    if (direct) DriveDirect(pad.LeftStick);
+                    else MoveSelector(pad.LeftStick, dt, now);
+                }
             }
             if (QueueFocus || PanelFocus || wasPanelFocus) return; //the stick and A belong to the panel
 
-            UpdateTarget(active);
-            UpdateMarker(state, dt);
+            if (direct)
+            {
+                var front = new Vector2(active.VisualPosition.X, active.VisualPosition.Y) + PadMath.Forward(active.RadianDirection) * DirectReach;
+                UpdateTarget(active, front, DirectSnapTiles, skipActive: true);
+            }
+            else
+            {
+                var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, World.State.Level), SnapPixels, MinSnapTiles, MaxSnapTiles);
+                UpdateTarget(active, Selector, snapRadius, skipActive: false);
+            }
+            UpdateMarker(state, dt, floorRing: !direct);
             //the press that hands control to the pad only reveals the selector; it doesn't act on whatever is under it.
-            if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm)) OpenMenu(state);
+            //In direct control, A with nothing in front of the Sim does nothing (there's no "go here").
+            if (wasPadActive && !wasQueueFocus && pad.Pressed(PadAction.Confirm) && (!direct || Target != null)) OpenMenu(state);
         }
+
+        #region Direct control
+
+        /// <summary>Turns direct control on for <paramref name="wanted"/> (or nobody), and off for whoever had it.</summary>
+        private void SyncDirectControl(TS1GameScreen screen, VMAvatar wanted)
+        {
+            if (wanted == DirectAvatar) return;
+            //a sim we no longer control was already let go by the control change (VMNetChangeControlCmd), and can't be
+            //addressed by a command anyway: its PersistID is 0 now.
+            if (DirectAvatar != null && !DirectAvatar.Dead && DirectAvatar.PersistID == Master.vm.MyUID)
+                SendToggle(screen, DirectAvatar, false);
+            //leaving direct control in live mode (X, or the camera went 2D): the cursor starts at the Sim, not where it was left
+            if (DirectAvatar != null && wanted == null && Master.LiveMode && Master.ActiveEntity != null)
+                PlaceSelectorOn(Master.ActiveEntity, true);
+            DirectAvatar = wanted;
+            if (wanted != null)
+            {
+                SendToggle(screen, wanted, true);
+                DirectFacing = PadMath.RadiansToDirection(wanted.RadianDirection);
+            }
+        }
+
+        private static void SendToggle(TS1GameScreen screen, VMAvatar avatar, bool enable)
+        {
+            //addressed to this sim explicitly rather than through vm.SendCommand (the selected sim): the two differ
+            //while a control change is queued but hasn't run yet.
+            screen.Driver.SendCommand(new VMNetDirectControlToggleCommand { ActorUID = avatar.PersistID, Enable = enable });
+        }
+
+        /// <summary>Walks the Sim in the stick's direction relative to the camera, running past <see cref="RunThreshold"/>.</summary>
+        private void DriveDirect(Vector2 stick)
+        {
+            if (stick == Vector2.Zero) return; //the stand-still input sent at the start of the frame applies
+            //(x, -y) like the keyboard axes FreeSO's own direct control uses: screen up is -y.
+            var move = World.Transform(new Vector2(stick.X, -stick.Y));
+            if (move == Vector2.Zero) return;
+            DirectFacing = PadMath.DirectionToShort(move);
+            SendDirectInput(new VMDirectControlInput
+            {
+                ID = DirectInputID++,
+                Direction = DirectFacing,
+                InputIntensity = Math.Max(1, (int)(stick.Length() * 100)),
+                //the frame turns the body towards LookDirectionInt; pointing it where the Sim walks gives a
+                //third-person feel (TSO used the first-person camera's facing here).
+                LookDirectionInt = DirectFacing,
+                Sprint = stick.Length() > RunThreshold
+            });
+        }
+
+        private void SendDirectInput(VMDirectControlInput input)
+        {
+            if (DirectAvatar?.Thread?.Stack.LastOrDefault() is VMDirectControlFrame frame) frame.SendUserControls(input);
+        }
+
+        private void ShowHint(string text)
+        {
+            Hint = text;
+            HintTime = 2.5f;
+        }
+
+        private void UpdateHint(UpdateState state)
+        {
+            if (HintTime <= 0) return;
+            HintTime -= (float)state.Time.ElapsedGameTime.TotalSeconds;
+            var tip = state.UIState.TooltipProperties;
+            tip.Show = true;
+            tip.Color = Color.Black;
+            tip.Opacity = 1;
+            tip.Position = new Vector2(ScreenWidth / 2, ScreenHeight * 0.25f) * FSOEnvironment.DPIScaleFactor;
+            tip.UpdateDead = false;
+            state.UIState.Tooltip = Hint;
+        }
+
+        #endregion
 
         /// <summary>
         /// Clears keyboard focus held by an element that is no longer on screen (e.g. the text box of a dialog that
@@ -262,8 +379,23 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
-        private void HandleLiveButtons(GamePadInput pad, UISimitoneFrontend frontend)
+        private void HandleLiveButtons(GamePadInput pad, UISimitoneFrontend frontend, bool is3D)
         {
+            if (pad.Pressed(PadAction.FaceLeft))
+            {
+                if (!is3D)
+                {
+                    ShowHint("Direct control needs the 3D camera.");
+                    HITVM.Get().PlaySoundEvent(UISounds.Error);
+                }
+                else
+                {
+                    DirectMode = !DirectMode; //takes effect in SyncDirectControl next frame
+                    ShowHint(DirectMode ? "Direct control" : "Cursor mode");
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+            }
+
             if (pad.Pressed(PadAction.ShoulderLeft) || pad.Pressed(PadAction.ShoulderRight))
             {
                 FollowSim = true; //TrackActiveSim moves the selector and camera once the switch lands
@@ -460,28 +592,29 @@ namespace Simitone.Client.UI.Panels
                 Math.Max(0.5f, Math.Min(arch.Height - 0.5f, tile.Y)));
         }
 
-        private void UpdateTarget(VMEntity active)
+        /// <summary>
+        /// Picks the interactable object or person nearest to <paramref name="point"/> within <paramref name="snapRadius"/>
+        /// tiles of its footprint. In cursor mode the radius comes from a fixed on-screen distance (a fixed tile radius
+        /// felt sticky up close, e.g. with the 3D camera); the tie-break biases scale with it.
+        /// </summary>
+        private void UpdateTarget(VMEntity active, Vector2 point, float snapRadius, bool skipActive)
         {
             var vm = Master.vm;
             var level = World.State.Level;
             VMEntity best = null;
             var bestScore = float.MaxValue;
-
-            //snap within a fixed distance on screen. A fixed tile radius felt sticky up close (e.g. the 3D camera),
-            //where a tile covers many more pixels. The tie-break biases scale with it.
-            var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, level), SnapPixels, MinSnapTiles, MaxSnapTiles);
-            var bias = snapRadius / MaxSnapTiles;
+            var bias = Math.Min(1f, snapRadius / MaxSnapTiles);
 
             foreach (var entity in vm.Entities)
             {
-                if (entity == Master.GotoObject || entity.Dead) continue;
+                if (entity == Master.GotoObject || entity.Dead || (skipActive && entity == active)) continue;
                 var pos = entity.Position;
                 if (pos == LotTilePos.OUT_OF_WORLD || pos.Level != level) continue;
 
                 var footprint = entity.Footprint;
                 var distance = (footprint != null)
-                    ? PadMath.DistanceToFootprint(Selector, footprint.x1, footprint.y1, footprint.x2, footprint.y2)
-                    : PadMath.DistanceToFootprint(Selector, pos.x, pos.y, pos.x, pos.y);
+                    ? PadMath.DistanceToFootprint(point, footprint.x1, footprint.y1, footprint.x2, footprint.y2)
+                    : PadMath.DistanceToFootprint(point, pos.x, pos.y, pos.x, pos.y);
                 if (distance > snapRadius) continue;
 
                 var leader = entity.MultitileGroup.GetInteractionGroupLeader(entity);
@@ -526,13 +659,14 @@ namespace Simitone.Client.UI.Panels
 
         #region Drawing
 
-        private void UpdateMarker(UpdateState state, float dt)
+        /// <param name="floorRing">Show a ring at the selector when nothing is targeted (cursor mode).</param>
+        private void UpdateMarker(UpdateState state, float dt, bool floorRing)
         {
             AnimTime += dt;
             var level = World.State.Level;
             if (TargetPart == null)
             {
-                MarkerBase = ToUI(World.ProjectTileToScreen(Selector, level));
+                if (floorRing) MarkerBase = ToUI(World.ProjectTileToScreen(Selector, level));
                 return;
             }
 
@@ -544,7 +678,7 @@ namespace Simitone.Client.UI.Panels
             MarkerBase = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor));
             MarkerTop = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor + markerHeight));
 
-            if (Target is VMAvatar avatar)
+            if (Target is VMAvatar avatar && HintTime <= 0)
             {
                 var tip = state.UIState.TooltipProperties;
                 tip.Show = true;
