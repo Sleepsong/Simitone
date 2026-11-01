@@ -60,6 +60,7 @@ namespace Simitone.Client.UI.Controls
             Pad = state.Pad;
             if (ToastTime > 0) ToastTime -= (float)state.Time.ElapsedGameTime.TotalSeconds;
             Keyboard.Update(state);
+            Simitone.Client.Utils.PadDiagnostics.Update(state);
         }
 
         public override void Draw(UISpriteBatch batch)

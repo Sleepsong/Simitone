@@ -951,6 +951,8 @@ Known limit: Simitone's hover tint for stencil buttons (mint, (128, 255, 192)) i
 
 The harness has 17 new checks for the filter and the tracker (323 in all).
 
+**Pad not detected when started from Steam.** Launched by Steam, the game is shown Steam's virtual gamepad instead of the physical controller (Steam sets `SDL_GAMECONTROLLER_IGNORE_DEVICES` and friends), and what that pad sends depends on the Steam layout chosen for the shortcut. To see what's going on without a console, the game now writes `gamepad.log` to the user folder (`~/.local/share/Simitone/` on Linux, next to `crash.log`), rewritten each run (`Utils/PadDiagnostics`). It records the Steam/SDL environment variables, every joystick SDL can see (name, vendor/product, whether SDL has a gamepad mapping for it; MonoGame ignores joysticks without one), when the game's pad connects or disconnects, its first input, and window focus changes (pad input is ignored while unfocused). Checked against the SDL 2.32 MonoGame ships (324 harness checks).
+
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 

@@ -386,6 +386,7 @@ namespace Simitone.Client
                 GameFacade.Screens = uiLayer;
                 uiLayer.Overlay = new UI.Controls.UIPadOverlay(); //gamepad keyboard, prompts, focus tooltips
                 UI.Model.PadFocusStyle.Install(); //Sims-style focus highlight
+                Utils.PadDiagnostics.Start(); //gamepad.log: what controllers the game can see
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;
