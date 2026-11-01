@@ -18,6 +18,9 @@ namespace Simitone.Client.Services.Discord
     {
         private const double CheckInterval = 1.0; //seconds between looks at the game
 
+        /// <summary>Simitone's Discord application (what "Playing Simitone" and the pictures come from).</summary>
+        public const string SimitoneApplicationId = "1566559628077047818";
+
         public static string SettingsPath => Path.Combine(FSOEnvironment.UserDir ?? "", "discord.ini");
         public static string LogPath => Path.Combine(FSOEnvironment.UserDir ?? "", "discord.log");
 
@@ -37,12 +40,10 @@ namespace Simitone.Client.Services.Discord
                 var settings = ReadSettings();
                 if (!IsOn(settings, "enabled")) return;
                 if (!settings.TryGetValue("client_id", out var clientId) || string.IsNullOrWhiteSpace(clientId))
-                {
-                    Log("Enabled, but there's no client_id in discord.ini: nothing to show it as.");
-                    return;
-                }
+                    clientId = SimitoneApplicationId;
                 Text = new PresenceText();
-                if (settings.TryGetValue("large_image", out var image)) Text.LargeImage = image;
+                if (settings.TryGetValue("large_image", out var image) && image.Length > 0) Text.LargeImage = image;
+                if (settings.ContainsKey("small_images")) Text.SmallImages = IsOn(settings, "small_images");
                 Stop = new CancellationTokenSource();
                 File.WriteAllText(LogPath, $"Simitone Discord log, {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
                 var link = new DiscordLink(new DiscordRpcClient(clientId.Trim())) { Log = Log };
@@ -110,14 +111,14 @@ namespace Simitone.Client.Services.Discord
         public const string Template =
             "# Discord Rich Presence: shows what you're doing in Simitone on your Discord profile\n" +
             "# (\"Playing Simitone\", the neighbourhood or the family you're playing, and for how long).\n" +
-            "# It needs the Discord app running on this computer, and a Discord application for Simitone:\n" +
-            "#   1. At https://discord.com/developers/applications make a New Application named Simitone.\n" +
-            "#   2. Copy its Application ID (a long number) into client_id below.\n" +
-            "#   3. Optionally, under Rich Presence > Art Assets, upload an image named simitone (the large picture).\n" +
-            "# Then set enabled=true and restart Simitone.\n" +
+            "# It needs the Discord app running on this computer. Set enabled=true and restart Simitone.\n" +
             "enabled=false\n" +
+            "# Leave empty for Simitone's own Discord application, or put another application's ID here.\n" +
             "client_id=\n" +
-            "large_image=simitone\n";
+            "# The pictures: art assets uploaded to the application (small_images: buy, build, options, cas,\n" +
+            "# downtown, vacation, studio, magic, shown in the corner of the large one).\n" +
+            "large_image=simitone\n" +
+            "small_images=true\n";
 
         private static void Log(string line)
         {

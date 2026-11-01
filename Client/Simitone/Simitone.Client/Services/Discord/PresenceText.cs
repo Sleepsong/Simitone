@@ -35,6 +35,11 @@ namespace Simitone.Client.Services.Discord
     {
         public string LargeImage = "simitone";
         public string LargeText = "Simitone";
+        /// <summary>
+        /// The small picture in the corner of the large one, naming where the player is: buy, build, options; cas;
+        /// downtown, vacation, studio, magic. Art assets of those names must be uploaded to the Discord application.
+        /// </summary>
+        public bool SmallImages = true;
 
         private string PlaceKey;
         private long Start;
@@ -69,14 +74,45 @@ namespace Simitone.Client.Services.Discord
                     state = null;
                     break;
             }
+            var (small, smallText) = SmallImages ? SmallImage(info) : (null, null);
             return new PresenceActivity
             {
                 Details = details,
                 State = state,
                 Start = Start,
                 LargeImage = LargeImage,
-                LargeText = LargeText
+                LargeText = LargeText,
+                SmallImage = small,
+                SmallText = smallText
             };
+        }
+
+        /// <summary>The small picture's asset name and hover text for a place, or nulls (live mode, the main neighbourhood).</summary>
+        public static (string image, string text) SmallImage(PresenceInfo info)
+        {
+            switch (info.Place)
+            {
+                case PresencePlace.CreateFamily:
+                    return ("cas", "Create a Family");
+                case PresencePlace.Neighbourhood:
+                    switch (info.Neighbourhood)
+                    {
+                        case 2: return ("downtown", "Downtown");
+                        case 3: return ("vacation", "Vacation Island");
+                        case 5: return ("studio", "Studio Town");
+                        case 7: return ("magic", "Magic Town");
+                    }
+                    break;
+                case PresencePlace.Lot:
+                    switch (info.Mode)
+                    {
+                        case "Buy mode": return ("buy", "Buy mode");
+                        case "Build mode": return ("build", "Build mode");
+                        case "Options": return ("options", "Options");
+                    }
+                    break;
+            }
+            return (null, null);
         }
 
         /// <summary>"Goth" to "the Goth family"; a name that already says "family" is left alone.</summary>

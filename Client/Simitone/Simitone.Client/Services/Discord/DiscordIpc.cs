@@ -163,6 +163,8 @@ namespace Simitone.Client.Services.Discord
         public long? Start;
         public string LargeImage;
         public string LargeText;
+        public string SmallImage;
+        public string SmallText;
 
         public JsonObject ToJson()
         {
@@ -170,12 +172,18 @@ namespace Simitone.Client.Services.Discord
             if (!string.IsNullOrEmpty(Details)) activity["details"] = Fit(Details);
             if (!string.IsNullOrEmpty(State)) activity["state"] = Fit(State);
             if (Start != null) activity["timestamps"] = new JsonObject { ["start"] = Start.Value };
+            var assets = new JsonObject();
             if (!string.IsNullOrEmpty(LargeImage))
             {
-                var assets = new JsonObject { ["large_image"] = LargeImage };
+                assets["large_image"] = LargeImage;
                 if (!string.IsNullOrEmpty(LargeText)) assets["large_text"] = Fit(LargeText);
-                activity["assets"] = assets;
             }
+            if (!string.IsNullOrEmpty(SmallImage))
+            {
+                assets["small_image"] = SmallImage;
+                if (!string.IsNullOrEmpty(SmallText)) assets["small_text"] = Fit(SmallText);
+            }
+            if (assets.Count > 0) activity["assets"] = assets;
             return activity;
         }
 
@@ -188,9 +196,10 @@ namespace Simitone.Client.Services.Discord
         }
 
         public bool Equals(PresenceActivity other) => other != null && Details == other.Details && State == other.State
-            && Start == other.Start && LargeImage == other.LargeImage && LargeText == other.LargeText;
+            && Start == other.Start && LargeImage == other.LargeImage && LargeText == other.LargeText
+            && SmallImage == other.SmallImage && SmallText == other.SmallText;
         public override bool Equals(object obj) => Equals(obj as PresenceActivity);
-        public override int GetHashCode() => HashCode.Combine(Details, State, Start, LargeImage, LargeText);
+        public override int GetHashCode() => HashCode.Combine(Details, State, Start, LargeImage, LargeText, SmallImage, SmallText);
     }
 
     /// <summary>

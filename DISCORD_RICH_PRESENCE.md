@@ -16,14 +16,23 @@ It's part of Simitone only; the FreeSO engine isn't changed.
 
 ## Turning it on
 
-It's off until you set it up, because it needs a Discord application to show up as:
+Simitone's Discord application (ID `1566559628077047818`) is built in, so it's only a switch: start Simitone once and it writes `discord.ini` in the user folder (`~/.local/share/Simitone/` on Linux); set `enabled=true` and restart. The Discord app has to be running on the same computer. `client_id=` can point it at a different application.
 
-1. At <https://discord.com/developers/applications>, make a **New Application** named **Simitone** (the name is what Discord shows after "Playing").
-2. Copy its **Application ID** (a long number).
-3. Optionally, under **Rich Presence → Art Assets**, upload an image named `simitone`: the large picture on the profile.
-4. Start Simitone once; it writes `discord.ini` in the user folder (`~/.local/share/Simitone/` on Linux). Set `enabled=true` and `client_id=` the ID, and restart Simitone.
+## Art assets
 
-The Discord app has to be running on the same computer. If the ID is baked into Simitone later, step 1 to 3 go away and `discord.ini` is only the on/off switch.
+In the [Discord Developer Portal](https://discord.com/developers/applications), on the Simitone application. All are in `art/discord/`, made from Simitone's own icons (the app icon and the mode and neighbourhood buttons):
+
+| Where | File | Name to give it |
+|---|---|---|
+| General Information → App Icon | `app_icon.png` (1024×1024) | — |
+| Rich Presence → Art Assets | `simitone.png` (1024×1024) | `simitone` (the large picture) |
+| Rich Presence → Art Assets | `buy.png`, `build.png`, `options.png` (512×512) | `buy`, `build`, `options` (the small picture in those modes) |
+| Rich Presence → Art Assets | `cas.png` | `cas` (Create a Family) |
+| Rich Presence → Art Assets | `downtown.png`, `vacation.png`, `studio.png`, `magic.png` | `downtown`, `vacation`, `studio`, `magic` (those neighbourhoods) |
+
+The asset name is what Simitone asks for, so it has to match exactly (Discord fills it in from the file name). New assets can take a few minutes to show up. Live mode and the main neighbourhood have no small picture. If the small ones aren't uploaded, set `small_images=false`.
+
+The pictures are scaled up from the 256×256 app icon and the 96–128 px buttons, because Discord asks for at least 512×512; it only ever shows them at 30–120 px, where they look sharp. The small ones sit on a white disc, since Discord crops small pictures to a circle.
 
 ## How it works
 
