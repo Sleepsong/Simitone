@@ -378,6 +378,22 @@ namespace Simitone.Client.UI.Panels
 
         public bool PadFocusable => Visible;
 
+        public int House => HouseNumber;
+        /// <summary>The mouse (or the pad's virtual cursor) is over the lot.</summary>
+        public bool MouseHovered => Hovered;
+        /// <summary>A family lives here.</summary>
+        public readonly bool Occupied;
+        /// <summary>A community lot (downtown, vacation, studio town...), as the house panel decides it.</summary>
+        public readonly bool Community;
+
+        /// <summary>What Confirm does here, for the prompt bar: what the house panel it opens is for.</summary>
+        public string PadLabel(bool movingIn)
+        {
+            if (Occupied) return movingIn ? "View house" : "Visit house";
+            if (Community) return movingIn ? "View lot" : "Visit lot";
+            return movingIn ? "Move in" : "View lot";
+        }
+
         /// <summary>The focus frame goes round the lot picture, as far as it's on the map.</summary>
         public Rectangle PadBounds
         {
@@ -434,6 +450,16 @@ namespace Simitone.Client.UI.Panels
             HouseNumber = houseNumber;
             SelectionCallback = selectionCallback;
             Tooltip = HouseTitle(houseNumber);
+            try
+            {
+                var neigh = Content.Get().Neighborhood;
+                Occupied = neigh.GetFamilyForHouse((short)houseNumber) != null;
+                //as UIHouseSelectPanel works it out
+                if (!neigh.ZoningDictionary.TryGetValue((short)houseNumber, out var zone))
+                    zone = (short)((houseNumber >= 81 && houseNumber <= 89) ? 2 : 1);
+                Community = !Occupied && zone > 0;
+            }
+            catch { } //only for prompt labels
             if (houseNumber == 71) { }
             AlphaTime = 0;
             var house = Content.Get().Neighborhood.GetHouse(houseNumber);

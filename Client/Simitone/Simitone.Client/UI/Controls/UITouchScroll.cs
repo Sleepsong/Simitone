@@ -18,7 +18,7 @@ using Simitone.Client.UI.Model;
 
 namespace Simitone.Client.UI.Controls
 {
-    public class UITouchScroll : UICachedContainer, IPadNavigable
+    public class UITouchScroll : UICachedContainer, IPadNavigable, IPadOwnFocus
     {
         public int ItemWidth;
         public Texture2D ScrollEdgeL;
@@ -34,6 +34,14 @@ namespace Simitone.Client.UI.Controls
         /// </summary>
         public bool PadHighlightOnly;
         private int PadIndex = -1;
+
+        /// <summary>
+        /// The selected item shows it's selected (the family list's highlight), so with the pad on the list there's no
+        /// need for a focus frame round it.
+        /// </summary>
+        public bool PadSelectionVisible;
+
+        public bool PadShowsFocus => PadSelectionVisible && !PadHighlightOnly && LastSelected != null;
 
         private UIMouseEventRef HitTest;
 
@@ -256,15 +264,12 @@ namespace Simitone.Client.UI.Controls
 
         public bool PadFocusable => Visible && LengthProvider() > 0;
 
-        /// <summary>The whole list, or in <see cref="PadHighlightOnly"/> mode the highlighted item (clipped to the list).</summary>
-        public Rectangle PadBounds
-        {
-            get
-            {
-                if (!PadHighlightOnly) return new Rectangle(0, 0, (int)Size.X, (int)Size.Y);
-                return PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
-            }
-        }
+        /// <summary>
+        /// The highlighted item (in <see cref="PadHighlightOnly"/> mode) or the selected one (else the first, which
+        /// Confirm would select), clipped to the list; the whole list if it's out of view.
+        /// </summary>
+        public Rectangle PadBounds =>
+            PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
 
         /// <summary>The item the highlight is on: where the pad left it, else the selected item, else the first.</summary>
         private int HighlightedIndex()

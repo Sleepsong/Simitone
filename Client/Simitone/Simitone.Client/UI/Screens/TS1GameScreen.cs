@@ -277,7 +277,10 @@ namespace Simitone.Client.UI.Screens
                 var housePanel = TS1NeighPanel?.LastHS;
                 if (housePanel?.Parent != null && nav.Navigator.Scope == housePanel)
                     return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"), PadPrompt.Of(PadAction.Cancel, "Back") };
-                return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Visit house") };
+                var label = (nav.Navigator.Focused is UINeighborhoodHouseButton house) ? house.PadLabel(MoveInFamily != null) : "Select";
+                var items = new List<PadPrompt> { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, label) };
+                if (GamePadSettings.VirtualCursor) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
+                return items.ToArray();
             };
             NeighPadNav.FocusChanged += (previous, current) =>
             {
@@ -296,7 +299,67 @@ namespace Simitone.Client.UI.Screens
             if (TS1NeighPanel?.Parent == null) return null;
             var house = TS1NeighPanel.LastHS;
             if (house?.Parent != null) return house;
+            if (NeighCursorActive) return null; //the virtual cursor has the pad
             return this;
+        }
+
+        /// <summary>
+        /// Neighbourhood pad mode, toggled with X. Browse (false) jumps between the lots and buttons with the focus
+        /// frame; cursor (true) hands the map to the virtual cursor: the left stick moves the pointer and A clicks, which
+        /// is quicker for reaching a lot across the map. The house panel is navigated as usual either way. Remembered
+        /// for the session; needs the virtual cursor setting.
+        /// </summary>
+        private static bool NeighCursorMode;
+        private bool NeighCursorActive => NeighCursorMode && GamePadSettings.VirtualCursor;
+
+        private void UpdateNeighbourhoodPad(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            var panel = TS1NeighPanel;
+            if (panel?.Parent == null || NeighPadNav == null) return;
+            var pad = state.Pad;
+            var free = pad.Connected && GlobalSettings.Default.GamePadEnabled && !state.PadTextEntry
+                && state.InputManager?.GetFocus() == null && !GameFacade.Screens.HasModalDialog
+                && state.LastInputDevice == InputDevice.GamePad;
+            if (!free) return;
+
+            if (panel.LastHS?.Parent != null)
+            {
+                //the house panel has the pad; when it closes, the cursor comes back on its lot
+                if (NeighCursorActive && panel.HouseButtons.TryGetValue(panel.LastHouse, out var open))
+                    state.PadCursorStart = UIFocusNavigator.GlobalRect(open).Center;
+                return;
+            }
+
+            if (GamePadSettings.VirtualCursor && pad.Pressed(PadAction.FaceLeft))
+            {
+                NeighCursorMode = !NeighCursorMode;
+                if (NeighCursorMode)
+                {
+                    //start the cursor on whatever had the focus
+                    var focused = NeighPadNav.Navigator.Focused;
+                    if (focused != null) state.PadCursorStart = UIFocusNavigator.GlobalRect(focused).Center;
+                }
+                else
+                {
+                    //and the focus on the lot under the cursor
+                    var under = panel.HouseButtons.Values.FirstOrDefault(b => b.MouseHovered);
+                    if (under != null) panel.LastHouse = under.House;
+                }
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                return;
+            }
+
+            if (!NeighCursorActive) return;
+            var hovered = panel.HouseButtons.Values.FirstOrDefault(b => b.MouseHovered);
+            if (hovered != null)
+            {
+                //name it, as the focus does in browse mode, clear of the other lots
+                PadFocusStyle.Label(hovered, UIFocusNavigator.GlobalRect(hovered),
+                    panel.HouseButtons.Values.Where(b => b != hovered && b.Visible).Select(b => UIFocusNavigator.GlobalRect(b)));
+            }
+            PadPrompts.Set(PadPrompt.For(PadStick.Left, "Cursor"),
+                PadPrompt.Of(PadAction.Confirm, hovered?.PadLabel(MoveInFamily != null) ?? "Select"),
+                PadPrompt.Of(PadAction.FaceLeft, "Browse"));
         }
 
         /// <summary>Neighbourhood map: start on the house last selected, or the one nearest the middle.</summary>
@@ -452,6 +515,7 @@ namespace Simitone.Client.UI.Screens
                 GameThread.NextUpdate((FSO.Common.Rendering.Framework.Model.UpdateState ustate) => ChangeSpeedTo(0));
             }
             base.Update(state);
+            UpdateNeighbourhoodPad(state);
 
             // Update weather effects (sounds and terrain)
             UpdateWeatherEffects();

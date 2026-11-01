@@ -555,7 +555,11 @@ namespace Simitone.Client.UI.Screens
         {
             var w = 360;
             var split = (int)(ScreenHeight * 0.625f); //where the mouse switches between the head and body carousels
-            HeadPadTarget.Area = new Rectangle((ScreenWidth - w) / 2, 290, w, Math.Max(40, split - 294));
+            //the focus frame goes round the centre Sim's head: a band just above the split, sized with the screen
+            //height as the 3D view is (the mouse's head region reaches right up to the panel, which made a huge frame)
+            var headHeight = Math.Max(40, (int)(ScreenHeight * 0.12f));
+            var headWidth = Math.Max(120, (int)(ScreenHeight * 0.15f));
+            HeadPadTarget.Area = new Rectangle((ScreenWidth - headWidth) / 2, split - 4 - headHeight, headWidth, headHeight);
             BodyPadTarget.Area = new Rectangle((ScreenWidth - w) / 2, split + 4, w, (int)(ScreenHeight * 0.3f));
             if (!Initialized || Dead || !PadFree(state)) return;
 

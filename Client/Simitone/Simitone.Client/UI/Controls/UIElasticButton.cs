@@ -81,13 +81,5 @@ namespace Simitone.Client.UI.Controls
             if (Texture == null) return base.GetBounds();
             return new Rectangle(Texture.Width / -2, Texture.Height / -2, Texture.Width, Texture.Height);
         }
-
-        /// <summary>Gamepad focus: grows a little, as mouse hover does.</summary>
-        public void SetPadHover(bool hover)
-        {
-            if (Disabled) return;
-            var scale = hover ? 1.1f : 1.0f;
-            GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "ScaleX", scale }, { "ScaleY", scale } }, TweenQuad.EaseOut);
-        }
     }
 }

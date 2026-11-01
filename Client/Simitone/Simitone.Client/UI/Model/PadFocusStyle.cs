@@ -13,14 +13,22 @@ namespace Simitone.Client.UI.Model
     /// Simitone's gamepad focus highlight, in place of the engine's plain outline:
     /// <list type="bullet">
     /// <item>a button with a hover look of its own (catalog and panel buttons, CAS buttons, the choices in a popup, the house
-    /// panel's buttons) is put in its real hover state, exactly as the mouse would show it, caption colour
-    /// included;</item>
-    /// <item>anything else (lists, carousels, text boxes, houses, round buttons whose hover is only a slight grow) gets
-    /// a soft mint frame (Simitone's highlight colour) that breathes gently and pops out when focus arrives, with the
-    /// Simitone note (from the logo) bobbing over it.</item>
+    /// panel's buttons, round buttons that grow) is put in its real hover state, exactly as the mouse would show it,
+    /// caption colour included;</item>
+    /// <item>a control that shows the focus itself (<see cref="IPadOwnFocus"/>, e.g. the family list's highlighted
+    /// family) gets nothing more;</item>
+    /// <item>anything else (other lists, carousels, text boxes, houses, portraits) gets a soft mint frame (Simitone's
+    /// highlight colour) that breathes gently and pops out when focus arrives, with the Simitone note (from the logo)
+    /// bobbing over it.</item>
     /// </list>
     /// It also records what it drew and where the other targets are, for the focus tooltip.
     /// </summary>
+    /// <summary>A pad target that can show it has the focus by itself, so no frame is needed while it does.</summary>
+    public interface IPadOwnFocus
+    {
+        bool PadShowsFocus { get; }
+    }
+
     public static class PadFocusStyle
     {
         public static UIElement Focus { get; private set; }
@@ -39,11 +47,13 @@ namespace Simitone.Client.UI.Model
             if (Hovered != null && HoveredFrame < PadPrompts.Frame - 1) ReleaseHover();
         }
 
-        /// <summary>Whether a button shows hover differently from normal (stencil buttons recolour; others need a hover image).</summary>
+        /// <summary>
+        /// Whether a button shows hover differently from normal: round buttons grow, stencil buttons recolour, others
+        /// need a hover image.
+        /// </summary>
         public static bool HasHoverLook(UIButton button)
         {
-            if (button is UIElasticButton) return false; //only grows a little
-            if (button is UIStencilButton || button is UITwoStateButton) return true;
+            if (button is UIElasticButton || button is UIStencilButton || button is UITwoStateButton) return true;
             return button.ImageStates >= 3;
         }
 
@@ -72,6 +82,20 @@ namespace Simitone.Client.UI.Model
             Hovered = null;
         }
 
+        /// <summary>
+        /// Names an element in the focus tooltip bubble this frame without drawing any focus look, for something
+        /// pointed at another way (the neighbourhood's pad cursor). <paramref name="others"/> are screen rectangles for
+        /// the bubble to keep clear of. Call during update.
+        /// </summary>
+        public static void Label(UIElement element, Rectangle rect, IEnumerable<Rectangle> others)
+        {
+            Neighbours.Clear();
+            if (others != null) Neighbours.AddRange(others);
+            Focus = element;
+            FocusOuter = rect;
+            FocusFrame = PadPrompts.Frame;
+        }
+
         public static void Install()
         {
             UIFocusNavigator.FocusRenderer = Render;
@@ -97,6 +121,10 @@ namespace Simitone.Client.UI.Model
             if (button != null && HasHoverLook(button))
             {
                 SetHover(button); //its own hover look shows the focus; nothing else is drawn
+            }
+            else if ((element as IPadOwnFocus)?.PadShowsFocus ?? false)
+            {
+                ReleaseHover(); //it shows the focus itself
             }
             else
             {

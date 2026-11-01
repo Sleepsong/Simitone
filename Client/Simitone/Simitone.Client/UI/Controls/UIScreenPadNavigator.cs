@@ -71,8 +71,6 @@ namespace Simitone.Client.UI.Controls
             if (focused == LastFocused) return;
             var previous = LastFocused;
             LastFocused = focused;
-            (previous as UIElasticButton)?.SetPadHover(false);
-            (focused as UIElasticButton)?.SetPadHover(true);
             FocusChanged?.Invoke(previous, focused);
         }
 

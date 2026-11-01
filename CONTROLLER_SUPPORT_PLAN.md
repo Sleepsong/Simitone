@@ -815,7 +815,7 @@ Everything worked except the focus outline on the neighbourhood's round buttons,
 
 ## 16. Phase 7 — UI polish and bug fixes
 
-Engine commits `da2f2f2`, `aaee59d` and `c7ff5b9` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9` and `b4580aa` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
 
 ### Focus highlight
 
@@ -938,6 +938,20 @@ The hover cycle can't be run in the harness: `UIButton`'s static initializer nee
 
 Known limit: Simitone's hover tint for stencil buttons (mint, (128, 255, 192)) is close to its selected tint (green, (0, 255, 128)). With the mouse the cursor shows which is which; with the pad, a focused unselected gender or age button can look selected next to the selected one. A focused selected button shows the hover tint in place of its selected tint while focused, as in the catalog.
 
+### Eighth round: round buttons, lists, the Heads frame, a neighbourhood cursor, Steam Input
+
+| Feedback | Change |
+|---|---|
+| Create a family, the town buttons and the "+" in Create a Sim have boxes though they grow under the mouse | Round (elastic) buttons now count as having a hover look: the pad puts them in their real hover state, so they grow as under the mouse, with no frame or note. `UIElasticButton.SetPadHover` is gone; the hover state does it. |
+| The family picker draws a huge box round the whole list, and keeps it while a family is highlighted | A list's focus rectangle is now its selected item (else the first, which A would pick), not the whole list. The family list shows which family is selected by itself, so once one is, there's no frame at all (`IPadOwnFocus`). |
+| The Heads frame is huge | It used the mouse's head region, which reaches from the panel down to the bodies. It's now a band just above the head/body split, sized with the screen height (12% tall, 15% wide), round the centre Sim's head. |
+| The prompt says "Visit house" on buttons, community lots and empty lots | On a lot it now says what the house panel it opens is for: "Visit house" (occupied), "Visit lot" (community), "View lot" (empty), or when moving a family in "View house", "View lot", "Move in". On anything else it says "Select". |
+| Stepping through every lot takes a long time: a cursor mode would help | X switches the map between browse (jump between lots, as before) and cursor. Cursor hands the map to the virtual cursor: the left stick moves the pointer, A clicks, lots open up under it as with the mouse, and the lot under it is named in the bubble. The house panel is navigated as usual in either mode. Switching to cursor starts the pointer on the focused lot; switching back focuses the lot under the pointer; closing the house panel puts the pointer back on its lot (engine: `UpdateState.PadCursorStart`). The mode lasts for the session. Not offered if the virtual cursor is turned off. |
+| With a Steam Controller, Select toggled the camera, the right stick brought up the mouse, the right trigger resized the window | Steam Input's desktop layout sends keyboard and mouse events for the pad (Select is Tab, which toggles first-person; the right stick moves the mouse; triggers click) on top of the pad itself. This wasn't caused by the last update. The engine now ignores the keyboard and mouse while the pad is held (`PadEchoFilter`): any button, a trigger past 0.3, a stick past 0.5, or a stick that moved in the last second, plus 0.25 s after. Meanwhile the keyboard reads as empty, typed text is dropped, the mouse stays put with its buttons up, and mouse movement can't take the pointer from the pad. A stick resting slightly off centre (drift) stops counting after a second, so it can't lock the mouse out. Setting `GamePadIgnoreEchoes` in config.ini (default true). Anything the window manager acts on directly can't be stopped by the game. |
+
+The harness has 17 new checks for the filter and the tracker (323 in all).
+
+
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.
 
 ### To check on hardware
@@ -950,3 +964,5 @@ Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `U
 5. Mouse hover on the neighbourhood buttons, mode buttons and catalog tabs shows their names.
 6. The lot toasts (X in 2D, X in 3D).
 8. CAS and the family picker: hover tints on Back, Accept, the family buttons, gender, age, skin colour and the tabs, no box or note on them; the name bubble beside, not over, its neighbours (Child, Adult, Male, the bottom-left Back).
+9. Neighbourhood: X between browse and cursor; in cursor mode the pointer starts on the focused lot, lots open under it and are named, A opens the house panel, closing it puts the pointer back. The prompt label on each kind of lot and on the buttons.
+10. With Steam running and its desktop layout active: Select no longer toggles first-person, the right stick turns the camera without the mouse appearing, triggers don't click. The mouse and keyboard still work normally a moment after letting go of the pad.

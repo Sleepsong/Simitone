@@ -50,6 +50,7 @@ namespace Simitone.Client.UI.Panels.CAS
             FamilyList.ItemWidth = 180;
             FamilyList.Margin = 90;
             FamilyList.DrawBounds = false;
+            FamilyList.PadSelectionVisible = true; //the selected family lights up
             Add(FamilyList);
             WhitePx = TextureGenerator.GetPxWhite(GameFacade.GraphicsDevice);
 
