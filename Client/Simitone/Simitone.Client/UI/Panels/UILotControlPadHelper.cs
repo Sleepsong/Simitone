@@ -127,7 +127,9 @@ namespace Simitone.Client.UI.Panels
         private int SpeedBeforePause = 1;
 
         private Vector2? MarkerBase; //UI coordinates, set in Update for Draw
-        private Vector2? MarkerTop;
+        private Vector2? MarkerTop; //top of the target: where the beam ends and the note bobs (null for empty floor)
+        private Vector2 RingAxisX; //UI-space vectors of the floor ring's radii along tile X and Y, around MarkerBase
+        private Vector2 RingAxisY;
         private float AnimTime;
 
         public UILotControlPadHelper(UILotControl master)
@@ -284,6 +286,7 @@ namespace Simitone.Client.UI.Panels
             items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
             items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
             items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
+            items.Add(PadPrompt.Of(PadAction.LeftStickClick, "Walls"));
             PadPrompts.Set(items.ToArray());
         }
 
@@ -441,7 +444,8 @@ namespace Simitone.Client.UI.Panels
             else
             {
                 PadPrompts.Set(move, PadPrompt.Of(PadAction.Confirm, "Pick up"), PadPrompt.Of(PadAction.FaceLeft, "Eyedropper"),
-                    PadPrompt.Of(PadAction.TriggerLeft, "Catalog"), PadPrompt.Of(PadAction.Select, "Mode"));
+                    PadPrompt.Of(PadAction.TriggerLeft, "Catalog"), PadPrompt.Of(PadAction.LeftStickClick, "Walls"),
+                    PadPrompt.Of(PadAction.Select, "Mode"));
             }
         }
 
@@ -611,7 +615,9 @@ namespace Simitone.Client.UI.Panels
 
             if (pad.Pressed(PadAction.LeftStickClick))
             {
-                frontend.SetWallsMode((Master.WallsMode + 1) % 4);
+                var walls = (Master.WallsMode + 1) % 4;
+                frontend.SetWallsMode(walls);
+                ShowHint(new[] { "Walls down", "Walls cutaway", "Walls up", "Roofs" }[walls]);
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
 
@@ -990,10 +996,17 @@ namespace Simitone.Client.UI.Panels
 
         private void OpenMenu(UpdateState state)
         {
+            if (Target != null && !TargetHasInteractions)
+            {
+                //the ring is already red for this; say why A did nothing
+                HITVM.Get().PlaySoundEvent(UISounds.Error);
+                ShowHint("No actions available.");
+                return;
+            }
             var anchor = MarkerTop ?? MarkerBase ?? new Vector2(ScreenWidth, ScreenHeight) / 2;
             //keep the whole pie (about 300px wide and 250px tall with captions) on screen.
             var menuPos = PadMath.ClampAnchor(anchor, ScreenWidth, ScreenHeight, 170, 130);
-            Master.OpenPieMenu(Target, Selector, menuPos, state);
+            Master.OpenPieMenu(Target, Selector, menuPos, state, fromPad: true);
         }
 
         #endregion
@@ -1007,17 +1020,20 @@ namespace Simitone.Client.UI.Panels
             var level = World.State.Level;
             if (TargetPart == null)
             {
-                if (floorRing) MarkerBase = ToUI(World.ProjectTileToScreen(Selector, level));
+                if (floorRing) SetFloorRing(Selector, level, EmptyRingRadius);
                 return;
             }
 
-            var visual = TargetPart.VisualPosition;
-            var tile = new Vector2(visual.X, visual.Y);
+            //a ring on the floor round the whole target (every tile of a multi-tile object)
+            var area = TargetArea(Target ?? TargetPart);
             var entityLevel = TargetPart.Position.Level;
-            var heightAboveFloor = Math.Max(0, visual.Z - (entityLevel - 1) * 2.95f); //e.g. items on counters
+            SetFloorRing(area.centre, entityLevel, area.radius);
+
+            //the beam rises to the top of the part targeted (raised for things on counters and shelves)
+            var visual = TargetPart.VisualPosition;
+            var heightAboveFloor = Math.Max(0, visual.Z - (entityLevel - 1) * 2.95f);
             var markerHeight = (TargetPart is VMAvatar) ? 2.1f : 1.3f;
-            MarkerBase = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor));
-            MarkerTop = ToUI(World.ProjectTileToScreen(tile, entityLevel, heightAboveFloor + markerHeight));
+            MarkerTop = ToUI(World.ProjectTileToScreen(new Vector2(visual.X, visual.Y), entityLevel, heightAboveFloor + markerHeight));
 
             if (Target is VMAvatar avatar && !UIPadOverlay.ToastShowing)
             {
@@ -1031,6 +1047,54 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        private const float EmptyRingRadius = 0.32f; //tiles, on empty floor
+        private const float RingMargin = 0.15f; //tiles beyond an object's footprint corners
+        private const float MinRingRadius = 0.42f; //a person, or a one-tile object, gets at least this
+        private const float MaxRingRadius = 2.6f;
+
+        /// <summary>The floor circle round a target: its group's footprints combined, or a person-sized circle.</summary>
+        private (Vector2 centre, float radius) TargetArea(VMEntity target)
+        {
+            if (target is VMAvatar)
+            {
+                var v = target.VisualPosition;
+                return (new Vector2(v.X, v.Y), MinRingRadius);
+            }
+            int x1 = int.MaxValue, y1 = int.MaxValue, x2 = int.MinValue, y2 = int.MinValue;
+            foreach (var part in target.MultitileGroup.Objects)
+            {
+                var pos = part.Position;
+                if (pos == LotTilePos.OUT_OF_WORLD) continue;
+                var fp = part.Footprint;
+                if (fp != null)
+                {
+                    x1 = Math.Min(x1, fp.x1); y1 = Math.Min(y1, fp.y1);
+                    x2 = Math.Max(x2, fp.x2); y2 = Math.Max(y2, fp.y2);
+                }
+                else
+                {
+                    //no footprint (e.g. on a wall): its tile
+                    x1 = Math.Min(x1, pos.TileX * 16); y1 = Math.Min(y1, pos.TileY * 16);
+                    x2 = Math.Max(x2, pos.TileX * 16 + 16); y2 = Math.Max(y2, pos.TileY * 16 + 16);
+                }
+            }
+            if (x1 > x2)
+            {
+                var v = target.VisualPosition;
+                return (new Vector2(v.X, v.Y), MinRingRadius);
+            }
+            return PadMath.EnclosingCircle(x1, y1, x2, y2, RingMargin, MinRingRadius, MaxRingRadius);
+        }
+
+        /// <summary>Puts the floor ring at a tile: its centre and the screen vectors of its radii along X and Y.</summary>
+        private void SetFloorRing(Vector2 tile, sbyte level, float radius)
+        {
+            var centre = ToUI(World.ProjectTileToScreen(tile, level));
+            MarkerBase = centre;
+            RingAxisX = ToUI(World.ProjectTileToScreen(tile + new Vector2(radius, 0), level)) - centre;
+            RingAxisY = ToUI(World.ProjectTileToScreen(tile + new Vector2(0, radius), level)) - centre;
+        }
+
         public override void Draw(UISpriteBatch batch)
         {
             if (BuildCursor != null)
@@ -1042,19 +1106,33 @@ namespace Simitone.Client.UI.Panels
             }
             if (MarkerBase == null) return;
             var gd = GameFacade.GraphicsDevice;
-            var pulse = 0.8f + 0.2f * (float)Math.Sin(AnimTime * 5);
+            var pulse = 0.85f + 0.15f * (float)Math.Sin(AnimTime * 5);
             Color color;
             if (Target == null) color = Color.White;
-            else color = TargetHasInteractions ? new Color(140, 255, 120) : new Color(255, 110, 100);
+            else color = TargetHasInteractions ? PadDraw.Accent : new Color(255, 96, 86);
 
-            var ring = PadGraphics.GetRing(gd);
-            var size = (Target == null) ? 36f : 56f;
-            //squashed into an ellipse so it reads as lying on the floor.
-            DrawLocalTexture(batch, ring, null, GlobalPoint(MarkerBase.Value) - new Vector2(size / 2, size / 4),
-                new Vector2(size / ring.Width, size / 2 / ring.Height), color * pulse);
+            //the ring, lying on the floor: a circle's radii projected, drawn as the ellipse they span
+            var ring = PadGraphics.GetFloorRing(gd);
+            var (angle, major, minor) = PadMath.EllipseFromAxes(RingAxisX, RingAxisY);
+            var breathe = 1f + 0.04f * (float)Math.Sin(AnimTime * 4);
+            var ringScale = new Vector2(major, minor) * (breathe / PadGraphics.FloorRingRadius);
+            DrawLocalTexture(batch, ring, null, GlobalPoint(MarkerBase.Value), ringScale, color * pulse, angle,
+                new Vector2(ring.Width, ring.Height) / 2);
 
             if (MarkerTop != null)
             {
+                //a soft beam from the ring up to the target, like a spotlight on it
+                var beam = PadGraphics.GetBeam(gd);
+                var up = MarkerTop.Value - MarkerBase.Value;
+                var length = up.Length();
+                if (length > 4)
+                {
+                    var width = Math.Max(12f, Math.Min(46f, minor * 0.9f));
+                    var beamAngle = (float)Math.Atan2(up.X, -up.Y);
+                    DrawLocalTexture(batch, beam, null, GlobalPoint(MarkerBase.Value), new Vector2(width / beam.Width, length / beam.Height),
+                        color * 0.65f, beamAngle, new Vector2(beam.Width / 2f, beam.Height));
+                }
+
                 //the Simitone note, bobbing over the target
                 var note = PadGraphics.GetNote(gd);
                 var noteScale = 42f / note.Height;

@@ -890,10 +890,21 @@ Better overall. Three follow-ups, all fixed above: use the Simitone note instead
 
 Still Simitone's own pre-Phase 7 art: the live-mode button's mood meter (`plumb_bg/plus/neg.png`) and the 3D marker over the active Sim (`arrow.fsom`). Neither was added by this work.
 
+### Second round of feedback
+
+| Feedback | Change |
+|---|---|
+| The selection circle floated above objects (at their height: a mirror's ring hung on the wall) and was small | The ring now lies on the floor, projected properly so it's flat in 2D and 3D, and surrounds the whole target: every tile of a multi-tile object, or a person-sized circle round a Sim. It's bolder, with a dark rim so it reads on light floors, a soft glow and faint fill, and a gentle pulse. A soft beam rises from it to the target (so things on counters and walls connect to their ring), with the Simitone note at the top. Green: has actions. Red: none. White: empty floor (Go here). |
+| "There are no actions available" appeared far from the target | That was the pie menu's error tooltip, placed for the mouse. With the pad, A on a target with no actions now says "No actions available." as a message, and the menu's other errors (can't go there, for sale) show the same way. |
+| How do you change wall height with the pad? | L3 (press the left stick) cycles walls down, cutaway, up and roofs, as it has since Phase 2. It wasn't in the prompt bar; now it is (live mode, and buy/build with nothing held), and each press names the new setting. |
+
+Changes in code: `PadMath.EllipseFromAxes` (the ellipse a projected circle makes) and `EnclosingCircle` (a circle round a footprint), `PadGraphics.GetFloorRing`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`. The harness has 302 checks, covering the ellipse (including a skewed projection: every projected point lands on the ellipse drawn) and the circle sizes.
+
 ### To check on hardware
 
 1. The neighbourhood: the green frame and note on houses and buttons, the house names in the bubble, and the right-hand buttons against the right edge. Then resize the window, or toggle fullscreen, with and without the house panel open.
 2. The prompt bar on the neighbourhood, CAS (each mode) and in a lot (live, pie menu, queue, needs panel, buy/build with nothing, an object, then a tool, the catalog).
+7. The floor ring on a one-tile object, a sofa or bed, a Sim, a wall mirror and something on a counter, in 2D and 3D, zoomed in and out. A on something with no actions. L3 in live mode.
 3. With a PlayStation pad, or `GamePadGlyphs = playstation`: the symbols instead of letters.
 4. The keyboard's look, and that no highlight or bubble shows under it.
 5. Mouse hover on the neighbourhood buttons, mode buttons and catalog tabs shows their names.

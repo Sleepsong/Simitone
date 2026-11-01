@@ -38,6 +38,49 @@ namespace Simitone.Client.UI.Model
             return Ring;
         }
 
+        private static Texture2D FloorRing;
+        private static Texture2D Beam;
+
+        /// <summary>Radius, in texture pixels, of the bright band of <see cref="GetFloorRing"/>: scale by this.</summary>
+        public const float FloorRingRadius = 56f;
+
+        /// <summary>
+        /// 128x128 selection ring for the floor: a bold white band with a dark rim outside it (so it reads on light
+        /// floors), a soft glow inside it and a faint fill. Drawn squashed to lie on the floor.
+        /// </summary>
+        public static Texture2D GetFloorRing(GraphicsDevice gd)
+        {
+            if (FloorRing == null || FloorRing.IsDisposed)
+            {
+                FloorRing = Generate(gd, 128, 128, (x, y) =>
+                {
+                    var d = Vector2.Distance(Centre(x, y), new Vector2(64, 64));
+                    var band = Coverage(Math.Abs(d - FloorRingRadius) - 5f); //bright band, 10px wide
+                    var rim = Coverage(Math.Abs(d - (FloorRingRadius + 6.5f)) - 2f) * 0.6f; //dark edge outside it
+                    var glow = (d < FloorRingRadius) ? 0.35f * (float)Math.Exp(-(FloorRingRadius - 5f - d) / 7f) : 0f;
+                    var fill = (d < FloorRingRadius) ? 0.1f : 0f;
+                    var bright = Math.Max(band, Math.Max(glow, fill));
+                    return (Math.Max(bright, rim), bright);
+                });
+            }
+            return FloorRing;
+        }
+
+        /// <summary>32x128 soft vertical light beam: brightest at the bottom, fading out towards the top and the sides.</summary>
+        public static Texture2D GetBeam(GraphicsDevice gd)
+        {
+            if (Beam == null || Beam.IsDisposed)
+            {
+                Beam = GenerateMask(gd, 32, 128, (x, y) =>
+                {
+                    var across = (x + 0.5f - 16f) / 7f;
+                    var up = (y + 0.5f) / 128f; //0 at the top, 1 at the bottom
+                    return (float)Math.Exp(-across * across) * (float)Math.Pow(up, 1.4f);
+                });
+            }
+            return Beam;
+        }
+
         /// <summary>Height, in pixels, of the note texture (about twice the size it's drawn at).</summary>
         public const int NoteHeight = 64;
 

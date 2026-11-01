@@ -488,10 +488,21 @@ namespace Simitone.Client.UI.Panels
         /// Opens the pie menu for an object, or the "go here" menu at a floor tile when target is null.
         /// </summary>
         /// <param name="menuPos">Where the menu appears, in UI coordinates.</param>
-        public void OpenPieMenu(VMEntity target, Vector2 tile, Vector2 menuPos, UpdateState state)
+        /// <param name="fromPad">Opened with the gamepad: errors show as a message on screen rather than at the mouse.</param>
+        public void OpenPieMenu(VMEntity target, Vector2 tile, Vector2 menuPos, UpdateState state, bool fromPad = false)
         {
             if (PieMenu != null || ActiveEntity == null) return;
             var tooltipPos = menuPos * FSOEnvironment.DPIScaleFactor;
+            void ShowErrorTooltip(UpdateState s, Vector2 position, uint id, bool playSound, params string[] args)
+            {
+                if (!fromPad)
+                {
+                    this.ShowErrorTooltip(s, position, id, playSound, args);
+                    return;
+                }
+                if (playSound) HITVM.Get().PlaySoundEvent(UISounds.Error);
+                UIPadOverlay.ShowToast(GameFacade.Strings.GetString("159", id.ToString(), args));
+            }
 
             LotTilePos targetPos = LotTilePos.FromBigTile((short)tile.X, (short)tile.Y, World.State.Level);
             if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
