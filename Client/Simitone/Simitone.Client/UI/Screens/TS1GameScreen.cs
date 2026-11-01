@@ -67,6 +67,20 @@ namespace Simitone.Client.UI.Screens
 
         /// <summary>Showing the neighbourhood map (rather than a lot).</summary>
         public bool InNeighbourhood => TS1NeighPanel != null && GetChildren().Contains(TS1NeighPanel);
+
+        /// <summary>
+        /// The map on screen: the neighbourhood, or a town a Sim is travelling to from a lot (vacation, Studio Town,
+        /// Magic Town...), which the lot shows over itself. Null if neither.
+        /// </summary>
+        public UINeighborhoodSelectionPanel ActiveNeighPanel
+        {
+            get
+            {
+                if (InNeighbourhood) return TS1NeighPanel;
+                var travel = LotControl?.TravelSelector;
+                return (travel?.Parent == this) ? travel : null;
+            }
+        }
         public FAMI ActiveFamily;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
@@ -267,14 +281,19 @@ namespace Simitone.Client.UI.Screens
             };
             Add(TS1NeighPanel);
             Add(switcher);
+            CreateNeighPadNav();
+        }
 
+        /// <summary>The pad's navigator for the map on screen (<see cref="ActiveNeighPanel"/>), replacing any old one.</summary>
+        private void CreateNeighPadNav()
+        {
             if (NeighPadNav != null) Remove(NeighPadNav);
             var nav = new UIScreenPadNavigator(NeighbourhoodPadScope);
             NeighPadNav = nav;
             //uses its own navigator, not the field: entering a lot clears the field while this navigator is updating
             nav.Prompts = () =>
             {
-                var housePanel = TS1NeighPanel?.LastHS;
+                var housePanel = ActiveNeighPanel?.LastHS;
                 if (housePanel?.Parent != null && nav.Navigator.Scope == housePanel)
                     return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"), PadPrompt.Of(PadAction.Cancel, "Back") };
                 var label = (nav.Navigator.Focused is UINeighborhoodHouseButton house) ? house.PadLabel(MoveInFamily != null) : "Select";
@@ -296,8 +315,9 @@ namespace Simitone.Client.UI.Screens
         /// </summary>
         private UIElement NeighbourhoodPadScope()
         {
-            if (TS1NeighPanel?.Parent == null) return null;
-            var house = TS1NeighPanel.LastHS;
+            var map = ActiveNeighPanel;
+            if (map == null) return null;
+            var house = map.LastHS;
             if (house?.Parent != null) return house;
             if (NeighCursorActive) return null; //the virtual cursor has the pad
             return this;
@@ -314,7 +334,14 @@ namespace Simitone.Client.UI.Screens
 
         private void UpdateNeighbourhoodPad(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
-            var panel = TS1NeighPanel;
+            //a travel map (from a lot) gets the neighbourhood's navigator while it's up
+            var panel = ActiveNeighPanel;
+            if (panel != null && NeighPadNav == null) CreateNeighPadNav();
+            else if (panel == null && NeighPadNav != null && TS1NeighPanel?.Parent == null)
+            {
+                Remove(NeighPadNav);
+                NeighPadNav = null;
+            }
             if (panel?.Parent == null || NeighPadNav == null) return;
             var pad = state.Pad;
             var free = pad.Connected && GlobalSettings.Default.GamePadEnabled && !state.PadTextEntry
@@ -367,7 +394,7 @@ namespace Simitone.Client.UI.Screens
         {
             get
             {
-                var panel = TS1NeighPanel;
+                var panel = ActiveNeighPanel;
                 if (panel == null || panel.HouseButtons.Count == 0) return null;
                 if (panel.HouseButtons.TryGetValue(panel.LastHouse, out var last)) return last;
                 var middle = new Vector2(ScreenWidth, ScreenHeight) / 2;

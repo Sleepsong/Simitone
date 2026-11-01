@@ -116,6 +116,8 @@ namespace Simitone.Client.UI.Panels
         // If we are to implement controlling multiple sims, this must be changed.
         private UIMobileDialog BlockingDialog;
         private UINeighborhoodSelectionPanel TS1NeighSelector;
+        /// <summary>The town map shown while a Sim travels (vacation, Studio Town, Magic Town...), or null.</summary>
+        public UINeighborhoodSelectionPanel TravelSelector => TS1NeighSelector;
         private ulong LastDialogID;
 
         private static uint GOTO_GUID = 0x000007C4;
@@ -270,6 +272,9 @@ namespace Simitone.Client.UI.Panels
                     Parent.Add(TS1NeighSelector);
                     ((TS1GameScreen)Parent).Bg.Visible = true;
                     ((TS1GameScreen)Parent).LotControl.Visible = false;
+                    //the lot's bar and clock were left over the map
+                    var frontend = ((TS1GameScreen)Parent).Frontend;
+                    if (frontend != null) frontend.Visible = false;
                     TS1NeighSelector.OnHouseSelect += HouseSelected;
                     return;
                 case VMDialogType.TS1PhoneBook:
@@ -345,6 +350,13 @@ namespace Simitone.Client.UI.Panels
             });
             Parent.Remove(TS1NeighSelector);
             TS1NeighSelector = null;
+            if (house <= 0 && Parent is TS1GameScreen screen)
+            {
+                //no trip after all: the lot comes back (a trip loads the new lot, which brings its own)
+                screen.Bg.Visible = false;
+                screen.LotControl.Visible = true;
+                if (screen.Frontend != null) screen.Frontend.Visible = true;
+            }
         }
 
         private void DialogButton0(UIElement button) { DialogResponse(0); }
