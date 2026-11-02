@@ -215,7 +215,6 @@ namespace Simitone.Client.UI.Panels
 
             row.Button = new UIBigButton(false);
             row.Button.CaptionStyle.Size = 26;
-            row.Button.Tooltip = name; //the gamepad's focus bubble (and mouse hover) names the setting the value is for
             row.Button.OnButtonClick += (btn) =>
             {
                 // advance to the next value, wrapping around
@@ -241,13 +240,11 @@ namespace Simitone.Client.UI.Panels
 
             row.Minus = new UIBigButton(false);
             row.Minus.Caption = "-";
-            row.Minus.Tooltip = name + ": lower";
             row.Minus.OnButtonClick += (btn) => StepVolume(row, -1);
             Add(row.Minus);
 
             row.Plus = new UIBigButton(false);
             row.Plus.Caption = "+";
-            row.Plus.Tooltip = name + ": higher";
             row.Plus.OnButtonClick += (btn) => StepVolume(row, 1);
             Add(row.Plus);
 

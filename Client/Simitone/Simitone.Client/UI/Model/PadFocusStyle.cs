@@ -47,12 +47,25 @@ namespace Simitone.Client.UI.Model
         public static readonly List<Rectangle> Neighbours = new List<Rectangle>();
 
         private static UIButton Hovered; //the button forced into its hover state for the pad
-        private static int HoveredFrame = -1;
+        private static int HoveredDraw = -1;
+        private static int DrawCount;
 
-        /// <summary>Called first thing each update: lets go of a button forced into hover if focus has gone.</summary>
+        /// <summary>Called first thing each update. (Letting go of the hover is counted in draws: see <see cref="EndDraw"/>.)</summary>
         public static void BeginFrame()
         {
-            if (Hovered != null && HoveredFrame < PadPrompts.Frame - 1) ReleaseHover();
+        }
+
+        /// <summary>
+        /// Called once per drawn frame: lets go of a button forced into hover once a whole draw has gone by without the
+        /// focus look asking for it (focus moved, or the mouse took over). The focus look sets the hover after the
+        /// button has drawn, so it shows from the next draw; counting updates instead let it go before that draw when
+        /// the game ran several updates per draw (a low frame rate, or a refresh rate it can't keep up with), and no
+        /// pad hover showed anywhere.
+        /// </summary>
+        public static void EndDraw()
+        {
+            if (Hovered != null && HoveredDraw < DrawCount - 1) ReleaseHover();
+            DrawCount++;
         }
 
         /// <summary>
@@ -76,7 +89,7 @@ namespace Simitone.Client.UI.Model
                 if (!button.IsDown) button.CurrentFrame = 2;
                 Hovered = button;
             }
-            HoveredFrame = PadPrompts.Frame;
+            HoveredDraw = DrawCount;
         }
 
         private static void ReleaseHover()

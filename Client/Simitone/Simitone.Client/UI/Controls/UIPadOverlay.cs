@@ -65,6 +65,7 @@ namespace Simitone.Client.UI.Controls
 
         public override void Draw(UISpriteBatch batch)
         {
+            PadFocusStyle.EndDraw();
             if (PadInUse)
             {
                 EnsureStyles();

@@ -1007,7 +1007,7 @@ The tabbed Options dialog from alexjyong/Simitone#37 and #38 (by sithtoast) is m
 - **Start:** the dialog opens on the first setting of the open tab.
 - **Moving and choosing:** the d-pad reaches the tabs, the settings and Done; A cycles a setting or steps a volume.
 - **B:** closes the dialog like Done, since every change is already saved.
-- **Names:** each value button and -/+ button has a tooltip naming its setting ("Lighting", "Music: lower"), which the focus bubble shows.
+- **Names:** none needed. Each setting's name is printed above its button, so the dialog's buttons have no tooltips. They had some at first, and the focus bubble covered the label it repeated.
 - **Big buttons:** their hover tint is kept, because it's how pad focus shows on them; #37 had made hover keep the plain colour. #37's fix for the pressed colour is taken.
 - **The neighbourhood's "..." button:** opens the dialog, and is named "Options" for the focus bubble.
 
@@ -1017,3 +1017,12 @@ To check on hardware:
 2. Change a setting and a volume.
 3. Switch tabs.
 4. Close with B.
+
+### Pad hover at low frame rates
+
+The pad's hover look disappeared everywhere, as soon as the frame rate dropped (9 FPS here, with Refresh Rate at 144 Hz in the new Options).
+
+- **Cause:** the focus look forces a button into hover after the button has drawn, so the hover shows from the next draw. It was let go once two updates had passed without the focus look asking for it. At a low frame rate the game runs several updates per draw, so the hover was let go before the next draw every time.
+- **Fix:** it's now let go when a whole draw has passed without it being asked for (`PadFocusStyle.EndDraw`, called from the overlay's draw). It still clears a draw after focus moves or the mouse takes over.
+
+The refresh rate itself is the game's update and draw rate (fixed time step), not just a display setting. The default is 60. At 144 the game falls behind and runs catch-up updates, which is likely where the 9 FPS came from.
