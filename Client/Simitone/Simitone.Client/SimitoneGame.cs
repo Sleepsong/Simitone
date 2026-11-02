@@ -148,6 +148,12 @@ namespace Simitone.Client
             
             // Initialize Free Will setting from config
             VM.FreeWillEnabled = GlobalSettings.Default.TS1FreeWill;
+
+            //-travellog: travel between lots, town maps, pie menus and why their interactions were left out, and the
+            //scripts of interactions picked away from home, step by step (see TRAVEL_FIXES.md)
+            FSO.SimAntics.Engine.VMTravelLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
+            if (Utils.LaunchFlags.TravelLog)
+                FSO.SimAntics.Engine.VMTravelLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "travel.log");
             
             base.Initialize();
 
@@ -360,6 +366,7 @@ namespace Simitone.Client
 
         protected override void OnExiting(object sender, ExitingEventArgs args)
         {
+            FSO.SimAntics.Engine.VMTravelLog.Flush();
             base.OnExiting(sender, args);
             GameThread.SetKilled();
             args.Cancel = !(GameFacade.Screens.CurrentUIScreen?.CloseAttempt() ?? true);

@@ -370,6 +370,7 @@ namespace Simitone.Client.UI.Screens
 
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
+            FSO.SimAntics.Engine.VMTravelLog.Flush();
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             
             Visible = World?.Visible != false && World?.State.Cameras.HideUI != true;
@@ -424,18 +425,29 @@ namespace Simitone.Client.UI.Screens
 
             if (SwitchLot > 0)
             {
+                var from = vm.GetGlobalValue(10);
                 if (!Downtown) SavedLot = vm.Save();
                 if (SwitchLot == ActiveFamily.HouseNumber && SavedLot != null)
                 {
+                    FSO.SimAntics.Engine.VMTravelLog.Write($"switching lot {from} -> {SwitchLot}: home, from the copy saved when the family left");
                     Downtown = false;
                     InitializeLot(SavedLot);
                     SavedLot = null;
                 }
                 else
                 {
+                    FSO.SimAntics.Engine.VMTravelLog.Write($"switching lot {from} -> {SwitchLot}: loading {Content.Get().Neighborhood.GetHousePath(SwitchLot)}" +
+                        $" (family home {ActiveFamily.HouseNumber}, {(SavedLot == null ? "no saved home" : "home saved")})");
                     Downtown = true;
                     InitializeLot(Content.Get().Neighborhood.GetHousePath(SwitchLot), false);
                 }
+                SwitchLot = -1;
+                FSO.SimAntics.Engine.VMTravelLog.Write($"arrived at lot {vm?.GetGlobalValue(10)} (neighbourhood mode {CurrentNeighborhoodMode}, " +
+                    $"zoning {(Content.Get().Neighborhood.ZoningDictionary.TryGetValue(vm?.GetGlobalValue(10) ?? 0, out var zone) ? zone.ToString() : "not listed")})");
+            }
+            else if (SwitchLot != -1)
+            {
+                FSO.SimAntics.Engine.VMTravelLog.Write($"lot switch to {SwitchLot} ignored: not a lot number");
                 SwitchLot = -1;
             }
             //vm.Context.Clock.Hours = 12;
@@ -878,6 +890,7 @@ namespace Simitone.Client.UI.Screens
                 lotId = (uint)ActiveFamily.HouseNumber;
             }
             SwitchLot = (int)lotId;
+            FSO.SimAntics.Engine.VMTravelLog.Write($"lot switch queued: {SwitchLot} (current lot {vm.GetGlobalValue(10)}, family home {ActiveFamily?.HouseNumber}, away from home {Downtown})");
         }
 
         private void VMRefreshed()

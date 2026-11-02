@@ -99,6 +99,15 @@ namespace Simitone.Client.UI.Panels
             shouldHide = true;
             if (string.IsNullOrWhiteSpace(commandString)) return; // a blank textbox should close after hitting enter -- even if a command was never run.
 
+            //for a Sim stuck in an interaction: every Sim's script stack, queue and animation go to travel.log (-travellog)
+            var squashed = commandString.ToLowerInvariant().Replace(" ", "").Replace("_", "");
+            if (squashed == "dumpsims" || squashed == "simdump")
+            {
+                FSO.SimAntics.Engine.VMTravelLog.DumpSims(ts1VM, "dump sims cheat");
+                FSO.HIT.HITVM.Get().PlaySoundEvent(FSO.SimAntics.Engine.VMTravelLog.Enabled ? UISounds.Click : UISounds.Error);
+                return;
+            }
+
             // Handle weather commands separately (they don't use VMCheatContext)
             if (trimRepetitions(commandString).StartsWith("weather", StringComparison.OrdinalIgnoreCase))
             {
