@@ -47,4 +47,4 @@ The pictures are scaled up from the 256×256 app icon and the 96–128 px button
 
 ## Tests
 
-The controller harness covers it: framing, the socket search order, the text for each place, the timer, `discord.ini` parsing, and, against a fake Discord on a real Unix socket, the handshake, `SET_ACTIVITY` (with the process ID), a refused application ID, no Discord running, pings, the rate limit, and reconnecting after Discord goes away.
+A test harness covers it (outside the repository): framing, the socket search order, the text for each place, the timer, `discord.ini` parsing, and, against a fake Discord on a real Unix socket, the handshake, `SET_ACTIVITY` (with the process ID), a refused application ID, no Discord running, pings, the rate limit, and reconnecting after Discord goes away.
