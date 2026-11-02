@@ -1007,7 +1007,7 @@ The tabbed Options dialog from alexjyong/Simitone#37 and #38 (by sithtoast) is m
 - **Start:** the dialog opens on the first setting of the open tab.
 - **Moving and choosing:** the d-pad reaches the tabs, the settings and Done; A cycles a setting or steps a volume.
 - **B:** closes the dialog like Done, since every change is already saved.
-- **Names:** each value button and -/+ button has a tooltip naming its setting ("Lighting", "Music Volume: lower"), which the focus bubble shows.
+- **Names:** each value button and -/+ button has a tooltip naming its setting ("Lighting", "Music: lower"), which the focus bubble shows.
 - **Big buttons:** their hover tint is kept, because it's how pad focus shows on them; #37 had made hover keep the plain colour. #37's fix for the pressed colour is taken.
 - **The neighbourhood's "..." button:** opens the dialog, and is named "Options" for the focus bubble.
 
