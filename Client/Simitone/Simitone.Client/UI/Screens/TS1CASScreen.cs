@@ -959,11 +959,20 @@ namespace Simitone.Client.UI.Screens
             // AND FamilyGUIDs.Length > 0 (must have at least one member)
             var families = all.Where(x => x.HouseNumber == 0 && x.ChunkID > 0 && x.ChunkID < 1000 && x.FamilyGUIDs.Length > 0).ToList();
             
-            File.AppendAllText("simitone_debug.log", $"[SetFamilies] Families being added to CAS panel ({families.Count} total):\n");
-            foreach (var fam in families)
+            if (Utils.LaunchFlags.Logs)
             {
-                File.AppendAllText("simitone_debug.log", 
-                    $"  - ChunkID={fam.ChunkID}, HouseNumber={fam.HouseNumber}, Unknown={fam.Unknown}, Members={fam.FamilyGUIDs.Length}\n");
+                //with -logs, in the user folder (it used to land in whatever folder the game was started from)
+                var debugLog = Path.Combine(FSOEnvironment.UserDir, "simitone_debug.log");
+                try
+                {
+                    File.AppendAllText(debugLog, $"[SetFamilies] Families being added to CAS panel ({families.Count} total):\n");
+                    foreach (var fam in families)
+                    {
+                        File.AppendAllText(debugLog,
+                            $"  - ChunkID={fam.ChunkID}, HouseNumber={fam.HouseNumber}, Unknown={fam.Unknown}, Members={fam.FamilyGUIDs.Length}\n");
+                    }
+                }
+                catch (IOException) { }
             }
             
             FamiliesPanel.UpdateFamilies(families, vm);

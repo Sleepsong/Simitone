@@ -151,8 +151,10 @@ namespace Simitone.Client
 
             // Every SimAntics exception goes to this file with full details, even when the dialog is
             // suppressed (-nosimantics-exc) or rate-limited. Attach it to bug reports.
-            FSO.SimAntics.Engine.VMExceptionLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "simantics-errors.log");
+            // (only with -logs: the diagnostic logs are behind launch flags, see Utils.LaunchFlags)
             FSO.SimAntics.Engine.VMExceptionLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
+            if (Utils.LaunchFlags.Logs)
+                FSO.SimAntics.Engine.VMExceptionLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "simantics-errors.log");
             
             base.Initialize();
 
@@ -391,7 +393,7 @@ namespace Simitone.Client
                 try { Utils.Sdl.SetHint("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1"); } catch { }
                 Utils.X11Focus.Start(Window.Handle);
                 FSO.Common.Rendering.Framework.Game.FocusFallback = Utils.X11Focus.Fallback;
-                Utils.PadDiagnostics.Start(); //gamepad.log: what controllers the game can see
+                if (Utils.LaunchFlags.Logs) Utils.PadDiagnostics.Start(); //gamepad.log: what controllers the game can see
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;

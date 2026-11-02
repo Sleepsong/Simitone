@@ -485,7 +485,7 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
     - Second log: 11 objects had missing routines (mostly `0x1000`, the first private routine ID). Tiled Counters resumed `main` at an instruction past its end. Both are consistent with the saved stacks coming from older versions of those objects than the ones installed.
     - Engine `ab9284b` also treats positions past a routine's end as unresumable.
     - It also logs, per object type, when the house file's `OBJT` main/init tree versions differ from the installed main/init BHAV versions. If those mismatches line up with the broken objects, the converter should reset such objects, as the original game presumably does. That is unconfirmed until the next log.
-- **Error log.** Engine `f53a6ab` adds `VMExceptionLog`. Simitone writes every SimAntics exception to `simantics-errors.log` next to `config.ini`, including when dialogs are suppressed with `-nosimantics-exc`. Each report has the full .NET stack trace and every VM frame (routine name and ID, instruction, caller, callee, owner GUID). Repeats are counted after three full reports, and the file rotates at 8 MB.
+- **Error log.** Engine `f53a6ab` adds `VMExceptionLog`. With `-logs` (all diagnostic logs are behind launch flags now, see the README), Simitone writes every SimAntics exception to `simantics-errors.log` next to `config.ini`, including when dialogs are suppressed with `-nosimantics-exc`. Each report has the full .NET stack trace and every VM frame (routine name and ID, instruction, caller, callee, owner GUID). Repeats are counted after three full reports, and the file rotates at 8 MB.
 
 ### Notes for Phase 3
 

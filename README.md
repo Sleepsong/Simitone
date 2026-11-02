@@ -275,6 +275,13 @@ Simitone finds The Sims 1 installation in this priority order:
 -nosound         # Disable audio
 ```
 
+**Diagnostic logs** (written to the user data folder, off unless asked for; in Steam, add them to the game's Launch Options):
+```bash
+-logs            # simantics-errors.log (script errors, with every VM frame), gamepad.log (controllers and focus),
+                 # discord.log (Rich Presence, where built in) and simitone_debug.log
+```
+`crash.log` is always written when the game crashes, since a crash leaves no other record.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.
