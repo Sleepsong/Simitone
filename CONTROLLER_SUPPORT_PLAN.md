@@ -999,3 +999,21 @@ Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `U
 8. CAS and the family picker: hover tints on Back, Accept, the family buttons, gender, age, skin colour and the tabs, no box or note on them; the name bubble beside, not over, its neighbours (Child, Adult, Male, the bottom-left Back).
 9. Neighbourhood: X between browse and cursor; in cursor mode the pointer starts on the focused lot, lots open under it and are named, A opens the house panel, closing it puts the pointer back. The prompt label on each kind of lot and on the buttons.
 10. With Steam running and its desktop layout active: Select no longer toggles first-person, the right stick turns the camera without the mouse appearing, triggers don't click. The mouse and keyboard still work normally a moment after letting go of the pad.
+
+### The Options dialog (from the community fork)
+
+The tabbed Options dialog from alexjyong/Simitone#37 and #38 (by sithtoast) is merged from `claude/options-dialog`, which has those commits on `simitone-forked` without the macOS PR they were built on. On the pad:
+
+- **Start:** the dialog opens on the first setting of the open tab.
+- **Moving and choosing:** the d-pad reaches the tabs, the settings and Done; A cycles a setting or steps a volume.
+- **B:** closes the dialog like Done, since every change is already saved.
+- **Names:** each value button and -/+ button has a tooltip naming its setting ("Lighting", "Music Volume: lower"), which the focus bubble shows.
+- **Big buttons:** their hover tint is kept, because it's how pad focus shows on them; #37 had made hover keep the plain colour. #37's fix for the pressed colour is taken.
+- **The neighbourhood's "..." button:** opens the dialog, and is named "Options" for the focus bubble.
+
+To check on hardware:
+
+1. Open Options from the neighbourhood and from a lot, with the pad.
+2. Change a setting and a volume.
+3. Switch tabs.
+4. Close with B.

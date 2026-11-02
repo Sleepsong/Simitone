@@ -40,6 +40,7 @@ namespace Simitone.Client.UI.Panels
                 });
             });
             if (mode != 4) AddBtn(LeftBtns, "ngbh_back.png", "Back to the neighborhood", (btn) => PopMode(4));
+            AddBtn(LeftBtns, "ngbh_opt.png", "Options", (btn) => UIScreen.GlobalShowDialog(new UIOptionsAlert(), true));
 
             if (mode != 2 && !moveIn) AddBtn(RightBtns, "ngbh_downt.png", "Downtown", (btn) => PopMode(2));
             if (mode != 3 && !moveIn) AddBtn(RightBtns, "ngbh_vacat.png", "Vacation Island", (btn) => PopMode(3));

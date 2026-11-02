@@ -110,6 +110,9 @@ namespace Simitone.Client.UI.Panels
             new UICategory() { ID = 2, IconName = "cat_build_objs.png", Name = "Doors, windows and more" },
         };
 
+        // five option buttons need slightly tighter spacing than 120 to fit a 1024 wide window
+        private const float OptionsSpacing = 110f;
+
         private List<UICategory> OptionsCategories = new List<UICategory>()
         {
             new UICategory() { ID = 0, IconName = "cat_build_arch.png", Name = "Options" },
@@ -276,7 +279,8 @@ namespace Simitone.Client.UI.Panels
                         new UICatFunc(GameFacade.Strings.GetString("145", "3"), "opt_save.png", () => { Game.Save(); }),
                         new UICatFunc(GameFacade.Strings.GetString("145", "1"), "opt_neigh.png", () => { Game.ReturnToNeighbourhood(); }),
                         new UICatFunc(GameFacade.Strings.GetString("145", "5"), "opt_quit.png", () => { Game.CloseAttempt(); }),
-                    });
+                        new UICatFunc("Settings", "opt_settings.png", () => { UIScreen.GlobalShowDialog(new UIOptionsAlert(), true); }),
+                    }, OptionsSpacing);
                     AddFreeWillToggle(panel);
                     break;
             }
@@ -542,10 +546,10 @@ namespace Simitone.Client.UI.Panels
 
         private void AddFreeWillToggle(UISubpanel parent)
         {
-            // Index 3 (4th button) to match spacing of existing buttons
-            // Existing buttons use: 50 + i * 120f for button X, 50 + i * 120f - 27 for label X
-            int index = 3;
-            float buttonX = 50 + index * 120f;
+            // Index 4 (5th button, after Graphics) to match spacing of existing buttons
+            // Existing buttons use: 50 + i * spacing for button X, 50 + i * spacing - 27 for label X
+            int index = 4;
+            float buttonX = 50 + index * OptionsSpacing;
             float labelX = buttonX - 27;
 
             var label = new UILabel();
