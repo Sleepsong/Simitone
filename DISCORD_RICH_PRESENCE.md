@@ -13,7 +13,7 @@ Shows what you're doing in Simitone on your Discord profile, under "Playing Simi
 
 The "elapsed" time counts from when you arrived where you are: switching mode keeps it, going to another lot or back to the neighbourhood restarts it.
 
-It's part of Simitone only; the FreeSO engine isn't changed.
+It's part of Simitone only; the FreeSO engine isn't changed. The branch (`claude/discord-rich-presence`) is `simitone-forked` with only this work. It was first built on the controller branch, and was separated from it on 2 November.
 
 ## Turning it on
 
@@ -43,7 +43,7 @@ The pictures are scaled up from the 256×256 app icon and the 96–128 px button
 - `Services/Discord/DiscordIpc.cs`: Discord's local IPC protocol, without a library. Frames are a little-endian opcode and length, then UTF-8 JSON; a handshake (`{"v":1,"client_id":…}`) answered by `READY`, then `SET_ACTIVITY` commands carrying the process ID and the activity. On Windows it connects to the named pipes `discord-ipc-0` to `9`; elsewhere to the Unix sockets of the same names in `XDG_RUNTIME_DIR` (and the folders the Flatpak and Snap builds of Discord, and Vesktop, use inside it), then `TMPDIR`, `TMP`, `TEMP` and `/tmp`.
 - `Services/Discord/PresenceSource.cs`: reads the current screen on the game thread (about once a second).
 - `Services/Discord/PresenceText.cs`: turns that into the two lines and the start time. Plain data in and out.
-- `Services/Discord/DiscordPresence.cs`: `discord.ini`, and `DiscordLink`, the background task that owns the connection. It connects when Discord is running (retrying every 15 s if not), sends the activity only when it changes and at most every 4 s (Discord allows 5 updates per 20 s), answers Discord's pings, and keeps reading its replies so they don't back up. The game thread never waits on Discord. Notes go to `discord.log` next to `discord.ini`.
+- `Services/Discord/DiscordPresence.cs`: `discord.ini`, and `DiscordLink`, the background task that owns the connection. It connects when Discord is running (retrying every 15 s if not), sends the activity only when it changes and at most every 4 s (Discord allows 5 updates per 20 s), answers Discord's pings, and keeps reading its replies so they don't back up. The game thread never waits on Discord. With `-logs` on the command line (in Steam: Launch Options), notes go to `discord.log` next to `discord.ini`.
 
 ## Tests
 

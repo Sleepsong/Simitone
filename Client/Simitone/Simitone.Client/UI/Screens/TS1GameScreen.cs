@@ -56,6 +56,23 @@ namespace Simitone.Client.UI.Screens
 
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
+
+        /// <summary>Showing the neighbourhood map (rather than a lot).</summary>
+        public bool InNeighbourhood => TS1NeighPanel != null && GetChildren().Contains(TS1NeighPanel);
+
+        /// <summary>
+        /// The map on screen: the neighbourhood, or a town a Sim is travelling to from a lot (vacation, Studio Town,
+        /// Magic Town...), which the lot shows over itself. Null if neither.
+        /// </summary>
+        public UINeighborhoodSelectionPanel ActiveNeighPanel
+        {
+            get
+            {
+                if (InNeighbourhood) return TS1NeighPanel;
+                var travel = LotControl?.TravelSelector;
+                return (travel?.Parent == this) ? travel : null;
+            }
+        }
         public FAMI ActiveFamily;
         /// <summary>The lot being played (its house number), or -1 (e.g. in the neighbourhood).</summary>
         public short CurrentHouse { get; private set; } = -1;

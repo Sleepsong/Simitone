@@ -12,7 +12,7 @@ namespace Simitone.Client.Services.Discord
     /// discord.ini (in the user folder, written on first run) turns it off; it shows as Simitone's Discord application.
     /// The game thread only hands over the wanted activity (<see cref="Tick"/>); a background task owns the connection,
     /// so a slow or absent Discord never stalls the game. It reconnects when Discord starts later, sends only changes,
-    /// and no more often than Discord allows (5 updates per 20 s). Notes go to discord.log next to it.
+    /// and no more often than Discord allows (5 updates per 20 s). With -logs, notes go to discord.log next to it.
     /// </summary>
     public static class DiscordPresence
     {
@@ -47,7 +47,7 @@ namespace Simitone.Client.Services.Discord
                 if (settings.ContainsKey("place_images")) Text.PlaceImages = IsOn(settings, "place_images");
                 else if (settings.ContainsKey("small_images")) Text.PlaceImages = IsOn(settings, "small_images"); //its old name
                 Stop = new CancellationTokenSource();
-                File.WriteAllText(LogPath, $"Simitone Discord log, {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
+                if (Utils.LaunchFlags.Logs) File.WriteAllText(LogPath, $"Simitone Discord log, {DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}");
                 var link = new DiscordLink(new DiscordRpcClient(clientId.Trim())) { Log = Log };
                 Task.Run(() => link.RunAsync(() => Volatile.Read(ref Wanted), Stop.Token));
             }
@@ -123,8 +123,10 @@ namespace Simitone.Client.Services.Discord
             "large_image=simitone\n" +
             "place_images=true\n";
 
+        /// <summary>A note for discord.log, written only when the game was started with -logs.</summary>
         private static void Log(string line)
         {
+            if (!Utils.LaunchFlags.Logs) return;
             try
             {
                 File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss}] {line}{Environment.NewLine}");

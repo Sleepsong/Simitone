@@ -106,6 +106,8 @@ namespace Simitone.Client.UI.Panels
         // If we are to implement controlling multiple sims, this must be changed.
         private UIMobileDialog BlockingDialog;
         private UINeighborhoodSelectionPanel TS1NeighSelector;
+        /// <summary>The town map shown while a Sim travels (vacation, Studio Town, Magic Town...), or null.</summary>
+        public UINeighborhoodSelectionPanel TravelSelector => TS1NeighSelector;
         private ulong LastDialogID;
 
         private static uint GOTO_GUID = 0x000007C4;
