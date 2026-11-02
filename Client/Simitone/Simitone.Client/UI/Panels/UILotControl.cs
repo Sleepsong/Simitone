@@ -258,6 +258,9 @@ namespace Simitone.Client.UI.Panels
                     Parent.Add(TS1NeighSelector);
                     ((TS1GameScreen)Parent).Bg.Visible = true;
                     ((TS1GameScreen)Parent).LotControl.Visible = false;
+                    //the lot's bar and clock were left over the map
+                    var frontend = ((TS1GameScreen)Parent).Frontend;
+                    if (frontend != null) frontend.Visible = false;
                     TS1NeighSelector.OnHouseSelect += HouseSelected;
                     return;
                 case VMDialogType.TS1PhoneBook:
@@ -333,6 +336,14 @@ namespace Simitone.Client.UI.Panels
             });
             Parent.Remove(TS1NeighSelector);
             TS1NeighSelector = null;
+            if (Parent is TS1GameScreen screen)
+            {
+                //back to the lot: the Sim sets off from it, and the new lot loads when they leave. If the trip fails
+                //(an interaction error), the player is left on the lot rather than an empty background.
+                screen.Bg.Visible = false;
+                screen.LotControl.Visible = true;
+                if (screen.Frontend != null) screen.Frontend.Visible = true;
+            }
         }
 
         private void DialogButton0(UIElement button) { DialogResponse(0); }

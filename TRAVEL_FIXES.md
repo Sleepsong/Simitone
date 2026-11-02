@@ -2,10 +2,33 @@
 
 Branch `claude/expansion-travel` (engine: Sleepsong/FreeSO `simitone/expansion-travel`). It's based on the fork's own `simitone-forked` (engine 7e76c19), with none of the controller or Discord work. The rounds of testing below were done on an earlier copy built on the controller branch. On 2 November it was rebuilt here, and the travel commits were taken off the controller and Discord branches.
 
+### Fixes the trips depend on
+
+The first build of this branch on its own didn't travel at all:
+
+- The hole played its animation and went nowhere.
+- Studio Town was missing from the phone.
+
+The base engine can't load these saves cleanly. Every session's log noted objects saved inside routines the installed content doesn't have, the wall phone among them. The controller branch's engine fixes this, but its fixes were made during the controller work and lived only there. They aren't pad features, so they're in this branch too, cherry-picked:
+
+- **Saved data:**
+  - avatar slots out of range;
+  - person data kept at 101 entries when a Sim inherits neighbourhood data or a house loads.
+- **Broken saved scripts:** objects whose saved frames can't resume, or were saved past a routine's end, are restarted (the phone).
+- **Expansion outfits:**
+  - a Sim without an expansion outfit keeps their everyday clothes (vacations);
+  - buying one works.
+- **Phone book:** a cancelled phone book counts as cancelled.
+- **The error log:** `simantics-errors.log`, with `-logs`. It's needed to see any of this with `-nosimantics-exc`.
+
+From the controller branch's Simitone side, minus its pad code:
+
+- the lot's bar and clock are hidden while a town map is up;
+- the lot comes back after a destination is picked. Before, it stayed on the bare background while the Sim set off, and stayed there for good if the trip failed.
+
 What didn't come across:
 
 - **The pad hook:** the trace of an object the pad can't use ("No actions available") belongs to the controller work. A mouse click on such an object still writes its menu.
-- **The error log:** `simantics-errors.log` (`-logs`) comes with the controller work, so this branch's notes go to `travel.log` only.
 
 ## The problems
 
@@ -199,9 +222,9 @@ After the second and third tests' fixes, check that Downtown still works too: it
 
 In Studio Town, give the cab time. Its script waits about 10–20 seconds at normal speed before it arrives, and it can't come while the drop-off car is still on the street.
 
-1. Start Simitone with `-travellog` (in Steam: Properties, Launch Options). Delete the old `travel.log` first, so the new one is easy to read.
+1. Start Simitone with `-logs -travellog` (in Steam: Properties, Launch Options). Delete the old `travel.log` first, so the new one is easy to read.
 2. Play from a family's home lot and travel to Studio Town. On arrival, go straight to the way home: call the cab, then wait a couple of in-game hours.
 3. Go to Magic Town. Click the hole and the phone, even if no menu appears. Try any other way home.
 4. Avoid other interactions on those lots: everything picked away from home is followed, and that fills the log.
 5. If a Sim gets stuck, open the cheat box and enter `dump sims`.
-6. Attach `travel.log`.
+6. Attach `travel.log` and `simantics-errors.log`.
