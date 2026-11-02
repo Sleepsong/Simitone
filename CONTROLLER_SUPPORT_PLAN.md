@@ -815,7 +815,7 @@ Everything worked except the focus outline on the neighbourhood's round buttons,
 
 ## 16. Phase 7 — UI polish and bug fixes
 
-Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9`, `b4580aa`, `df755b6`, `5e5e3bc` and `2fab2fb` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
+Engine commits `da2f2f2`, `aaee59d`, `c7ff5b9`, `b4580aa`, `df755b6`, `5e5e3bc`, `2fab2fb` and `f6d4af4` on `simitone/controller-phase7`; the rest is in Simitone. The plan had no Phase 7: it was added after Phase 6 testing, for polish and bug fixes.
 
 ### Focus highlight
 
@@ -981,6 +981,8 @@ The next log: Steam asked to load the overlay and it is loaded in the game, SDL 
 | After travelling to another lot, direct control was off again | Each lot gets new lot controls, and they started from the `GamePadDirectControl` setting. The player's choice (X) is now kept for the session, so it carries over to the next lot; until X is pressed, the setting applies. (FISH EYE still ends when the lot changes: B turns it back on.) |
 | On the vacation map the name bubble sat beside the focused lot ("Reclaimed Public Beach:") | The bubble keeps clear of other pad targets, and on a town map the lot pictures are big and overlap one another, so the only clear side was to the left. Lot pictures (`IPadLabelCoverable`) may now be covered, so the bubble sits above the lot as elsewhere; real buttons and the prompt bar are still kept clear. The colon some lot names end in is trimmed. |
 | Picking a vacation lot left the game on an empty background, stuck | Not the pad: the game's "Go On Vacation - Dress Appropriately" threw (simantics-errors.log: `Outfit.Read` on null in `VMSuitProvider.GetPersonSuitTS1`), so the trip never happened, and the lot was still hidden behind the map's background. Two fixes. Engine (`2fab2fb`): the expansion outfits (formal, swimsuit, pyjamas, winter, high fashion, the party costumes) come from the person's own strings, which a base-game Sim doesn't have; those Sims now keep their daywear, and a suit that can't be found leaves the current outfit on. Simitone: after a lot is picked the lot is shown again straight away (the Sim sets off from it and the new lot loads when they leave), so a trip that fails leaves the player on the lot. |
+| The prompt bar sat bottom right on travel maps (vacation, Magic Town...) | It goes bottom right on a lot, and a travel map is shown from a lot; it now counts as a map (bottom centre). |
+| Bella hung buying ski wear (simantics-errors.log: `VMTS1PurchasableOutfitHelper.SetSuit`) | Same family as the vacation outfit crash: buying an expansion outfit read the Sim's current one of that kind, which a base-game Sim doesn't have. Engine (`f6d4af4`): a missing outfit reads as none, and the Sim's string table is grown with empty slots up to it so the bought outfit is kept (`STR.SetString` ignores indices past the end; 4 harness checks pin that down). |
 
 
 Changes in code: `PadMath.FootprintEllipse`, `PadGraphics.GetLine`/`GetBeam`, `UILotControl.OpenPieMenu(fromPad)`, the engine projection above. The harness has 298 checks; the ring ones cover the oval's size for one tile, a 1x2 sofa, small footprints and capped long ones.

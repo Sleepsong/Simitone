@@ -104,7 +104,8 @@ namespace Simitone.Client.UI.Controls
 
             //in a lot: bottom right, above the main panel when it's open (the clock and queue have the top, the mode
             //button and money the bottom left). Elsewhere: bottom centre.
-            var inLot = screen is TS1GameScreen game && !game.InNeighbourhood && game.Frontend != null;
+            //(a town map shown from a lot, while travelling, counts as a map: bottom centre)
+            var inLot = screen is TS1GameScreen game && !game.InNeighbourhood && game.Frontend != null && game.ActiveNeighPanel == null;
             var bottom = screen.ScreenHeight;
             if (inLot)
             {
