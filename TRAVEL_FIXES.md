@@ -28,17 +28,49 @@ From the controller branch's Simitone side, minus its pad code:
 
 ### Studio Town's cab and the drop-off cars
 
-The last test, on lot 85, mapped the ground around the car portal. The street is a 5-tile road down x = 44–48 (floor pattern 9, with dashed markings), and traffic drives its x = 45–47 lane. The portal at (38.5, 25.5) sits inside the lot, and "along its facing" leads to a paved pull-in at x = 38–40, y = 37–44, between the building and the sidewalk.
+The lot 85 map shows the street as a 5-tile road down x = 44–48 (floor pattern 9, with dashed markings). Traffic drives its x = 45–47 lane. The car portal is at (38.5, 25.5), inside the spa building, facing north. Searching along its line, the only spot that fits a car is a paved pull-in at x = 38–40, y = 37–44, 12 tiles behind the portal.
 
-Every drop-off car on this lot stops at that pull-in: the Town Car, the pink Limo, the Carpool. FreeSO keeps the portal's position and object ID from the save, so this is where the original game sends cars too. So the cab appearing there is probably right. The bug is that the drop-off cars never leave:
+**FreeSO#9 (cherry-picked, not the fix here).** That's alexjyong/FreeSO#9: on a lot's last row and column, the slope check wrapped round to the opposite side, so on a hillside lot the road at the edge counted as sloped. It's a real bug and stays in. The next test showed it wasn't why lot 85's cars stayed.
 
-- they sit in "drive away" at its wait-and-retry step;
-- the pull-in stays blocked;
-- every cab call fails.
+**Why cars never left (seventh test, 2 November).** A car leaves a lot in "drive away": it snaps forward one step at a time until it's off the lot. When a step is blocked, it honks, waits, and tries again, for up to two game hours, then vanishes. Every car at the pull-in failed its first step:
 
-That's the bug in alexjyong/FreeSO#9, which is cherry-picked here. On a lot's last row and column, the slope check wrapped around to the opposite side of the lot, so on a hillside lot the road at the edge counted as sloped. A car couldn't snap onto it to drive away, and waited and retried for up to an hour.
+- the Squad Car, the black Limo, and the one cab that did come;
+- each faces north, nose to the spa's front, with an oxygen bar and the doors in the way.
 
-A car that blocks a followed placement now has its own scripts followed from then on, so if one still doesn't leave, the log shows why.
+So each car sat there honking for up to two game hours, and the next car had nowhere to stop. A cab called meanwhile found nothing on the portal's line and deleted itself. The one cab that did come (fifth test) took Bella home, but only after honking for a game hour.
+
+Which way a car drives comes from the earlier logs:
+
+- **Downtown:** the taxi, facing west, took 94 steps to leave a 43-tile lot from x = 35.
+- **Magic Town:** the bus, facing east, took 97 steps to leave a 60-tile lot from x = 23.
+
+So a car drives forward, north is -y, and its lead tile is its front.
+
+**The cars crossing the lot were mine.** Last round's fallback (centred, then a tile either side) put a Limo at x = 37 in the plaza north of the building. Cars that fit nowhere else ended up there and drove through the middle of the lot. The fallback is gone.
+
+**The change.** For a car (a multitile object of 12 tiles or more) placed by Find Location For mode 3:
+
+- **By its portal (3 tiles or fewer):** left alone, so cars on every other lot seen so far are unchanged (Downtown, Magic Town and lot 88 all place them a tile from the portal).
+- **Further away:** the engine checks the run ahead without moving the car. Sims (they get shooed) and other cars (they leave) don't count; anything else in the way before the lot's edge does.
+- **If it's blocked, or nothing fit:** the car goes to the nearest spot on a line beside the portal's, with the same facing, that it can drive off from.
+- **If there's no such spot:** it stays where the search put it, or isn't placed, as before.
+
+On lot 85's map, that spot is lead tile (44, 25): x = 44–46 on the street, level with the portal, with a clear run north. This was simulated from the map, not run in the game.
+
+**The original game's mechanism is still unknown.** This makes cars work; it isn't a copy of what the original game does. Candidates:
+
+- another portal;
+- the lot's "Studio Cab Stop" marker;
+- different search rules.
+
+Two fixed objects sit at (43, 20) on the sidewalk and (47, 20) on the street, and either could be one of these.
+
+**New in the trace:**
+
+- the whole lot's map;
+- the lot's hidden objects (portals, markers, controllers) with object IDs, positions and facings;
+- the code of every routine a followed script runs (a car's "Home Main" and "drive away");
+- for a followed object's failed Snap: the slot, where it would have gone, and what was in the way.
 
 What didn't come across:
 
@@ -186,7 +218,7 @@ The pie menu entry now shows Bella's data on lot 96: person type 1, greet status
 
 Rather than chase the script, the visitor rule now leaves the family being played out entirely: a Sim whose family number is the lot's current family is never a visitor, whatever their person type. Visitors from other families are unchanged, and so is anyone at home. Any change to a family Sim's person type is now noted in `travel.log`, with the script that made it.
 
-### Studio Town: the cab sits off the drive (fallback)
+### Studio Town: the cab sits off the drive (fallback, since removed)
 
 All three cabs failed the same way. The trace of what was in the way shows the drive:
 
@@ -194,7 +226,7 @@ All three cabs failed the same way. The trace of what was in the way shows the d
 - **The obstacles** were beside the lane: an oxygen bar at x = 36, and spa tubs at (40,27) and (40,29).
 - **The cab:** a multitile object is placed by its lead tile (`Row 0 Tile 0`, offset 0,0), and its other tiles are offset from that. So the 3-wide Studio car covered x = 38–40 and hit the spa tubs on every spot.
 
-Find Location For mode 3 now has a fallback. When every spot along the vector is refused, it searches again with the object centred across the vector (x = 37–39 here), then shifted a tile either way. Placements that already worked are unchanged, because the fallback only runs after the usual search has failed. The attempts in the trace now show positions to fractions of a tile.
+Find Location For mode 3 got a fallback (removed after the seventh test: it put cars in the plaza, see "Studio Town's cab and the drop-off cars" above). When every spot along the vector was refused, it searched again with the object centred across the vector (x = 37–39 here), then shifted a tile either way. Placements that already worked are unchanged, because the fallback only runs after the usual search has failed. The attempts in the trace now show positions to fractions of a tile.
 
 ## Fifth test (1 November): working
 
@@ -234,7 +266,7 @@ The stack object's own queue is left alone, and so is the interaction making the
 
 After the second and third tests' fixes, check that Downtown still works too: its Sim is now family, not a visitor, there as well.
 
-In Studio Town, give the cab time. Its script waits about 10–20 seconds at normal speed before it arrives, and it can't come while the drop-off car is still on the street.
+In Studio Town, give the cab time. Its script waits about 10–20 seconds at normal speed before it arrives. On lot 85 it should now stop on the street east of the spa, and drop-off cars should stop there and drive off north.
 
 1. Start Simitone with `-logs -travellog` (in Steam: Properties, Launch Options). Delete the old `travel.log` first, so the new one is easy to read.
 2. Play from a family's home lot and travel to Studio Town. On arrival, go straight to the way home: call the cab, then wait a couple of in-game hours.
