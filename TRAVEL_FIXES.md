@@ -26,6 +26,20 @@ From the controller branch's Simitone side, minus its pad code:
 - the lot's bar and clock are hidden while a town map is up;
 - the lot comes back after a destination is picked. Before, it stayed on the bare background while the Sim set off, and stayed there for good if the trip failed.
 
+### Studio Town's cab and the drop-off cars
+
+The last test, on lot 85, mapped the ground around the car portal. The street is a 5-tile road down x = 44–48 (floor pattern 9, with dashed markings), and traffic drives its x = 45–47 lane. The portal at (38.5, 25.5) sits inside the lot, and "along its facing" leads to a paved pull-in at x = 38–40, y = 37–44, between the building and the sidewalk.
+
+Every drop-off car on this lot stops at that pull-in: the Town Car, the pink Limo, the Carpool. FreeSO keeps the portal's position and object ID from the save, so this is where the original game sends cars too. So the cab appearing there is probably right. The bug is that the drop-off cars never leave:
+
+- they sit in "drive away" at its wait-and-retry step;
+- the pull-in stays blocked;
+- every cab call fails.
+
+That's the bug in alexjyong/FreeSO#9, which is cherry-picked here. On a lot's last row and column, the slope check wrapped around to the opposite side of the lot, so on a hillside lot the road at the edge counted as sloped. A car couldn't snap onto it to drive away, and waited and retried for up to an hour.
+
+A car that blocks a followed placement now has its own scripts followed from then on, so if one still doesn't leave, the log shows why.
+
 What didn't come across:
 
 - **The pad hook:** the trace of an object the pad can't use ("No actions available") belongs to the controller work. A mouse click on such an object still writes its menu.
