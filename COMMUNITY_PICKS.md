@@ -2,6 +2,8 @@
 
 Branch `claude/community-picks` (engine: Sleepsong/FreeSO `simitone/community-picks`), on `simitone-forked` (engine 7e76c19). These are fixes from open pull requests on the community fork (alexjyong/Simitone and alexjyong/FreeSO, by sithtoast), cherry-picked with their authors kept. None of them were merged upstream when this branch was made (2 November 2026).
 
+**Update, 4 November:** the community fork has since merged FreeSO#8, FreeSO#12 and Simitone#34 (with #31) into its own `simitone-forked`, and the fork's latest `simitone-forked` is merged into this branch (engine: alexjyong/FreeSO d8a3c175). Those three now come from upstream; the rest below are still only here. The merge also brought the community fork's neighbor faces in dialogs, test mode, dialog icons, custom animations and .hsm fix. `UIIconCache` keeps both this branch's drawn catalog icon and upstream's neighbor face.
+
 ## Engine (FreeSO)
 
 | PR | What it fixes |
