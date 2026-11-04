@@ -48,7 +48,8 @@ namespace Simitone.Client.UI.Screens
         public bool Downtown;
         /// <summary>
         /// True for the desktop lot layout (UIDesktopUCP), false for the mobile one. Chosen when each lot's frontend
-        /// is created (see CreateFrontend) and fixed for that frontend's lifetime.
+        /// is created (see CreateFrontend); with UILayout "auto" it then follows the device in use, and the frontend is
+        /// rebuilt when it changes (see UpdateAutoLayout).
         /// </summary>
         public bool Desktop = !FSOEnvironment.SoftwareKeyboard;
         private InputDevice LastInputDevice;
@@ -580,6 +581,7 @@ namespace Simitone.Client.UI.Screens
             }
             base.Update(state);
             UpdateNeighbourhoodPad(state);
+            UpdateAutoLayout(state);
             UpdateAutoFastForward();
 
             // Update weather effects (sounds and terrain)
@@ -844,13 +846,15 @@ namespace Simitone.Client.UI.Screens
         private void CreateFrontend()
         {
             Desktop = UseDesktopLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard, LastInputDevice);
+            LayoutDevice = LastInputDevice;
+            LayoutPendingFor = 0;
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
         }
 
         /// <summary>
         /// Resolves the UILayout setting. "desktop" and "mobile" force a layout; anything else is "auto", which picks
-        /// the mobile layout for touch screens, or when the player was using a gamepad as the lot loaded.
+        /// the mobile layout for touch screens, or when the gamepad is the device in use (see <see cref="UpdateAutoLayout"/>).
         /// </summary>
         public static bool UseDesktopLayout(string setting, bool touch, InputDevice lastDevice)
         {
@@ -860,6 +864,96 @@ namespace Simitone.Client.UI.Screens
                 case "mobile": return false;
                 default: return !touch && lastDevice != InputDevice.GamePad;
             }
+        }
+
+        /// <summary>Whether the layout follows the device in use: UILayout "auto", off touch screens.</summary>
+        public static bool AutoLayout(string setting, bool touch)
+        {
+            var value = (setting ?? "").Trim().ToLowerInvariant();
+            return !touch && value != "desktop" && value != "mobile";
+        }
+
+        /// <summary>Seconds the other device has to be the one in use before the lot's layout switches to it.</summary>
+        public const float LayoutSwitchDelay = 0.75f;
+        /// <summary>The device the layout follows: the pad, or the mouse (the keyboard counts as the mouse here).</summary>
+        private InputDevice LayoutDevice = InputDevice.Mouse;
+        private InputDevice LastPointerDevice = InputDevice.Mouse;
+        private float LayoutPendingFor;
+
+        /// <summary>
+        /// The device the layout should follow after this frame's input. A pad press means the pad; a key press, or
+        /// the pointer passing to the mouse (it moved, clicked or scrolled), means the mouse. Keys the pad itself sends
+        /// (Escape for B under the virtual cursor) arrive on frames the pad is active, and keyboard and mouse echoes
+        /// from Steam's desktop layout are already dropped while the pad is held (PadEchoFilter).
+        /// </summary>
+        public static InputDevice LayoutDeviceAfter(InputDevice current, InputDevice lastPointer, InputDevice pointer,
+            bool padActive, bool keyPressed)
+        {
+            if (padActive) return InputDevice.GamePad;
+            if (keyPressed) return InputDevice.Mouse;
+            if (pointer != lastPointer) return pointer;
+            return current;
+        }
+
+        /// <summary>
+        /// With UILayout "auto", switches the lot between the desktop and mobile layouts as the player changes device:
+        /// the pad gets the mobile layout (big buttons, the mode wheel), the mouse or keyboard the desktop one. The other
+        /// device has to stay the one in use for <see cref="LayoutSwitchDelay"/> seconds, and the lot's UI has to be at
+        /// rest (<see cref="LayoutAtRest"/>); until then the switch waits. The frontend is rebuilt in the new layout in
+        /// the same mode (live, buy, build or options).
+        /// </summary>
+        private void UpdateAutoLayout(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            var pointer = state.LastInputDevice;
+            LayoutDevice = LayoutDeviceAfter(LayoutDevice, LastPointerDevice, pointer, state.Pad.Active, state.NewKeys.Count > 0);
+            LastPointerDevice = pointer;
+            if (Frontend == null || vm == null || LotControl == null) return;
+            if (!AutoLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard)) return;
+
+            var desktop = UseDesktopLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard, LayoutDevice);
+            if (desktop == Desktop)
+            {
+                LayoutPendingFor = 0;
+                return;
+            }
+            LayoutPendingFor += (float)(state.Time?.ElapsedGameTime.TotalSeconds ?? 1 / 60.0);
+            if (LayoutPendingFor < LayoutSwitchDelay || !LayoutAtRest(state)) return;
+            LayoutPendingFor = 0;
+            SwitchLayout(desktop);
+        }
+
+        /// <summary>
+        /// Nothing in progress that rebuilding the frontend would lose: no pie menu, no object in hand, no build tool,
+        /// no text box being typed in, no dialog, no mode selection, and the pad isn't in one of the lot's menus. (The
+        /// pad helper captures the pad all through live mode, so being captured on its own doesn't count.)
+        /// </summary>
+        private bool LayoutAtRest(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            return Frontend.Visible && !LotControl.PieMenuOpen && LotControl.ObjectHolder?.Holding == null
+                && LotControl.CustomControl == null && state.InputManager?.GetFocus() == null
+                && !GameFacade.Screens.HasModalDialog && !Frontend.MainPanel.ShowingSelect
+                && !(LotControl.PadHelper?.InMenu ?? false) && !(Frontend.CheatTextbox?.Visible ?? false);
+        }
+
+        /// <summary>Rebuilds the lot's frontend in the other layout, where the old one was, in the same mode.</summary>
+        private void SwitchLayout(bool desktop)
+        {
+            var old = Frontend;
+            var mode = old.MainPanel.Mode;
+            var wasOpen = old.MainPanel.PanelActive;
+            var children = GetChildren();
+            var index = children.IndexOf(old);
+            var next = (index >= 0 && index + 1 < children.Count) ? children[index + 1] : null;
+
+            Remove(old);
+            Desktop = desktop;
+            Frontend = new UISimitoneFrontend(this);
+            if (next != null) AddBefore(Frontend, next);
+            else Add(Frontend);
+
+            //the new frontend starts in live mode (or buy, for a lot that asks for it): put it back as it was
+            if (Frontend.MainPanel.Mode != mode) Frontend.SetModeDirect(mode);
+            if (wasOpen && !Frontend.MainPanel.PanelActive) Frontend.MainPanel.Open();
         }
 
         public void ShowLoadErrors(List<VMLoadError> errors, bool verbose)

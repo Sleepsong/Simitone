@@ -414,11 +414,28 @@ Hovering a person shows their name.
 
 | Value | Layout |
 |---|---|
-| `auto` (default) | Mobile layout on touch screens, or when the pad was the device in use as the lot loaded; desktop otherwise |
+| `auto` (default) | Mobile layout on touch screens. Otherwise it follows the device in use: mobile with the pad, desktop with the mouse or keyboard |
 | `desktop` | Always the desktop layout |
 | `mobile` | Always the mobile layout |
 
-The choice is made when each lot loads. Switching devices mid-lot doesn't change the layout until the next lot.
+With `auto`, the lot's layout switches as the player changes device (4 November):
+
+- **The pad:** a press counts as the pad.
+- **The desktop layout:** a key press, or the mouse moving, clicking or scrolling, counts as the mouse. Pad echoes don't count:
+  - Steam's desktop layout sends keys and mouse movement, which are dropped while the pad is held;
+  - B's Escape under the virtual cursor arrives on a pad frame.
+- **Debounce:** the other device has to stay the one in use for 0.75 seconds, so a bumped mouse doesn't flip the layout.
+- **When:** the switch waits until nothing is in progress that a rebuild would lose. That means:
+  - no pie menu;
+  - no object in hand;
+  - no build tool;
+  - no text box being typed in;
+  - no dialog;
+  - no mode selection;
+  - the cheat box isn't open;
+  - the pad isn't in one of the lot's menus (the mode menu, the tab fan, the action queue, or a panel).
+- **How:** the frontend is rebuilt in the new layout where the old one was. It comes back in the same mode (live, buy, build or options), with the panel open if it was. Walls mode and the rest live in the lot control and carry over.
+- **Elsewhere:** the neighbourhood and CAS screens have one layout, so nothing changes there.
 
 ### Code
 
@@ -435,7 +452,7 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 | `UIInteractionQueue` | Pad focus and a highlight ring |
 | `UISimitoneFrontend` | `CycleSim` (the Space key now uses it), `SetModeDirect`/`CycleMode`, `SetWallsMode` |
 | `UILotControlTouchHelper` | `NudgeZoom`, so pad zoom shares the wheel's zoom-snapping hold-off |
-| `TS1GameScreen` | Layout choice per lot; hides the OS cursor while the pad drives the lot |
+| `TS1GameScreen` | Layout choice per lot, and switching it as the device in use changes (auto); hides the OS cursor while the pad drives the lot |
 
 ### Verification
 
@@ -459,6 +476,7 @@ The choice is made when each lot loads. Switching devices mid-lot doesn't change
 6. Pie navigation with 2, 4, 8 and more than 8 items, and inside sub-categories.
 7. Dialogs that appear mid-play are reachable with the virtual cursor, and the lot regains the pad when they close.
 8. The `auto` layout picks the mobile layout when a lot is loaded with the pad.
+9. With `auto`, on a lot: pick up the pad and the layout turns mobile within about a second; touch the mouse or a key and it turns back to desktop. In buy or build mode it stays in that mode, and it waits while something is in hand or a menu is open.
 
 ### Hardware results so far
 
