@@ -52,18 +52,22 @@ So a car drives forward, north is -y, and its lead tile is its front.
 
 - **By its portal (3 tiles or fewer):** left alone, so cars on every other lot seen so far are unchanged (Downtown, Magic Town and lot 88 all place them a tile from the portal).
 - **Further away:** the engine checks the run ahead without moving the car. Sims (they get shooed) and other cars (they leave) don't count; anything else in the way before the lot's edge does.
-- **If it's blocked, or nothing fit:** the car goes to the nearest spot on a line beside the portal's, with the same facing, that it can drive off from.
-- **If there's no such spot:** it stays where the search put it, or isn't placed, as before.
+- **If it's blocked, or nothing fit:** the car is placed from the lot's other portals of the same kind, each searched along its own line and facing its own way, at the first spot it can drive off from.
+- **If no other portal does better:** it stays where the search put it, or isn't placed, as before. A lot with one portal is unchanged.
 
-On lot 85's map, that spot is lead tile (44, 25): x = 44–46 on the street, level with the portal, with a clear run north. This was simulated from the map, not run in the game.
+**Eighth test (4 November, `main` build): the street portal.** The first version of this change searched lines beside the portal's for a spot that could drive off. On the test it put the cab at x = 47–49: the edge of the street and the lot's unpaved border. The drop-off cars, moved the same way, already filled x = 44–47, so Bella had no side of the cab to reach. Her "Get In Cab" route failed at once, and the cab sat behind a waiting limo. That search is gone.
 
-**The original game's mechanism is still unknown.** This makes cars work; it isn't a copy of what the original game does. Candidates:
+The new trace's list of hidden objects showed why the street is right: lot 85 has two car portals.
 
-- another portal;
-- the lot's "Studio Cab Stop" marker;
-- different search rules.
+- **927** is at (38.5, 25.5), inside the spa, facing north. Cars use it because their scripts take the first car portal on the lot ("Home Main": Set To Next, object of type, from 0), and it has the lower ID.
+- **928** is at (46.5, 8.5), in the middle of the street, facing south.
 
-Two fixed objects sit at (43, 20) on the sidewalk and (47, 20) on the street, and either could be one of these.
+Placed from 928, a car sits at the north end of the street on x = 44–46, next to the sidewalk, and drives south off the lot. The other markers line the street too:
+
+- "Studio Cab Stop" at (47.5, 20.5);
+- "Studio Middle", "Top" and "Bottom" on the sidewalk at x = 43.
+
+Why the original game uses 928 isn't known. It may order Set To Next differently, or portal 927 may not be in play there. This uses the lot's own street portal rather than guessing a spot.
 
 **New in the trace:**
 
@@ -266,7 +270,7 @@ The stack object's own queue is left alone, and so is the interaction making the
 
 After the second and third tests' fixes, check that Downtown still works too: its Sim is now family, not a visitor, there as well.
 
-In Studio Town, give the cab time. Its script waits about 10–20 seconds at normal speed before it arrives. On lot 85 it should now stop on the street east of the spa, and drop-off cars should stop there and drive off north.
+In Studio Town, give the cab time. Its script waits about 10–20 seconds at normal speed before it arrives. On lot 85 it should now stop at the north end of the street east of the spa (by the second car portal), and drop-off cars should stop there too and drive off south.
 
 1. Start Simitone with `-logs -travellog` (in Steam: Properties, Launch Options). Delete the old `travel.log` first, so the new one is easy to read.
 2. Play from a family's home lot and travel to Studio Town. On arrival, go straight to the way home: call the cab, then wait a couple of in-game hours.
