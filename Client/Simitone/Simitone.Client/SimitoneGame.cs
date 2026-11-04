@@ -154,12 +154,16 @@ namespace Simitone.Client
             // Initialize Free Will setting from config
             VM.FreeWillEnabled = GlobalSettings.Default.TS1FreeWill;
 
-            // Every SimAntics exception goes to this file with full details, even when the dialog is
-            // suppressed (-nosimantics-exc) or rate-limited. Attach it to bug reports.
-            // (only with -logs: the diagnostic logs are behind launch flags, see Utils.LaunchFlags)
+            //-logs: every SimAntics exception goes to this file with full details, even when the dialog is suppressed
+            //(-nosimantics-exc) or rate-limited, with notes on saved scripts that had to be restarted
             FSO.SimAntics.Engine.VMExceptionLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
             if (Utils.LaunchFlags.Logs)
                 FSO.SimAntics.Engine.VMExceptionLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "simantics-errors.log");
+            //-travellog: travel between lots, town maps, pie menus and why their interactions were left out, and the
+            //scripts of interactions picked away from home, step by step (see TRAVEL_FIXES.md)
+            FSO.SimAntics.Engine.VMTravelLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
+            if (Utils.LaunchFlags.TravelLog)
+                FSO.SimAntics.Engine.VMTravelLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "travel.log");
             
             base.Initialize();
 
@@ -435,6 +439,7 @@ namespace Simitone.Client
 
         protected override void OnExiting(object sender, ExitingEventArgs args)
         {
+            FSO.SimAntics.Engine.VMTravelLog.Flush();
             base.OnExiting(sender, args);
             GameThread.SetKilled();
             args.Cancel = !TestMode.Quitting && !(GameFacade.Screens.CurrentUIScreen?.CloseAttempt() ?? true);

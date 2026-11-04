@@ -558,6 +558,7 @@ namespace Simitone.Client.UI.Panels
                 if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
                 {
                     var flags = ((VMGameObject)obj).Disabled;
+                    FSO.SimAntics.Engine.VMTravelLog.Write($"clicked {obj}: it's disabled ({flags}), so no pie menu");
 
                     if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
                     {
@@ -578,6 +579,8 @@ namespace Simitone.Client.UI.Panels
                 else
                 {
                     var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
+                    //the travel log says which interactions were left out, and why (-travellog)
+                    FSO.SimAntics.Engine.VMTravelLog.PieMenu(vm, obj, ActiveEntity, menu.Count);
                     if (menu.Count != 0)
                     {
                         HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);

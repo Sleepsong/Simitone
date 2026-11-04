@@ -286,6 +286,8 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 ```bash
 -logs            # simantics-errors.log (script errors, with every VM frame), gamepad.log (controllers and focus),
                  # discord.log (Rich Presence, where built in) and simitone_debug.log
+-travellog       # travel.log: trips between lots, town maps, pie menus, and the scripts of
+                 # interactions picked away from home, step by step (see TRAVEL_FIXES.md)
 ```
 `crash.log` is always written when the game crashes, since a crash leaves no other record.
 
