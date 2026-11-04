@@ -129,6 +129,9 @@ namespace Simitone.Client.UI.Panels
         private bool QueueFocus;
         private bool PanelFocus; //live mode: the needs panel has the pad; buy/build: the catalog has it
 
+        /// <summary>The pad is in one of the lot's menus: the mode menu, the tab fan, the action queue, or a panel.</summary>
+        public bool InMenu => ModeMenuActive || CategoryMenuActive || QueueFocus || PanelFocus;
+
         //buy/build
         private bool BuildConfirmDown; //A went down on the lot (the holder or tool got a mouse down) and hasn't come up
         private bool ConfirmNeedsRelease; //the A press that picked a catalog item mustn't also place it
