@@ -82,6 +82,8 @@ namespace Simitone.Client.UI.Screens
             }
         }
         public FAMI ActiveFamily;
+        /// <summary>The lot being played (its house number), or -1 (e.g. in the neighbourhood).</summary>
+        public short CurrentHouse { get; private set; } = -1;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
         // Weather effects state tracking
@@ -208,7 +210,8 @@ namespace Simitone.Client.UI.Screens
             }
         }
 
-        private ushort GetNeighborhoodModeFromHouse(short house)
+        /// <summary>Which neighbourhood map a lot belongs to, by its house number (2 Downtown, 3 Vacation, 5 Studio Town, 7 Magic Town, 4 the main one).</summary>
+        public static ushort GetNeighborhoodModeFromHouse(short house)
         {
             // House number ranges match the lot types
             if (house >= 21 && house <= 31) return 2;  // Downtown
@@ -409,6 +412,7 @@ namespace Simitone.Client.UI.Screens
         public void PlayHouse(short house, UIElement switcher)
         {
             ActiveFamily = Content.Get().Neighborhood.GetFamilyForHouse((short)house);
+            CurrentHouse = house;
             CurrentNeighborhoodMode = GetNeighborhoodModeFromHouse(house);
             InitializeLot(Content.Get().Neighborhood.GetHousePath(house), false);// "UserData/Houses/House21.iff"
             Remove(TS1NeighPanel);
@@ -621,6 +625,7 @@ namespace Simitone.Client.UI.Screens
             {
                 var from = vm.GetGlobalValue(10);
                 if (!Downtown) SavedLot = vm.Save();
+                CurrentHouse = (short)SwitchLot;
                 if (SwitchLot == ActiveFamily.HouseNumber && SavedLot != null)
                 {
                     FSO.SimAntics.Engine.VMTravelLog.Write($"switching lot {from} -> {SwitchLot}: home, from the copy saved when the family left");

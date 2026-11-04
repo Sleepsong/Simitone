@@ -467,6 +467,7 @@ namespace Simitone.Client
                 Utils.X11Focus.Start(Window.Handle);
                 FSO.Common.Rendering.Framework.Game.FocusFallback = Utils.X11Focus.Fallback;
                 if (Utils.LaunchFlags.Logs) Utils.PadDiagnostics.Start(); //gamepad.log: what controllers the game can see
+                Simitone.Client.Services.Discord.DiscordPresence.Start(); //Discord Rich Presence, if discord.ini turns it on
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;
@@ -474,6 +475,7 @@ namespace Simitone.Client
             if (HITVM.Get() != null) HITVM.Get().Tick();
 
             base.Update(gameTime);
+            Simitone.Client.Services.Discord.DiscordPresence.Tick(gameTime.TotalGameTime.TotalSeconds);
             GameThread.UpdateExecuting = false;
         }
     }
