@@ -933,7 +933,20 @@ namespace Simitone.Client.UI.Screens
                             var neigh = Content.Get().Neighborhood;
                             var fami = selectedFamily;
                             var fams = neigh.MainResource.Get<FAMs>(fami.ChunkID);
-                            
+
+                            // Detach the members first, like the engine's remove-from-family call does.
+                            // Otherwise they keep pointing at this family's chunk ID, which gets reused
+                            // by the next family created and would pull them in as phantom members.
+                            foreach (var guid in fami.FamilyGUIDs)
+                            {
+                                var nid = neigh.GetNeighborIDForGUID(guid);
+                                if (nid == null) continue;
+                                var member = neigh.GetNeighborByID(nid.Value);
+                                if (member?.PersonData != null && member.PersonData[(int)VMPersonDataVariable.TS1FamilyNumber] == fami.ChunkID)
+                                    member.PersonData[(int)VMPersonDataVariable.TS1FamilyNumber] = 0;
+                            }
+                            fami.FamilyGUIDs = new uint[0];
+
                             fami.ChunkParent.FullRemoveChunk(fami);
                             if (fams != null) fams.ChunkParent.FullRemoveChunk(fams);
                             
