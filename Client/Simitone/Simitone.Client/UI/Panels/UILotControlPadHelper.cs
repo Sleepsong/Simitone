@@ -345,7 +345,8 @@ namespace Simitone.Client.UI.Panels
                 return;
             }
 
-            if (direct) UpdateTargetInFront(active);
+            if (direct && DirectSteering) UpdateTargetInFront(active);
+            else if (direct) SetTarget(active, BusyTarget(active)); //carrying out a queued action
             else UpdateTargetAtSelector(active);
             UpdateMarker(state, dt, floorRing: !direct);
             //the press that hands control to the pad only reveals the selector; it doesn't act on whatever is under it.
@@ -1275,15 +1276,40 @@ namespace Simitone.Client.UI.Panels
                 }
             }
 
+            SetTarget(active, best);
+        }
+
+        /// <summary>Targets <paramref name="best"/> (an entity or one of its parts), checking its menu once per target.</summary>
+        private void SetTarget(VMEntity active, VMEntity best)
+        {
             if (best != TargetPart || active != TargetCheckedFor)
             {
                 TargetPart = best;
                 Target = best?.MultitileGroup.GetInteractionGroupLeader(best);
                 //checked once per target, like mouse hover. Building a menu runs every interaction's check tree,
                 //so re-checking on a timer is costly, and any tree that throws would raise a popup each time.
-                TargetHasInteractions = Target != null && Target.GetPieMenu(vm, active, false, true).Count > 0;
+                TargetHasInteractions = Target != null && Target.GetPieMenu(Master.vm, active, false, true).Count > 0;
                 TargetCheckedFor = active;
             }
+        }
+
+        /// <summary>
+        /// Direct control is an interaction (FreeSO's routine 9001): queuing an action ends it, the action runs, and then
+        /// direct control is queued again. The stick only steers while its frame is running.
+        /// </summary>
+        private bool DirectSteering => DirectAvatar?.Thread?.Stack.LastOrDefault() is VMDirectControlFrame;
+
+        /// <summary>
+        /// Direct control, while the Sim carries out a queued action: what the action is with (the fridge they're walking
+        /// to, the Sim they're talking to), or nothing. Picking what's in front instead made the marker flash from
+        /// object to object as the Sim turned along its route.
+        /// </summary>
+        private VMEntity BusyTarget(VMEntity active)
+        {
+            var callee = active.Thread?.ActiveAction?.Callee;
+            if (callee == null || callee == active || callee == Master.GotoObject || callee.Dead) return null;
+            if (callee.Position == LotTilePos.OUT_OF_WORLD || callee.Position.Level != active.Position.Level) return null;
+            return callee;
         }
 
         private Vector2 SelectorOrTargetTile()
