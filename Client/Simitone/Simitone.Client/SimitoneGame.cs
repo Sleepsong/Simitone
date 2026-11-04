@@ -362,6 +362,12 @@ namespace Simitone.Client
         /// UnloadContent will be called once per game and is the place to unload
         /// all content.
         /// </summary>
+        protected override void Draw(GameTime gameTime)
+        {
+            base.Draw(gameTime);
+            TestMode.AfterDraw(GraphicsDevice);
+        }
+
         protected override void UnloadContent()
         {
             // TODO: Unload any non ContentManager content here
@@ -374,7 +380,7 @@ namespace Simitone.Client
             FSO.SimAntics.Engine.VMTravelLog.Flush();
             base.OnExiting(sender, args);
             GameThread.SetKilled();
-            args.Cancel = !(GameFacade.Screens.CurrentUIScreen?.CloseAttempt() ?? true);
+            args.Cancel = !TestMode.Quitting && !(GameFacade.Screens.CurrentUIScreen?.CloseAttempt() ?? true);
         }
 
         /// <summary>
