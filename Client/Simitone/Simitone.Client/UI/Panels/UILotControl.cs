@@ -453,89 +453,106 @@ namespace Simitone.Client.UI.Panels
             }
             if (PieMenu == null && ActiveEntity != null)
             {
-                VMEntity obj;
                 //get new pie menu, make new pie menu panel for it
                 var tilePos = World.EstTileAtPosWithScroll(new Vector2(pt.X, pt.Y) / FSOEnvironment.DPIScaleFactor);
 
-                LotTilePos targetPos = LotTilePos.FromBigTile((short)tilePos.X, (short)tilePos.Y, World.State.Level);
-                if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
-
-                GotoObject.SetPosition(targetPos, Direction.NORTH, vm.Context);
-
-                var newHover = World.GetObjectIDAtScreenPos(pt.X,
+                ObjectHover = World.GetObjectIDAtScreenPos(pt.X,
                     pt.Y,
                     GameFacade.GraphicsDevice);
 
-                ObjectHover = newHover;
-
-                bool objSelected = ObjectHover > 0;
-                if (objSelected || (GotoObject.Position != LotTilePos.OUT_OF_WORLD && ObjectHover <= 0))
+                VMEntity target = null;
+                if (ObjectHover > 0)
                 {
-                    if (objSelected)
-                    {
-                        obj = vm.GetObjectById(ObjectHover);
-                    }
-                    else
-                    {
-                        obj = GotoObject;
-                    }
-                    if (obj is VMAvatar && state.CtrlDown)
-                    {
-                        //debug switch to avatar
-                        vm.SendCommand(new VMNetChangeControlCmd()
-                        {
-                            TargetID = obj.ObjectID
-                        });
-                    }
-                    else if (obj != null)
-                    {
-                        obj = obj.MultitileGroup.GetInteractionGroupLeader(obj);
-                        if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
-                        {
-                            var flags = ((VMGameObject)obj).Disabled;
-
-                            if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
-                            {
-                                //for sale
-                                var retailPrice = obj.MultitileGroup.Price; //wrong... should get this from catalog
-                                var salePrice = obj.MultitileGroup.SalePrice;
-                                ShowErrorTooltip(state, 22, true, "$" + retailPrice.ToString("##,#0"), "$" + salePrice.ToString("##,#0"));
-                            }
-                            else if ((flags & VMGameObjectDisableFlags.LotCategoryWrong) > 0)
-                                ShowErrorTooltip(state, 21, true); //category wrong
-                            else if ((flags & VMGameObjectDisableFlags.TransactionIncomplete) > 0)
-                                ShowErrorTooltip(state, 27, true); //transaction not yet complete
-                            else if ((flags & VMGameObjectDisableFlags.ObjectLimitExceeded) > 0)
-                                ShowErrorTooltip(state, 24, true); //object is temporarily disabled... todo: something more helpful
-                            else if ((flags & VMGameObjectDisableFlags.PendingRoommateDeletion) > 0)
-                                ShowErrorTooltip(state, 16, true); //pending roommate deletion
-                        }
-                        else
-                        {
-                            var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
-                            if (menu.Count != 0)
-                            {
-                                HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);
-                                PieMenu = new UIPieMenu(menu, obj, ActiveEntity, this);
-                                this.Add(PieMenu);
-                                PieMenu.X = state.MouseState.X / FSOEnvironment.DPIScaleFactor;
-                                PieMenu.Y = state.MouseState.Y / FSOEnvironment.DPIScaleFactor;
-                                PieMenu.UpdateHeadPosition(state.MouseState.X, state.MouseState.Y);
-                            }
-                        }
-                    }
-
+                    target = vm.GetObjectById(ObjectHover);
+                    if (target == null) return; //stale id: do nothing, as before
                 }
-                else
-                {
-                    ShowErrorTooltip(state, 0, true);
-                }
+                OpenPieMenu(target, tilePos, new Vector2(state.MouseState.X, state.MouseState.Y) / FSOEnvironment.DPIScaleFactor, state);
             }
             else
             {
-                if (PieMenu != null) PieMenu.RemoveSimScene();
-                this.Remove(PieMenu);
-                PieMenu = null;
+                CancelPie();
+            }
+        }
+
+        public bool PieMenuOpen => PieMenu != null;
+
+        /// <summary>Closes the pie menu, if one is open.</summary>
+        public void CancelPie()
+        {
+            if (PieMenu == null) return;
+            PieMenu.RemoveSimScene();
+            this.Remove(PieMenu);
+            PieMenu = null;
+        }
+
+        /// <summary>
+        /// Opens the pie menu for an object, or the "go here" menu at a floor tile when target is null.
+        /// (Same entry point as the gamepad branch's, used here by VR pointing.)
+        /// </summary>
+        /// <param name="menuPos">Where the menu appears, in UI coordinates.</param>
+        public void OpenPieMenu(VMEntity target, Vector2 tile, Vector2 menuPos, UpdateState state)
+        {
+            if (PieMenu != null || ActiveEntity == null) return;
+
+            LotTilePos targetPos = LotTilePos.FromBigTile((short)tile.X, (short)tile.Y, World.State.Level);
+            if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
+
+            GotoObject.SetPosition(targetPos, Direction.NORTH, vm.Context);
+
+            VMEntity obj;
+            if (target != null) obj = target;
+            else if (GotoObject.Position != LotTilePos.OUT_OF_WORLD) obj = GotoObject;
+            else
+            {
+                ShowErrorTooltip(state, 0, true);
+                return;
+            }
+
+            if (obj is VMAvatar && state.CtrlDown)
+            {
+                //debug switch to avatar
+                vm.SendCommand(new VMNetChangeControlCmd()
+                {
+                    TargetID = obj.ObjectID
+                });
+            }
+            else
+            {
+                obj = obj.MultitileGroup.GetInteractionGroupLeader(obj);
+                if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
+                {
+                    var flags = ((VMGameObject)obj).Disabled;
+
+                    if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
+                    {
+                        //for sale
+                        var retailPrice = obj.MultitileGroup.Price; //wrong... should get this from catalog
+                        var salePrice = obj.MultitileGroup.SalePrice;
+                        ShowErrorTooltip(state, 22, true, "$" + retailPrice.ToString("##,#0"), "$" + salePrice.ToString("##,#0"));
+                    }
+                    else if ((flags & VMGameObjectDisableFlags.LotCategoryWrong) > 0)
+                        ShowErrorTooltip(state, 21, true); //category wrong
+                    else if ((flags & VMGameObjectDisableFlags.TransactionIncomplete) > 0)
+                        ShowErrorTooltip(state, 27, true); //transaction not yet complete
+                    else if ((flags & VMGameObjectDisableFlags.ObjectLimitExceeded) > 0)
+                        ShowErrorTooltip(state, 24, true); //object is temporarily disabled... todo: something more helpful
+                    else if ((flags & VMGameObjectDisableFlags.PendingRoommateDeletion) > 0)
+                        ShowErrorTooltip(state, 16, true); //pending roommate deletion
+                }
+                else
+                {
+                    var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
+                    if (menu.Count != 0)
+                    {
+                        HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);
+                        PieMenu = new UIPieMenu(menu, obj, ActiveEntity, this);
+                        this.Add(PieMenu);
+                        PieMenu.X = menuPos.X;
+                        PieMenu.Y = menuPos.Y;
+                        var px = menuPos * FSOEnvironment.DPIScaleFactor;
+                        PieMenu.UpdateHeadPosition((int)px.X, (int)px.Y);
+                    }
+                }
             }
         }
 

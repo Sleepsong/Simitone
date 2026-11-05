@@ -88,15 +88,32 @@ namespace Simitone.VR
         public XrFovf Fov;
     }
 
+    /// <summary>A flat panel in tracking space: the virtual screen, the UI panel, a wrist display.</summary>
+    public struct VRQuad
+    {
+        public VRSwapchain Swapchain;
+        public XrPosef Pose;
+        public float Width, Height;
+        /// <summary>Blend with the texture's (premultiplied) alpha instead of drawing an opaque rectangle.</summary>
+        public bool Transparent;
+    }
+
     /// <summary>What to show in the headset this frame.</summary>
     public struct VRFrameSubmission
     {
+        public const int MaxQuads = 6;
+
         /// <summary>Stereo world view (one swapchain per eye, rendered with <see cref="VRRuntime.Views"/>).</summary>
         public VRSwapchain[] ProjectionSwapchains;
-        /// <summary>A flat virtual screen floating in front of the player.</summary>
-        public VRSwapchain QuadSwapchain;
-        public XrPosef QuadPose;
-        public float QuadWidth, QuadHeight;
+        /// <summary>Quads drawn over the world, back to front.</summary>
+        public VRQuad[] Quads;
+        public int QuadCount;
+
+        public void AddQuad(VRQuad quad)
+        {
+            Quads ??= new VRQuad[MaxQuads];
+            if (QuadCount < MaxQuads) Quads[QuadCount++] = quad;
+        }
     }
 
     /// <summary>
@@ -530,12 +547,12 @@ namespace Simitone.VR
             if (!FrameInProgress) return;
             FrameInProgress = false;
 
-            var layers = stackalloc void*[2];
+            var layers = stackalloc void*[1 + VRFrameSubmission.MaxQuads];
             uint layerCount = 0;
 
             var projectionViews = stackalloc XrCompositionLayerProjectionView[2];
             var projection = new XrCompositionLayerProjection();
-            var quad = new XrCompositionLayerQuad();
+            var quads = stackalloc XrCompositionLayerQuad[VRFrameSubmission.MaxQuads];
 
             if (ShouldRender && ViewsValid && submission.ProjectionSwapchains != null)
             {
@@ -556,15 +573,24 @@ namespace Simitone.VR
                 layers[layerCount++] = &projection;
             }
 
-            if (ShouldRender && submission.QuadSwapchain != null)
+            if (ShouldRender)
             {
-                quad.Type = XrStructureType.CompositionLayerQuad;
-                quad.Space = AppSpace;
-                quad.EyeVisibility = XrConst.EyeVisibilityBoth;
-                quad.SubImage = submission.QuadSwapchain.SubImage;
-                quad.Pose = submission.QuadPose;
-                quad.Size = new XrExtent2Df { Width = submission.QuadWidth, Height = submission.QuadHeight };
-                layers[layerCount++] = &quad;
+                for (int i = 0; i < submission.QuadCount; i++)
+                {
+                    var q = submission.Quads[i];
+                    if (q.Swapchain == null) continue;
+                    quads[i] = new XrCompositionLayerQuad
+                    {
+                        Type = XrStructureType.CompositionLayerQuad,
+                        LayerFlags = q.Transparent ? XrConst.CompositionLayerBlendTextureSourceAlpha : 0,
+                        Space = AppSpace,
+                        EyeVisibility = XrConst.EyeVisibilityBoth,
+                        SubImage = q.Swapchain.SubImage,
+                        Pose = q.Pose,
+                        Size = new XrExtent2Df { Width = q.Width, Height = q.Height }
+                    };
+                    layers[layerCount++] = &quads[i];
+                }
             }
 
             var end = new XrFrameEndInfo

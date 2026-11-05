@@ -31,11 +31,12 @@ namespace Simitone.VR
     /// <summary>
     /// OpenXR action set for Simitone. Default bindings:
     ///
-    ///   Left stick ........ move (smooth locomotion)           Left stick click ... sprint (hold)
-    ///   Right stick X ..... snap / smooth turn                 Right stick Y ...... floor up / down
-    ///   A (right) ......... toggle immersive view / screen     B (right) .......... recentre
-    ///   X (left) .......... pause / resume the game            Y (left) ........... cycle game speed
-    ///   Right trigger ..... click (virtual screen)             Right grip ......... right click (virtual screen)
+    ///   Left stick ........ walk (your Sim, or yourself)       Left stick click ... run (hold)
+    ///   Right stick X ..... snap / smooth turn                 Right stick Y ...... floor up / down (observer), scroll
+    ///   Right stick click . cycle game speed
+    ///   A (right) ......... first person / flat screen         B (right) .......... play as Sim / observer; recentre screen
+    ///   X (left) .......... pause / resume the game            Y (left) ........... next Sim in the family
+    ///   Right trigger ..... point and interact / click         Right grip ......... right click / close a pie menu
     ///
     /// Bindings are suggested for the Steam Frame controller, Oculus Touch, Valve Index, HTC Vive and the KHR
     /// simple controller. SteamVR also lets players rebind everything in its controller binding UI.
@@ -49,15 +50,15 @@ namespace Simitone.VR
         private ulong LeftHand, RightHand;
 
         private ulong MoveAction, TurnAction, SprintAction;
-        private ulong ToggleViewAction, RecenterAction, PauseAction, SpeedAction;
-        private ulong SelectAction, SecondaryAction, AimPoseAction, HapticAction;
-        private ulong LeftAimSpace, RightAimSpace;
+        private ulong ToggleViewAction, SwitchModeAction, PauseAction, SpeedAction, NextSimAction;
+        private ulong SelectAction, SecondaryAction, AimPoseAction, GripPoseAction, HapticAction;
+        private ulong LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace;
 
         public Vector2 Move;
         public Vector2 Turn;
-        public VRButton Sprint, ToggleView, Recenter, Pause, Speed, Select, Secondary;
+        public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, Select, Secondary;
         public float SelectValue, SecondaryValue;
-        public VRPose LeftAim, RightAim;
+        public VRPose LeftAim, RightAim, LeftGrip, RightGrip;
         public bool Active;
         public List<string> BoundProfiles = new List<string>();
 
@@ -84,13 +85,15 @@ namespace Simitone.VR
             MoveAction = CreateAction("move", "Move", XrActionType.Vector2fInput, false);
             TurnAction = CreateAction("turn", "Turn / change floor", XrActionType.Vector2fInput, false);
             SprintAction = CreateAction("sprint", "Sprint", XrActionType.BooleanInput, false);
-            ToggleViewAction = CreateAction("toggle_view", "Toggle immersive view", XrActionType.BooleanInput, false);
-            RecenterAction = CreateAction("recenter", "Recentre", XrActionType.BooleanInput, false);
+            ToggleViewAction = CreateAction("toggle_view", "First person / flat screen", XrActionType.BooleanInput, false);
+            SwitchModeAction = CreateAction("switch_mode", "Play as Sim / observer, recentre screen", XrActionType.BooleanInput, false);
             PauseAction = CreateAction("pause", "Pause / resume", XrActionType.BooleanInput, false);
             SpeedAction = CreateAction("speed", "Cycle game speed", XrActionType.BooleanInput, false);
-            SelectAction = CreateAction("select", "Click", XrActionType.FloatInput, false);
-            SecondaryAction = CreateAction("secondary", "Right click", XrActionType.FloatInput, false);
+            NextSimAction = CreateAction("next_sim", "Next Sim in the family", XrActionType.BooleanInput, false);
+            SelectAction = CreateAction("select", "Interact / click", XrActionType.FloatInput, false);
+            SecondaryAction = CreateAction("secondary", "Right click / close menu", XrActionType.FloatInput, false);
             AimPoseAction = CreateAction("aim", "Pointer", XrActionType.PoseInput, true);
+            GripPoseAction = CreateAction("grip", "Hand (wrist displays)", XrActionType.PoseInput, true);
             HapticAction = CreateAction("haptic", "Haptics", XrActionType.VibrationOutput, true);
 
             SuggestBindings(frameControllerExtension);
@@ -166,20 +169,22 @@ namespace Simitone.VR
                     (SecondaryAction, R + "input/squeeze/value"),
                     (AimPoseAction, L + "input/aim/pose"),
                     (AimPoseAction, R + "input/aim/pose"),
+                    (GripPoseAction, L + "input/grip/pose"),
+                    (GripPoseAction, R + "input/grip/pose"),
                     (HapticAction, L + "output/haptic"),
                     (HapticAction, R + "output/haptic"),
                 };
-                if (thumbstickClick) b.Add((SprintAction, L + "input/thumbstick/click"));
+                if (thumbstickClick)
+                {
+                    b.Add((SprintAction, L + "input/thumbstick/click"));
+                    b.Add((faceButtons ? SpeedAction : ToggleViewAction, R + "input/thumbstick/click"));
+                }
                 if (faceButtons)
                 {
                     b.Add((ToggleViewAction, R + "input/a/click"));
-                    b.Add((RecenterAction, R + "input/b/click"));
+                    b.Add((SwitchModeAction, R + "input/b/click"));
                     b.Add((PauseAction, L + "input/x/click"));
-                    b.Add((SpeedAction, L + "input/y/click"));
-                }
-                else if (thumbstickClick)
-                {
-                    b.Add((ToggleViewAction, R + "input/thumbstick/click"));
+                    b.Add((NextSimAction, L + "input/y/click"));
                 }
                 return b;
             }
@@ -206,14 +211,17 @@ namespace Simitone.VR
                 (MoveAction, L + "input/thumbstick"),
                 (TurnAction, R + "input/thumbstick"),
                 (SprintAction, L + "input/thumbstick/click"),
+                (SpeedAction, R + "input/thumbstick/click"),
                 (ToggleViewAction, R + "input/a/click"),
-                (RecenterAction, R + "input/b/click"),
+                (SwitchModeAction, R + "input/b/click"),
                 (PauseAction, L + "input/a/click"),
-                (SpeedAction, L + "input/b/click"),
+                (NextSimAction, L + "input/b/click"),
                 (SelectAction, R + "input/trigger/value"),
                 (SecondaryAction, R + "input/squeeze/value"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
+                (GripPoseAction, L + "input/grip/pose"),
+                (GripPoseAction, R + "input/grip/pose"),
                 (HapticAction, L + "output/haptic"),
                 (HapticAction, R + "output/haptic"),
             });
@@ -226,10 +234,13 @@ namespace Simitone.VR
                 (SprintAction, L + "input/trackpad/click"),
                 (ToggleViewAction, R + "input/menu/click"),
                 (PauseAction, L + "input/menu/click"),
+                (SwitchModeAction, L + "input/squeeze/click"),
                 (SelectAction, R + "input/trigger/value"),
                 (SecondaryAction, R + "input/squeeze/click"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
+                (GripPoseAction, L + "input/grip/pose"),
+                (GripPoseAction, R + "input/grip/pose"),
                 (HapticAction, L + "output/haptic"),
                 (HapticAction, R + "output/haptic"),
             });
@@ -240,8 +251,11 @@ namespace Simitone.VR
                 (SelectAction, R + "input/select/click"),
                 (ToggleViewAction, L + "input/select/click"),
                 (PauseAction, L + "input/menu/click"),
+                (SwitchModeAction, R + "input/menu/click"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
+                (GripPoseAction, L + "input/grip/pose"),
+                (GripPoseAction, R + "input/grip/pose"),
                 (HapticAction, L + "output/haptic"),
                 (HapticAction, R + "output/haptic"),
             });
@@ -260,16 +274,18 @@ namespace Simitone.VR
             };
             Api.Check(Api.AttachSessionActionSets(session, &attach), "xrAttachSessionActionSets");
 
-            LeftAimSpace = CreatePoseSpace(session, LeftHand);
-            RightAimSpace = CreatePoseSpace(session, RightHand);
+            LeftAimSpace = CreatePoseSpace(session, AimPoseAction, LeftHand);
+            RightAimSpace = CreatePoseSpace(session, AimPoseAction, RightHand);
+            LeftGripSpace = CreatePoseSpace(session, GripPoseAction, LeftHand);
+            RightGripSpace = CreatePoseSpace(session, GripPoseAction, RightHand);
         }
 
-        private ulong CreatePoseSpace(ulong session, ulong hand)
+        private ulong CreatePoseSpace(ulong session, ulong action, ulong hand)
         {
             var info = new XrActionSpaceCreateInfo
             {
                 Type = XrStructureType.ActionSpaceCreateInfo,
-                Action = AimPoseAction,
+                Action = action,
                 SubactionPath = hand,
                 PoseInActionSpace = XrPosef.Identity
             };
@@ -301,9 +317,10 @@ namespace Simitone.VR
             Turn = ApplyDeadZone(GetVector2(session, TurnAction), deadZone);
             Sprint.Set(GetBool(session, SprintAction));
             ToggleView.Set(GetBool(session, ToggleViewAction));
-            Recenter.Set(GetBool(session, RecenterAction));
+            SwitchMode.Set(GetBool(session, SwitchModeAction));
             Pause.Set(GetBool(session, PauseAction));
             Speed.Set(GetBool(session, SpeedAction));
+            NextSim.Set(GetBool(session, NextSimAction));
             SelectValue = GetFloat(session, SelectAction);
             SecondaryValue = GetFloat(session, SecondaryAction);
             // Hysteresis so a resting finger does not chatter the click.
@@ -312,16 +329,18 @@ namespace Simitone.VR
 
             LeftAim = Locate(LeftAimSpace, baseSpace, displayTime);
             RightAim = Locate(RightAimSpace, baseSpace, displayTime);
+            LeftGrip = Locate(LeftGripSpace, baseSpace, displayTime);
+            RightGrip = Locate(RightGripSpace, baseSpace, displayTime);
         }
 
         public void Clear()
         {
             Active = false;
             Move = Turn = Vector2.Zero;
-            Sprint.Set(false); ToggleView.Set(false); Recenter.Set(false); Pause.Set(false); Speed.Set(false);
-            Select.Set(false); Secondary.Set(false);
+            Sprint.Set(false); ToggleView.Set(false); SwitchMode.Set(false); Pause.Set(false); Speed.Set(false);
+            NextSim.Set(false); Select.Set(false); Secondary.Set(false);
             SelectValue = SecondaryValue = 0;
-            LeftAim.Valid = RightAim.Valid = false;
+            LeftAim.Valid = RightAim.Valid = LeftGrip.Valid = RightGrip.Valid = false;
         }
 
         private static Vector2 ApplyDeadZone(Vector2 v, float deadZone)
@@ -393,8 +412,9 @@ namespace Simitone.VR
         public void Dispose()
         {
             if (Api == null) return;
-            if (LeftAimSpace != 0) Api.DestroySpace(LeftAimSpace);
-            if (RightAimSpace != 0) Api.DestroySpace(RightAimSpace);
+            foreach (var space in new[] { LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace })
+                if (space != 0) Api.DestroySpace(space);
+            LeftGripSpace = RightGripSpace = 0;
             if (ActionSet != 0) Api.DestroyActionSet(ActionSet);
             LeftAimSpace = RightAimSpace = ActionSet = 0;
         }

@@ -16,13 +16,14 @@ namespace Simitone.Client.VR
     /// Glue between Simitone's game loop and the OpenXR runtime.
     ///
     /// Per frame (all on the game thread, inside MonoGame's Draw):
-    ///   BeginDraw  - xrWaitFrame / xrBeginFrame, locate eyes, read controllers.
-    ///   (draw)     - if the immersive camera is active, VRLotWorld renders both eyes into EyeTargets;
-    ///                otherwise Simitone draws normally to the window.
-    ///   EndDraw    - copy the eyes into the OpenXR swapchains (immersive), or copy the whole window onto a
-    ///                virtual screen quad (menus, CAS, neighbourhood, build/buy...), then xrEndFrame.
+    ///   BeginDraw  - xrWaitFrame / xrBeginFrame, locate eyes, read controllers, draw the wrist displays.
+    ///   (draw)     - in first person, VRLotWorld renders both eyes into EyeTargets; otherwise Simitone draws
+    ///                normally to the window. The UI is captured separately (VRUILayer).
+    ///   EndDraw    - first person: eyes (projection layer) + floating UI panel when a pie menu / dialog is up + wrist
+    ///                displays. Otherwise: the whole window on a flat virtual screen (loading, CAS, neighbourhood,
+    ///                build/buy). Then xrEndFrame.
     ///
-    /// While the virtual screen is shown, the right controller is a laser pointer driving the mouse.
+    /// Wherever a flat surface is shown, the right controller is a laser pointer driving the mouse.
     /// </summary>
     public static class SimitoneVR
     {
@@ -36,17 +37,14 @@ namespace Simitone.Client.VR
         public static string Status { get; private set; } = "VR not started";
 
         public static VRLotWorld CurrentWorld;
+        /// <summary>Sim (first person as your Sim) or Observer (roam freely). B switches while in first person.</summary>
+        public static VRPlayMode PlayMode = VRPlayMode.Sim;
+        /// <summary>Enter first person automatically when a lot loads.</summary>
+        public static bool WantsImmersiveOnLot = true;
 
-        /// <summary>Supplies the tile and floor of the selected Sim (B button jumps there in immersive mode).</summary>
+        /// <summary>Supplies the tile and floor of the selected Sim (entering a lot places you next to them).</summary>
         public static Func<(Vector2 tile, sbyte level)?> FocusProvider;
-
-        /// <summary>
-        /// True while a modal dialog is open. The game UI (and its dialogs) is hidden in the immersive view, so we
-        /// step out to the virtual screen until the dialog is answered, then put the player back where they were.
-        /// </summary>
-        public static Func<bool> DialogOpenProvider = DefaultDialogOpen;
-        private static bool LeftImmersiveForDialog;
-        private static System.Reflection.FieldInfo DialogsField;
+        public static Func<VRHudData> HudProvider;
 
         // frame state
         public static bool FrameActive { get; private set; }
@@ -58,24 +56,41 @@ namespace Simitone.Client.VR
         private static RenderTarget2D[] EyeTargets;
         private static VRSwapchain[] EyeSwapchains;
         private static VRSwapchain ScreenSwapchain;
+        private static VRSwapchain PanelSwapchain;
+        private static RenderTarget2D UITarget;
+        private static VRWristHud Wrists;
         private static VRPose LastHead;
         private static Stopwatch FrameTimer;
 
-        // virtual screen
+        // flat virtual screen (not in first person)
         private static bool ScreenPoseDirty = true;
         private static Vector3 ScreenPosition;
         private static Quaternion ScreenOrientation = Quaternion.Identity;
+
+        // floating UI panel (first person, while a pie menu or dialog is open)
+        /// <summary>Set every update by <see cref="VRGameBridge"/>.</summary>
+        public static bool UIPanelWanted;
+        public static bool PanelShown { get; private set; }
+        public static bool PanelPointerOnPanel { get; private set; }
+        public static float PanelPointerDistance { get; private set; }
+        private static Vector3 PanelPosition;
+        private static Quaternion PanelOrientation = Quaternion.Identity;
+        private static bool PanelArmed; // the trigger that opened a menu must be let go before it clicks on it
+
+        // laser pointer -> mouse
         private static bool PointerActive;
         private static Point PointerPixel;
-        private static int PointerScroll;
+        private static int ScrollOffset;
         private static float ScrollAccumulator;
         private static bool PointerLeft, PointerRight;
 
-        // requests consumed by the game screen
-        private static bool PauseRequested, SpeedRequested;
+        // requests consumed by the game (VRGameBridge), set from controller presses in BeginDraw
+        private static bool PauseRequested, SpeedRequested, ModeSwitchRequested, NextSimRequested;
+        private static bool WorldSelectRequested, CancelRequested;
 
         private static Game Game;
         private static StreamWriter LogFile;
+        private static System.Reflection.FieldInfo DialogsField;
 
         // ------------------------------------------------------------------ lifecycle
 
@@ -101,16 +116,8 @@ namespace Simitone.Client.VR
             catch { }
 
             Settings = VRSettings.Load(FSOEnvironment.UserDir, Log);
+            PlayMode = Settings.PlayMode;
             MirrorEye = Settings.MirrorEye?.ToLowerInvariant() switch { "right" => 1, "none" => -1, _ => 0 };
-
-            // The headset paces rendering (xrWaitFrame), so desktop vsync must not also block us.
-            graphics.SynchronizeWithVerticalRetrace = false;
-            graphics.ApplyChanges();
-            if (!(FSOEnvironment.Args ?? "").Contains("-hz") && Settings.UpdateRate > 0)
-            {
-                FSOEnvironment.RefreshRate = Settings.UpdateRate;
-                game.TargetElapsedTime = TimeSpan.FromTicks(10000000 / Settings.UpdateRate);
-            }
 
             Runtime = new VRRuntime(Log);
             if (!Runtime.Initialize("Simitone", out var error))
@@ -134,7 +141,8 @@ namespace Simitone.Client.VR
                     new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents),
                     new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents)
                 };
-                Log($"eye targets {w}x{h} (render scale {scale:0.##}), update rate {FSOEnvironment.RefreshRate} Hz");
+                Wrists = new VRWristHud();
+                Log($"eye targets {w}x{h} (render scale {scale:0.##})");
             }
             catch (Exception e)
             {
@@ -142,9 +150,24 @@ namespace Simitone.Client.VR
                 return;
             }
 
-            Runtime.ReferenceSpaceChanged += () => ScreenPoseDirty = true;
+            // Only now that VR works: the headset paces rendering (xrWaitFrame), so desktop vsync must not also block
+            // us, and updates run at a VR-friendly rate.
+            graphics.SynchronizeWithVerticalRetrace = false;
+            graphics.ApplyChanges();
+            if (!(FSOEnvironment.Args ?? "").Contains("-hz") && Settings.UpdateRate > 0)
+            {
+                FSOEnvironment.RefreshRate = Settings.UpdateRate;
+                game.TargetElapsedTime = TimeSpan.FromTicks(10000000 / Settings.UpdateRate);
+            }
+            // In a headset the desktop window usually isn't focused. MonoGame would then sleep 20 ms every frame and
+            // FreeSO would ignore all input (including the laser pointer), so a running session counts as focus.
+            game.InactiveSleepTime = TimeSpan.Zero;
+            var previousFallback = FSO.Common.Rendering.Framework.Game.FocusFallback;
+            FSO.Common.Rendering.Framework.Game.FocusFallback = () => SessionRunning || (previousFallback?.Invoke() ?? false);
+
+            Runtime.ReferenceSpaceChanged += () => { ScreenPoseDirty = true; PanelShown = false; };
             GameThread.EveryUpdate(InjectPointer);
-            Status = $"VR running on {Runtime.SystemName} ({Runtime.RuntimeName})";
+            Status = $"VR running on {Runtime.SystemName} ({Runtime.RuntimeName}), update rate {FSOEnvironment.RefreshRate} Hz";
             Log(Status);
         }
 
@@ -155,11 +178,13 @@ namespace Simitone.Client.VR
             {
                 if (EyeSwapchains != null) foreach (var s in EyeSwapchains) s.Dispose();
                 ScreenSwapchain?.Dispose();
+                PanelSwapchain?.Dispose();
+                Wrists?.Dispose();
                 Runtime.Dispose();
             }
             catch { }
             EyeSwapchains = null;
-            ScreenSwapchain = null;
+            ScreenSwapchain = PanelSwapchain = null;
             Runtime = null;
             Log("shut down");
             try { LogFile?.Dispose(); } catch { }
@@ -174,6 +199,10 @@ namespace Simitone.Client.VR
             try { Runtime?.Dispose(); } catch { }
             Runtime = null;
             PointerActive = false;
+            PanelShown = false;
+            // Without a headset, first person would leave you with no UI and keyboard-only movement.
+            var world = CurrentWorld;
+            if (world?.Immersive == true) GameThread.NextUpdate(_ => world.ExitImmersive());
         }
 
         // ------------------------------------------------------------------ frame loop
@@ -220,43 +249,64 @@ namespace Simitone.Client.VR
 
             var world = CurrentWorld;
             bool immersive = world?.Immersive == true;
-            if (world != null)
-            {
-                bool dialogOpen = DialogOpenProvider?.Invoke() == true;
-                if (immersive && dialogOpen && !LeftImmersiveForDialog)
-                {
-                    LeftImmersiveForDialog = true;
-                    Runtime.Haptic(true, 0.6f, 0.08f);
-                    GameThread.NextUpdate(_ => world.ToggleImmersive());
-                }
-                else if (immersive && !dialogOpen)
-                {
-                    LeftImmersiveForDialog = false; // player went back in by themselves
-                }
-                else if (!immersive && !dialogOpen && LeftImmersiveForDialog)
-                {
-                    LeftImmersiveForDialog = false;
-                    GameThread.NextUpdate(_ => { if (!world.Immersive) world.ToggleImmersive(resume: true); });
-                }
-            }
-
             var input = Runtime.Input;
-            if (input == null || !input.Active) { PointerActive = false; return; }
+            var inputActive = input != null && input.Active;
 
-            if (input.ToggleView.Pressed && world != null)
-                GameThread.NextUpdate(_ => world.ToggleImmersive());
-            if (input.Recenter.Pressed)
+            // ---- floating UI panel (first person only)
+            var showPanel = immersive && UIPanelWanted;
+            if (showPanel && !PanelShown) { PlacePanel(); PanelArmed = false; }
+            PanelShown = showPanel && LastHead.Valid;
+
+            if (inputActive)
             {
-                if (immersive && FocusProvider?.Invoke() is (Vector2 tile, sbyte level))
-                    GameThread.NextUpdate(_ => world.VRCamera.JumpTo(tile, level));
-                else
-                    ScreenPoseDirty = true;
+                if (input.ToggleView.Pressed && world != null)
+                    GameThread.NextUpdate(_ => world.ToggleImmersive());
+                if (input.SwitchMode.Pressed)
+                {
+                    if (immersive) ModeSwitchRequested = true;
+                    else ScreenPoseDirty = true; // B on the flat screen: bring it back in front of you
+                }
+                if (input.Pause.Pressed) PauseRequested = true;
+                if (input.Speed.Pressed) SpeedRequested = true;
+                if (input.NextSim.Pressed) NextSimRequested = true;
             }
-            if (input.Pause.Pressed) PauseRequested = true;
-            if (input.Speed.Pressed) SpeedRequested = true;
 
-            if (!immersive) UpdatePointer(gd, input);
-            else PointerActive = false;
+            // ---- laser pointer
+            PointerActive = false;
+            PanelPointerOnPanel = false;
+            PanelPointerDistance = 0;
+            if (inputActive)
+            {
+                if (!immersive)
+                {
+                    if (ScreenSwapchain != null && !ScreenPoseDirty)
+                        UpdatePointer(gd, input, ScreenPosition, ScreenOrientation, Settings.ScreenWidth,
+                            (float)ScreenSwapchain.Height / ScreenSwapchain.Width, armed: true);
+                }
+                else if (PanelShown)
+                {
+                    if (!input.Select.Down) PanelArmed = true;
+                    var pp = gd.PresentationParameters;
+                    UpdatePointer(gd, input, PanelPosition, PanelOrientation, Settings.PanelWidth,
+                        (float)pp.BackBufferHeight / Math.Max(1, pp.BackBufferWidth), PanelArmed);
+                    PanelPointerOnPanel = PointerActive;
+                    if (input.Select.Pressed && !PointerActive) WorldSelectRequested = true; // beside the panel
+                    if (input.Secondary.Pressed && !PointerActive) CancelRequested = true;
+                }
+                else
+                {
+                    if (input.Select.Pressed) WorldSelectRequested = true;
+                    if (input.Secondary.Pressed) CancelRequested = true;
+                }
+            }
+
+            // ---- wrist displays (drawn now: switching render targets later would disturb the frame)
+            if (immersive && Wrists != null)
+            {
+                Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
+                try { Wrists.Render(gd, HudProvider?.Invoke()); }
+                catch (Exception e) { Log("wrist display error: " + e.Message); }
+            }
         }
 
         public static void EndDraw(GraphicsDevice gd)
@@ -278,6 +328,8 @@ namespace Simitone.Client.VR
                             EyeSwapchains[i].Release();
                         }
                         submission.ProjectionSwapchains = EyeSwapchains;
+                        Wrists?.Submit(Runtime, ref submission);
+                        if (PanelShown) SubmitPanel(ref submission);
                     }
                     else
                     {
@@ -294,15 +346,27 @@ namespace Simitone.Client.VR
 
         public static RenderTarget2D[] GetEyeTargets(GraphicsDevice gd) => EyeTargets;
 
+        /// <summary>The render target the UI is captured into (window sized), for <see cref="VRUILayer"/>.</summary>
+        public static RenderTarget2D GetUITarget(GraphicsDevice gd, int width, int height)
+        {
+            if (UITarget == null || UITarget.Width != width || UITarget.Height != height)
+            {
+                UITarget?.Dispose();
+                UITarget = new RenderTarget2D(gd, Math.Max(1, width), Math.Max(1, height), false, SurfaceFormat.Color,
+                    DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents);
+            }
+            return UITarget;
+        }
+
         public static VRPose HeadPoseTracking() => LastHead;
 
         public static void OnImmersiveChanged(VRCameraController controller, bool immersive)
         {
-            Log(immersive ? "entered immersive view" : "left immersive view");
-            if (!immersive) ScreenPoseDirty = true;
+            Log(immersive ? "entered first person (" + PlayMode + ")" : "left first person");
+            if (!immersive) { ScreenPoseDirty = true; PanelShown = false; }
         }
 
-        // ------------------------------------------------------------------ virtual screen
+        // ------------------------------------------------------------------ flat screen and panel
 
         private static void SubmitScreen(GraphicsDevice gd, ref VRFrameSubmission submission)
         {
@@ -318,23 +382,53 @@ namespace Simitone.Client.VR
 
             var image = ScreenSwapchain.Acquire();
             GLInterop.BlitBackbuffer(w, h, image, w, h);
-            if (PointerActive)
-            {
-                // GL origin is bottom-left.
-                int cx = PointerPixel.X, cy = h - 1 - PointerPixel.Y;
-                int s = Math.Max(4, h / 120);
-                GLInterop.FillRects(image, new (int, int, int, int, float, float, float)[]
-                {
-                    (cx - s - 1, cy - s - 1, 2 * s + 2, 2 * s + 2, 0f, 0f, 0f),
-                    (cx - s + 1, cy - s + 1, 2 * s - 2, 2 * s - 2, PointerLeft ? 0.4f : 1f, 1f, PointerLeft ? 0.4f : 1f),
-                });
-            }
+            DrawCursor(image, h);
             ScreenSwapchain.Release();
 
-            submission.QuadSwapchain = ScreenSwapchain;
-            submission.QuadPose = VRMath.Pose(ScreenPosition, ScreenOrientation);
-            submission.QuadWidth = Settings.ScreenWidth;
-            submission.QuadHeight = Settings.ScreenWidth * h / w;
+            submission.AddQuad(new VRQuad
+            {
+                Swapchain = ScreenSwapchain,
+                Pose = VRMath.Pose(ScreenPosition, ScreenOrientation),
+                Width = Settings.ScreenWidth,
+                Height = Settings.ScreenWidth * h / w
+            });
+        }
+
+        private static void SubmitPanel(ref VRFrameSubmission submission)
+        {
+            if (UITarget == null) return;
+            int w = UITarget.Width, h = UITarget.Height;
+            if (PanelSwapchain == null || PanelSwapchain.Width != w || PanelSwapchain.Height != h)
+            {
+                PanelSwapchain?.Dispose();
+                PanelSwapchain = Runtime.CreateSwapchain(w, h);
+            }
+            var image = PanelSwapchain.Acquire();
+            GLInterop.BlitTexture(GLInterop.GetTextureHandle(UITarget), w, h, image, 0, 0, w, h, flipY: true);
+            DrawCursor(image, h);
+            PanelSwapchain.Release();
+
+            submission.AddQuad(new VRQuad
+            {
+                Swapchain = PanelSwapchain,
+                Pose = VRMath.Pose(PanelPosition, PanelOrientation),
+                Width = Settings.PanelWidth,
+                Height = Settings.PanelWidth * h / w,
+                Transparent = true
+            });
+        }
+
+        private static void DrawCursor(uint image, int height)
+        {
+            if (!PointerActive) return;
+            // GL origin is bottom-left.
+            int cx = PointerPixel.X, cy = height - 1 - PointerPixel.Y;
+            int s = Math.Max(4, height / 120);
+            GLInterop.FillRects(image, new (int, int, int, int, float, float, float)[]
+            {
+                (cx - s - 1, cy - s - 1, 2 * s + 2, 2 * s + 2, 0f, 0f, 0f),
+                (cx - s + 1, cy - s + 1, 2 * s - 2, 2 * s - 2, PointerLeft ? 0.4f : 1f, 1f, PointerLeft ? 0.4f : 1f),
+            });
         }
 
         private static void PlaceScreen()
@@ -348,42 +442,68 @@ namespace Simitone.Client.VR
             ScreenPoseDirty = false;
         }
 
-        private static void UpdatePointer(GraphicsDevice gd, VRInput input)
+        private static void PlacePanel()
+        {
+            var head = LastHead;
+            if (!head.Valid) return;
+            var yaw = VRMath.Yaw(head.Orientation);
+            PanelOrientation = Quaternion.CreateFromAxisAngle(Vector3.Up, yaw);
+            var forward = Vector3.Transform(-Vector3.UnitZ, PanelOrientation);
+            PanelPosition = head.Position + forward * Settings.PanelDistance - new Vector3(0, 0.15f, 0);
+        }
+
+        /// <summary>Points the controller's ray at a flat surface; when it hits, the hit drives the mouse.</summary>
+        private static void UpdatePointer(GraphicsDevice gd, VRInput input, Vector3 position, Quaternion orientation,
+            float width, float aspect, bool armed)
         {
             var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
-            PointerActive = false;
-            if (!aim.Valid || ScreenPoseDirty || ScreenSwapchain == null) return;
+            if (!aim.Valid) return;
 
-            var normal = Vector3.Transform(Vector3.UnitZ, ScreenOrientation);
+            var normal = Vector3.Transform(Vector3.UnitZ, orientation);
             var dir = aim.Forward;
             var denom = Vector3.Dot(dir, normal);
             if (Math.Abs(denom) < 1e-4f) return;
-            var t = Vector3.Dot(ScreenPosition - aim.Position, normal) / denom;
+            var t = Vector3.Dot(position - aim.Position, normal) / denom;
             if (t <= 0) return;
+            PanelPointerDistance = t;
             var hit = aim.Position + dir * t;
-            var local = Vector3.Transform(hit - ScreenPosition, Quaternion.Inverse(ScreenOrientation));
-            float width = Settings.ScreenWidth;
-            float height = width * ScreenSwapchain.Height / ScreenSwapchain.Width;
+            var local = Vector3.Transform(hit - position, Quaternion.Inverse(orientation));
+            float height = width * aspect;
             float u = local.X / width + 0.5f;
             float v = 0.5f - local.Y / height;
             if (u < 0 || u > 1 || v < 0 || v > 1) return;
 
             var pp = gd.PresentationParameters;
             PointerPixel = new Point((int)(u * pp.BackBufferWidth), (int)(v * pp.BackBufferHeight));
-            PointerLeft = input.Select.Down;
-            PointerRight = input.Secondary.Down;
+            PointerLeft = armed && input.Select.Down;
+            PointerRight = armed && input.Secondary.Down;
             ScrollAccumulator += input.Turn.Y * 900f * FrameDelta;
-            PointerScroll += (int)ScrollAccumulator;
+            ScrollOffset += (int)ScrollAccumulator;
             ScrollAccumulator -= (int)ScrollAccumulator;
             PointerActive = true;
-            if (input.Select.Pressed || input.Secondary.Pressed) Runtime.Haptic(true, 0.25f, 0.015f);
+            if (armed && (input.Select.Pressed || input.Secondary.Pressed)) Runtime.Haptic(true, 0.25f, 0.015f);
         }
 
-        /// <summary>Feeds the laser pointer into FreeSO's UI as the mouse (runs before the UI updates).</summary>
+        /// <summary>
+        /// Feeds the laser pointer into FreeSO's UI as the mouse (runs before the UI updates). The pointer's scrolling
+        /// is an offset on the real wheel, applied whether or not the pointer is on a surface, so the zoom doesn't
+        /// jump when the pointer moves on or off.
+        /// </summary>
         private static void InjectPointer(UpdateState state)
         {
-            if (!PointerActive) return;
-            var ms = new MouseState(PointerPixel.X, PointerPixel.Y, PointerScroll,
+            var real = state.MouseState;
+            if (!PointerActive)
+            {
+                if (ScrollOffset != 0)
+                {
+                    var withOffset = new MouseState(real.X, real.Y, real.ScrollWheelValue + ScrollOffset,
+                        real.LeftButton, real.MiddleButton, real.RightButton, real.XButton1, real.XButton2);
+                    state.MouseState = withOffset;
+                    if (state.MouseStates.Count > 0) state.MouseStates[0].MouseState = withOffset;
+                }
+                return;
+            }
+            var ms = new MouseState(PointerPixel.X, PointerPixel.Y, real.ScrollWheelValue + ScrollOffset,
                 PointerLeft ? ButtonState.Pressed : ButtonState.Released,
                 ButtonState.Released,
                 PointerRight ? ButtonState.Pressed : ButtonState.Released,
@@ -392,7 +512,8 @@ namespace Simitone.Client.VR
             if (state.MouseStates.Count > 0) state.MouseStates[0].MouseState = ms;
         }
 
-        private static bool DefaultDialogOpen()
+        /// <summary>True while a modal dialog is open in the game UI.</summary>
+        public static bool DialogOpen()
         {
             var layer = FSO.Client.GameFacade.Screens;
             if (layer == null) return false;
@@ -405,20 +526,20 @@ namespace Simitone.Client.VR
             return false;
         }
 
-        // ------------------------------------------------------------------ requests for the game screen
+        // ------------------------------------------------------------------ requests for the game
 
-        public static bool ConsumePauseRequest()
+        private static bool Consume(ref bool flag)
         {
-            var r = PauseRequested;
-            PauseRequested = false;
+            var r = flag;
+            flag = false;
             return r;
         }
 
-        public static bool ConsumeSpeedRequest()
-        {
-            var r = SpeedRequested;
-            SpeedRequested = false;
-            return r;
-        }
+        public static bool ConsumePauseRequest() => Consume(ref PauseRequested);
+        public static bool ConsumeSpeedRequest() => Consume(ref SpeedRequested);
+        public static bool ConsumeModeSwitch() => Consume(ref ModeSwitchRequested);
+        public static bool ConsumeNextSim() => Consume(ref NextSimRequested);
+        public static bool ConsumeWorldSelect() => Consume(ref WorldSelectRequested);
+        public static bool ConsumeCancel() => Consume(ref CancelRequested);
     }
 }

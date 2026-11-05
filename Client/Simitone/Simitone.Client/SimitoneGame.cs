@@ -201,7 +201,8 @@ namespace Simitone.Client
 
             WorldContent.Init(this.Services, Content.RootDirectory);
             base.Screen.Layers.Add(SceneMgr);
-            base.Screen.Layers.Add(uiLayer);
+            // In VR the UI is also captured on its own, to float pie menus and dialogs over the 3D view.
+            base.Screen.Layers.Add(SimitoneVR.Requested ? new VRUILayer(uiLayer) : (IGraphicsLayer)uiLayer);
             GameFacade.LastUpdateState = base.Screen.State;
 
             // Try setting icon again after full initialization (for window managers that need it)

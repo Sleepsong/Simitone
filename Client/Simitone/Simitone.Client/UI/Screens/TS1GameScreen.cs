@@ -50,6 +50,9 @@ namespace Simitone.Client.UI.Screens
         public UILotControl LotControl { get; set; }
         public UISimitoneFrontend Frontend { get; set; }
         private FSO.LotView.World World;
+        /// <summary>The lot world when running with -vr (it renders per eye), else null.</summary>
+        public VRLotWorld VRWorld => World as VRLotWorld;
+        private VRGameBridge VRBridge;
         public FSO.SimAntics.VM vm { get; set; }
         public VMNetDriver Driver;
         public UISimitoneBg Bg;
@@ -410,7 +413,9 @@ namespace Simitone.Client.UI.Screens
         {
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             
-            Visible = World?.Visible != false && World?.State.Cameras.HideUI != true;
+            // FreeSO hides the UI in first person. In VR it stays live (its bottom panel is replaced by the wrist
+            // displays) so pie menus and dialogs can be shown on the floating panel.
+            Visible = World?.Visible != false && (World?.State.Cameras.HideUI != true || SimitoneVR.Available);
             GameFacade.Game.IsMouseVisible = Visible;
             TestMode.Update(this);
 
@@ -427,7 +432,7 @@ namespace Simitone.Client.UI.Screens
             }
             base.Update(state);
             UpdateAutoFastForward();
-            UpdateVRRequests();
+            UpdateVRRequests(state);
 
             // Update weather effects (sounds and terrain)
             UpdateWeatherEffects();
@@ -485,47 +490,12 @@ namespace Simitone.Client.UI.Screens
             //SaveHouseButton_OnButtonClick(null);
         }
 
-        private int SpeedBeforeVRPause = 1;
-        private bool WasVRImmersive;
-        private int WallsModeBeforeVR = 1;
-
-        /// <summary>Pause (X) and game speed (Y) buttons on the VR controllers; walls up while immersive.</summary>
-        private void UpdateVRRequests()
+        /// <summary>VR: play as your Sim, pointing, wrist displays, controller buttons (see Simitone.Client/VR).</summary>
+        private void UpdateVRRequests(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
-            // The lot control keeps updating while the UI is hidden; stop it cutting walls away around the
-            // (invisible) mouse while you are walking around inside the house.
-            var immersive = (World as VRLotWorld)?.Immersive == true;
-            if (LotControl != null && immersive != WasVRImmersive)
-            {
-                if (immersive)
-                {
-                    WallsModeBeforeVR = LotControl.WallsMode;
-                    LotControl.WallsMode = 2;
-                }
-                else LotControl.WallsMode = WallsModeBeforeVR;
-                WasVRImmersive = immersive;
-            }
-
-            var pause = SimitoneVR.ConsumePauseRequest();
-            var speed = SimitoneVR.ConsumeSpeedRequest();
-            if (vm == null || vm.SpeedMultiplier < 0) return; // -1 = build/buy/options mode
-            int current;
-            switch (vm.SpeedMultiplier)
-            {
-                case 0: current = 0; break;
-                case 3: current = 2; break;
-                case 10: current = 3; break;
-                default: current = 1; break;
-            }
-            if (pause)
-            {
-                if (current == 0) ChangeSpeedTo(SpeedBeforeVRPause);
-                else { SpeedBeforeVRPause = current; ChangeSpeedTo(0); }
-            }
-            else if (speed)
-            {
-                ChangeSpeedTo(current >= 3 ? 1 : current + 1);
-            }
+            if (!SimitoneVR.Requested) return;
+            VRBridge ??= new VRGameBridge(this);
+            VRBridge.Update(state);
         }
 
         private void UpdateWeatherEffects()
@@ -639,6 +609,7 @@ namespace Simitone.Client.UI.Screens
             }
             vm.CloseNet(VMCloseNetReason.LeaveLot);
             GameFacade.Scenes.Remove(World);
+            VRBridge?.Reset();
             World.Dispose();
             //LotControl.Dispose();
             this.Remove(LotControl);
@@ -665,6 +636,8 @@ namespace Simitone.Client.UI.Screens
             Driver = new VMServerDriver(globalLink);
 
             vm = new VM(new VMContext(World), Driver, new UIHeadlineRendererProvider());
+            //VR "play as your Sim" walks the selected Sim with FreeSO's direct control (TS1 support is opt-in per VM)
+            if (SimitoneVR.Requested) vm.AllowDirectControl = true;
             vm.ListenBHAVChanges();
             vm.Init();
 
@@ -677,12 +650,6 @@ namespace Simitone.Client.UI.Screens
 
             LotControl = new UILotControl(vm, World);
             this.AddAt(0, LotControl);
-            SimitoneVR.FocusProvider = () =>
-            {
-                var sim = LotControl?.ActiveEntity;
-                if (sim == null) return null;
-                return (new Vector2(sim.Position.x / 16f, sim.Position.y / 16f), sim.Position.Level);
-            };
 
             if (m_ZoomLevel > 3)
             {

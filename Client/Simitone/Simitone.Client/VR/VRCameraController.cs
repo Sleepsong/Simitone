@@ -1,6 +1,7 @@
 using System;
 using FSO.Common.Rendering.Framework.Model;
 using FSO.LotView;
+using FSO.LotView.Components;
 using FSO.LotView.Model;
 using FSO.LotView.Utils;
 using FSO.LotView.Utils.Camera;
@@ -12,23 +13,29 @@ using Simitone.VR;
 namespace Simitone.Client.VR
 {
     /// <summary>
-    /// A camera whose view/projection come straight from the headset: one pair per eye, plus a "mono" pair
-    /// for anything that queries the camera outside the per-eye passes (audio listener, picking, transitions).
+    /// A camera whose view/projection come straight from the headset: one pair per eye, a "mono" pair for anything
+    /// that queries the camera outside the per-eye passes (audio listener, transitions), and a "pointer" pair that
+    /// looks down the controller's ray so FreeSO's own picking can find what you point at.
     /// </summary>
     public class VREyeCamera : WorldCamera3D
     {
+        public const int MonoEye = -1;
+        public const int PointerEye = 2;
+
         public readonly Matrix[] EyeView = { Matrix.Identity, Matrix.Identity };
         public readonly Matrix[] EyeProjection = { Matrix.Identity, Matrix.Identity };
         public Matrix MonoView = Matrix.Identity;
         public Matrix MonoProjection = Matrix.Identity;
-        private int _Eye = -1;
+        public Matrix PointerView = Matrix.Identity;
+        public Matrix PointerProjection = Matrix.Identity;
+        private int _Eye = MonoEye;
 
         public VREyeCamera(GraphicsDevice device) : base(device, Vector3.Zero, Vector3.Forward, Vector3.Up)
         {
             MonoProjection = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(90), 1, 0.15f, 1000);
         }
 
-        /// <summary>-1 = mono, 0 = left eye, 1 = right eye.</summary>
+        /// <summary>-1 = mono, 0 = left eye, 1 = right eye, 2 = pointer.</summary>
         public int Eye
         {
             get => _Eye;
@@ -43,20 +50,24 @@ namespace Simitone.Client.VR
 
         protected override void CalculateView()
         {
-            m_View = (_Eye >= 0) ? EyeView[_Eye] : MonoView;
+            m_View = _Eye switch { 0 => EyeView[0], 1 => EyeView[1], PointerEye => PointerView, _ => MonoView };
         }
 
         protected override void CalculateProjection()
         {
-            m_Projection = (_Eye >= 0) ? EyeProjection[_Eye] : MonoProjection;
+            m_Projection = _Eye switch { 0 => EyeProjection[0], 1 => EyeProjection[1], PointerEye => PointerProjection, _ => MonoProjection };
         }
     }
 
     /// <summary>
-    /// Immersive first-person VR camera with full (smooth) locomotion.
+    /// The immersive VR camera. It takes over FreeSO's first-person camera slot (CameraControllers.CameraFirstPerson),
+    /// so the existing first-person toggle (Tab, or A on the right controller) switches between it and the normal camera.
     ///
-    /// It takes over FreeSO's first-person camera slot (CameraControllers.CameraFirstPerson), so the existing
-    /// first-person toggle (Tab, or A on the right controller) switches between it and the normal camera.
+    /// Two ways to play:
+    ///  - <b>Sim</b> (<see cref="SimAvatar"/> set): you see through your Sim's eyes. The view is anchored to their head
+    ///    (smoothed, with a little room to lean) and the left stick walks them through FreeSO's direct control
+    ///    (see <see cref="VRGameBridge"/>), so walls, doors and stairs are the game's own.
+    ///  - <b>Observer</b>: you roam the lot yourself with smooth locomotion, wall collision and floor changes.
     ///
     /// Coordinates: FreeSO's 3D world uses 3 units per tile with +Y up; a TS1 tile is roughly a metre, so
     /// <see cref="VRSettings.WorldScale"/> world units = 1 m. The "rig" is the tracking space origin placed
@@ -76,11 +87,27 @@ namespace Simitone.Client.VR
         private float FloorY;
         private bool FloorInitialised;
         private bool SnapLatched, LevelLatched;
-        private bool Active;
+        public bool Active { get; private set; }
 
-        // where the player's head is, in world units / tiles (updated every frame)
+        // where the player's head is, in world units (updated every frame)
         public Vector3 HeadWorld;
         public float HeadWorldYaw;
+
+        // ---- Sim mode
+        /// <summary>The Sim whose eyes we look through, or null for observer mode. Set by <see cref="VRGameBridge"/>.</summary>
+        public AvatarComponent SimAvatar;
+        private AvatarComponent HiddenHead;
+        private Vector3 SmoothedSimHead;
+        private bool SimHeadInitialised;
+        private Vector3 LeanNeutral;   // tracking-space head position that sits exactly in the Sim's head
+        private bool LeanInitialised;
+        public bool SimMode => SimAvatar != null;
+
+        // ---- pointer (right controller ray), in world units; the bridge picks along it and reports the hit distance
+        public bool PointerVisible;
+        public Vector3 PointerStart, PointerDirection;
+        public float PointerLength = 6f;
+        public bool PointerHasTarget;
 
         // desktop keyboard fallback (no controllers, e.g. testing with a simulated headset)
         private Vector2 KeyboardMove;
@@ -92,15 +119,17 @@ namespace Simitone.Client.VR
         private bool SavedDrawRoofs;
         private bool[] SavedCutaway;
         private bool SavedDynamicCutaway;
+        private int FloorsUsedRefresh;
+        private sbyte FloorsUsed = 1;
 
-        private World World;
-
-        // where the player was when immersion last ended, so we can put them back (e.g. after a dialog)
+        // where the player was when immersion last ended, so we can put them back (e.g. after build mode)
         public bool ResumeOnNextActivate;
         private bool HasSavedRig;
         private Vector3 SavedRigPosition;
         private float SavedRigYaw;
         private sbyte SavedPlayerLevel;
+
+        private World World;
 
         public VRCameraController(GraphicsDevice gd, WorldState state) : base(gd, state)
         {
@@ -109,6 +138,9 @@ namespace Simitone.Client.VR
 
         private static VRSettings Settings => SimitoneVR.Settings ?? VRSettings.Default;
         private float Scale => Settings.WorldScale;
+
+        /// <summary>The lot blueprint (World keeps it protected; VRLotWorld exposes it).</summary>
+        public static Blueprint Lot(World world) => (world as VRLotWorld)?.LotBlueprint;
 
         // ------------------------------------------------------------------ activation
 
@@ -121,14 +153,13 @@ namespace Simitone.Client.VR
         public override void OnActive(ICameraController previous, World world)
         {
             World = world;
-            Active = true;
             LastFP = false;
             var state = world.State;
             state.Cameras.TransitionWeights.Clear();
 
             // Face the way the previous camera was looking and stand where it was looking.
             float rotationX;
-            if (previous is CameraController3D c3d) rotationX = c3d.RotationX;
+            if (previous is CameraController3D c3d && previous != this) rotationX = c3d.RotationX;
             else if (previous is CameraController2D c2d) rotationX = (float)Math.PI * (((int)c2d.Camera.Rotation) / 2f - 0.25f);
             else rotationX = _RotationX;
 
@@ -137,22 +168,28 @@ namespace Simitone.Client.VR
                 RigPosition = SavedRigPosition;
                 RigYaw = SavedRigYaw;
                 PlayerLevel = SavedPlayerLevel;
-                SetRenderState(world, true);
             }
             else
             {
-                var spawnTile = state.CenterTile;
                 PlayerLevel = Math.Max((sbyte)1, state.Level);
-                SetRenderState(world, true);
                 FloorInitialised = false;
-                PlaceHead(spawnTile, rotationX + MathHelper.PiOver2);
+                PlaceHead(state.CenterTile, rotationX + MathHelper.PiOver2);
             }
             ResumeOnNextActivate = false;
+            SimHeadInitialised = false;
+            LeanInitialised = false;
 
-            SimitoneVR.OnImmersiveChanged(this, true);
+            // Only remember the normal view's state once: a second activation without a deactivation in between
+            // (two toggles in one update) must not save our own immersive state as "normal".
+            if (!Active)
+            {
+                Active = true;
+                SetRenderState(world, true);
+                SimitoneVR.OnImmersiveChanged(this, true);
+            }
         }
 
-        /// <summary>Called by <see cref="VRLotWorld"/> when another camera takes over.</summary>
+        /// <summary>Called by <see cref="VRLotWorld"/> when another camera has taken over.</summary>
         public void OnDeactivated(World world)
         {
             if (!Active) return;
@@ -161,8 +198,10 @@ namespace Simitone.Client.VR
             SavedRigPosition = RigPosition;
             SavedRigYaw = RigYaw;
             SavedPlayerLevel = PlayerLevel;
+            SetHiddenHead(null);
             SetRenderState(world, false);
-            EyeCamera.Eye = -1;
+            EyeCamera.Eye = VREyeCamera.MonoEye;
+            PointerVisible = false;
             SimitoneVR.OnImmersiveChanged(this, false);
         }
 
@@ -176,8 +215,8 @@ namespace Simitone.Client.VR
                 SavedDrawRoofs = state.DrawRoofs;
                 SavedDynamicCutaway = state.DynamicCutaway;
                 // Everything above you is visible from inside: upper floors become ceilings, roofs are drawn.
-                var top = bp != null ? (sbyte)Math.Max(bp.GetFloorsUsed(), PlayerLevel) : state.Level;
-                if (state.Level != top) state.Level = top;
+                FloorsUsedRefresh = 0;
+                KeepAllFloorsVisible(world);
                 state.DrawRoofs = true;
                 state.DynamicCutaway = false;
                 if (bp != null)
@@ -202,6 +241,31 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>
+        /// Draw every floor in use (upper floors are ceilings from inside). Re-applied every frame because the game
+        /// moves the visible floor to the selected Sim's when it centres the camera on them (World.CenterTo).
+        /// </summary>
+        private void KeepAllFloorsVisible(World world)
+        {
+            var bp = Lot(world);
+            if (bp == null) return;
+            if (FloorsUsedRefresh-- <= 0)
+            {
+                FloorsUsed = bp.GetFloorsUsed();
+                FloorsUsedRefresh = 120;
+            }
+            var top = (sbyte)Math.Max(FloorsUsed, PlayerLevel);
+            if (world.State.Level != top) world.State.Level = top;
+        }
+
+        private void SetHiddenHead(AvatarComponent avatar)
+        {
+            if (HiddenHead == avatar) return;
+            if (HiddenHead?.Avatar != null) HiddenHead.Avatar.HideHead = false;
+            HiddenHead = avatar;
+            if (HiddenHead?.Avatar != null) HiddenHead.Avatar.HideHead = true;
+        }
+
+        /// <summary>
         /// Moves the rig so the player's head is over <paramref name="tile"/> looking along <paramref name="worldYaw"/>,
         /// keeping their physical position/orientation in the room.
         /// </summary>
@@ -215,26 +279,29 @@ namespace Simitone.Client.VR
             FloorInitialised = false;
         }
 
-        /// <summary>Jump next to a Sim (or any tile), e.g. the currently selected one.</summary>
+        /// <summary>Observer mode: jump next to a Sim (or any tile), e.g. the selected one.</summary>
         public void JumpTo(Vector2 tile, sbyte level)
         {
-            // Stand a little behind the target so it is in front of you, not inside you.
-            var forward = new Vector2(-(float)Math.Sin(HeadWorldYaw), -(float)Math.Cos(HeadWorldYaw));
             PlayerLevel = Math.Max((sbyte)1, level);
-            PlaceHead(tile - forward * 1.25f, HeadWorldYaw);
-            if (Lot(World) != null)
-            {
-                var top = (sbyte)Math.Max(Lot(World).GetFloorsUsed(), PlayerLevel);
-                if (World.State.Level != top) World.State.Level = top;
-            }
+            // Stand a little behind the target so it is in front of you, without crossing a wall to get there.
+            var forward = new Vector2(-(float)Math.Sin(HeadWorldYaw), -(float)Math.Cos(HeadWorldYaw));
+            var stand = (World != null) ? Collide(World, tile, -forward * 1.25f) : tile - forward * 1.25f;
+            PlaceHead(stand, HeadWorldYaw);
+            if (World != null) { FloorsUsedRefresh = 0; KeepAllFloorsVisible(World); }
         }
 
-        private static Vector3 RotateYaw(Vector3 v, float yaw)
+        public static Vector3 RotateYaw(Vector3 v, float yaw)
         {
             var c = (float)Math.Cos(yaw);
             var s = (float)Math.Sin(yaw);
             return new Vector3(v.X * c + v.Z * s, v.Y, -v.X * s + v.Z * c);
         }
+
+        /// <summary>Tracking space (metres) to world units.</summary>
+        public Vector3 TrackingToWorld(Vector3 tracking) => RigPosition + RotateYaw(tracking * Scale, RigYaw);
+
+        /// <summary>World yaw of something tracked (a controller, the head).</summary>
+        public float WorldYaw(Quaternion trackingOrientation) => MathHelper.WrapAngle(RigYaw + VRMath.Yaw(trackingOrientation));
 
         // ------------------------------------------------------------------ per-frame
 
@@ -260,15 +327,39 @@ namespace Simitone.Client.VR
             if (state.NewKeys.Contains(Keys.PageDown)) KeyboardLevel = -1;
         }
 
+        /// <summary>Movement intent this frame (stick plus keyboard fallback), for the bridge to walk the Sim with.</summary>
+        public Vector2 MoveIntent
+        {
+            get
+            {
+                var input = SimitoneVR.Runtime?.Input;
+                var move = (input != null && input.Active ? input.Move : Vector2.Zero) + KeyboardMove;
+                if (move.LengthSquared() > 1) move.Normalize();
+                return move;
+            }
+        }
+
+        /// <summary>World yaw that "forward" on the movement stick refers to (head, or left controller).</summary>
+        public float MoveYaw
+        {
+            get
+            {
+                var input = SimitoneVR.Runtime?.Input;
+                if (Settings.MoveDirection == VRMoveDirection.LeftHand && input != null && input.LeftAim.Valid)
+                    return WorldYaw(input.LeftAim.Orientation);
+                return HeadWorldYaw;
+            }
+        }
+
         public override void PreDraw(World world)
         {
             World = world;
             var vr = SimitoneVR.Runtime;
             var dt = SimitoneVR.FrameDelta;
             var input = vr?.Input;
-
             var head = SimitoneVR.HeadPoseTracking();
             var settings = Settings;
+            var headTrack = head.Valid ? head.Position : new Vector3(0, settings.FallbackEyeHeight, 0);
 
             // ---- turning (pivot around the head so the world rotates around you, not around the play space centre)
             float turnX = (input != null && input.Active ? input.Turn.X : 0) + KeyboardTurn;
@@ -289,6 +380,66 @@ namespace Simitone.Client.VR
             }
             if (yawDelta != 0) RotateRigAroundHead(head, yawDelta);
 
+            if (SimAvatar != null && SimAvatar.Avatar != null) UpdateSimRig(world, headTrack, dt);
+            else
+            {
+                SetHiddenHead(null);
+                SimHeadInitialised = false;
+                UpdateObserverRig(world, head, headTrack, input, turnX, dt);
+            }
+
+            KeepAllFloorsVisible(world);
+            HeadWorld = TrackingToWorld(headTrack);
+            UpdateMatrices(world, head);
+            UpdatePointer(input);
+        }
+
+        /// <summary>Sim mode: put the neutral head position inside the Sim's head.</summary>
+        private void UpdateSimRig(World world, Vector3 headTrack, float dt)
+        {
+            var settings = Settings;
+            var avatar = SimAvatar;
+            SetHiddenHead(avatar);
+            PlayerLevel = Math.Max((sbyte)1, avatar.Level);
+
+            // The HEAD bone, in tiles (z = height including the floor), as FreeSO's own Sim-eye camera uses it.
+            var headTiles = avatar.GetHeadlinePos() * avatar.Scale + avatar.Position;
+            var target = new Vector3(headTiles.X * TileUnits, headTiles.Z * TileUnits + 0.25f * avatar.Scale, headTiles.Y * TileUnits);
+            if (!SimHeadInitialised || Vector3.Distance(SmoothedSimHead, target) > 1.5f * TileUnits)
+            {
+                SmoothedSimHead = target; // first frame, stairs teleport, another Sim
+                SimHeadInitialised = true;
+            }
+            else
+            {
+                SmoothedSimHead += (target - SmoothedSimHead) * (1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing)));
+            }
+
+            // Lean: you can move your head a little away from the Sim's; walking further drags the anchor along.
+            if (!LeanInitialised) { LeanNeutral = headTrack; LeanInitialised = true; }
+            var limit = Math.Max(0.01f, settings.LeanLimit);
+            var horizontal = new Vector2(headTrack.X - LeanNeutral.X, headTrack.Z - LeanNeutral.Z);
+            if (horizontal.Length() > limit)
+            {
+                var excess = horizontal * (1f - limit / horizontal.Length());
+                LeanNeutral.X += excess.X;
+                LeanNeutral.Z += excess.Y;
+            }
+            // Vertically, follow the player's posture slowly (sitting down, standing up) and allow some ducking.
+            LeanNeutral.Y += (headTrack.Y - LeanNeutral.Y) * (1f - (float)Math.Exp(-dt * 0.15f));
+            var dy = headTrack.Y - LeanNeutral.Y;
+            var clampedDy = MathHelper.Clamp(dy, -0.5f, 0.15f);
+            var anchor = LeanNeutral + new Vector3(0, dy - clampedDy, 0);
+
+            RigPosition = SmoothedSimHead - RotateYaw(anchor * Scale, RigYaw);
+            FloorY = RigPosition.Y;
+        }
+
+        /// <summary>Observer mode: smooth locomotion, wall collision, floors.</summary>
+        private void UpdateObserverRig(World world, VRPose head, Vector3 headTrack, VRInput input, float turnX, float dt)
+        {
+            var settings = Settings;
+
             // ---- floor changes (right stick up/down, PageUp/PageDown)
             float turnY = input != null && input.Active ? input.Turn.Y : 0;
             int levelChange = KeyboardLevel;
@@ -300,24 +451,15 @@ namespace Simitone.Client.VR
             }
             else if (Math.Abs(turnY) < 0.3f) LevelLatched = false;
 
-            // ---- head in world space
-            var headTrack = head.Valid ? head.Position : new Vector3(0, settings.FallbackEyeHeight, 0);
-            HeadWorld = RigPosition + RotateYaw(headTrack * Scale, RigYaw);
+            HeadWorld = TrackingToWorld(headTrack);
             var headTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
-
-            if (levelChange != 0) ChangeLevel(world, headTile, levelChange, vr);
+            if (levelChange != 0) ChangeLevel(world, headTile, levelChange, SimitoneVR.Runtime);
 
             // ---- smooth locomotion
-            Vector2 move = (input != null && input.Active ? input.Move : Vector2.Zero) + KeyboardMove;
-            if (move.LengthSquared() > 1) move.Normalize();
+            var move = MoveIntent;
             if (move != Vector2.Zero)
             {
-                float dirYaw;
-                if (settings.MoveDirection == VRMoveDirection.LeftHand && input != null && input.LeftAim.Valid)
-                    dirYaw = VRMath.Yaw(input.LeftAim.Orientation);
-                else
-                    dirYaw = head.Valid ? VRMath.Yaw(head.Orientation) : 0;
-                var worldYaw = RigYaw + dirYaw;
+                var worldYaw = MoveYaw;
                 var forward = new Vector2(-(float)Math.Sin(worldYaw), -(float)Math.Cos(worldYaw));
                 var right = new Vector2((float)Math.Cos(worldYaw), -(float)Math.Sin(worldYaw));
                 var speed = settings.MoveSpeed * ((input != null && input.Sprint.Down) || IsShiftDown() ? settings.SprintMultiplier : 1f);
@@ -328,8 +470,6 @@ namespace Simitone.Client.VR
                 var moved = (newTile - headTile) * TileUnits;
                 RigPosition.X += moved.X;
                 RigPosition.Z += moved.Y;
-                HeadWorld.X += moved.X;
-                HeadWorld.Z += moved.Y;
                 headTile = newTile;
             }
 
@@ -339,11 +479,8 @@ namespace Simitone.Client.VR
             if (!FloorInitialised) { FloorY = targetFloor; FloorInitialised = true; }
             else FloorY += (targetFloor - FloorY) * (1f - (float)Math.Exp(-dt * 14f));
 
-            var eyeBase = vr != null && vr.FloorRelative ? 0f : settings.FallbackEyeHeight;
+            var eyeBase = SimitoneVR.Runtime != null && SimitoneVR.Runtime.FloorRelative ? 0f : settings.FallbackEyeHeight;
             RigPosition.Y = FloorY + (eyeBase + settings.HeightOffset) * Scale;
-            HeadWorld = RigPosition + RotateYaw(headTrack * Scale, RigYaw);
-
-            UpdateMatrices(world, head);
         }
 
         private static bool IsShiftDown()
@@ -383,14 +520,10 @@ namespace Simitone.Client.VR
                 PlayerLevel--;
                 vr?.Haptic(true, 0.5f, 0.05f);
             }
-            var top = (sbyte)Math.Max(bp.GetFloorsUsed(), PlayerLevel);
-            if (world.State.Level != top) world.State.Level = top;
+            FloorsUsedRefresh = 0;
         }
 
         // ------------------------------------------------------------------ lot geometry queries (tile space)
-
-        /// <summary>The lot blueprint (World keeps it protected; VRLotWorld exposes it).</summary>
-        public static Blueprint Lot(World world) => (world as VRLotWorld)?.LotBlueprint;
 
         private static bool InBounds(Blueprint bp, int x, int y) => x >= 0 && y >= 0 && x < bp.Width && y < bp.Height;
 
@@ -424,7 +557,11 @@ namespace Simitone.Client.VR
             return InBounds(bp, column, lineY) && bp.GetWall((short)column, (short)lineY, PlayerLevel).TopRightSolid;
         }
 
-        /// <summary>Moves a circle of <see cref="BodyRadiusTiles"/> by <paramref name="delta"/>, sliding along walls.</summary>
+        /// <summary>
+        /// Moves a circle of <see cref="BodyRadiusTiles"/> by <paramref name="delta"/>, sliding along walls. The wall
+        /// line tested is the next one from the head's centre, so a head that already overlaps a wall (after leaning
+        /// into it physically) is pushed back out rather than let through.
+        /// </summary>
         private Vector2 Collide(World world, Vector2 pos, Vector2 delta)
         {
             var bp = Lot(world);
@@ -432,47 +569,27 @@ namespace Simitone.Client.VR
             const float r = BodyRadiusTiles;
             const float eps = 0.001f;
 
-            // X axis
             if (delta.X != 0)
             {
                 float nx = pos.X + delta.X;
                 int rowMin = (int)Math.Floor(pos.Y - r), rowMax = (int)Math.Floor(pos.Y + r);
-                if (delta.X > 0)
-                {
-                    int line = (int)Math.Floor(pos.X + r) + 1;
-                    if (nx + r >= line)
-                        for (int row = rowMin; row <= rowMax; row++)
-                            if (WallOnVerticalLine(bp, line, row)) { nx = line - r - eps; break; }
-                }
-                else
-                {
-                    int line = (int)Math.Floor(pos.X - r);
-                    if (nx - r <= line)
-                        for (int row = rowMin; row <= rowMax; row++)
-                            if (WallOnVerticalLine(bp, line, row)) { nx = line + r + eps; break; }
-                }
+                int line = delta.X > 0 ? (int)Math.Floor(pos.X) + 1 : (int)Math.Floor(pos.X);
+                bool crossing = delta.X > 0 ? nx + r >= line : nx - r <= line;
+                if (crossing)
+                    for (int row = rowMin; row <= rowMax; row++)
+                        if (WallOnVerticalLine(bp, line, row)) { nx = delta.X > 0 ? line - r - eps : line + r + eps; break; }
                 pos.X = nx;
             }
 
-            // Y axis
             if (delta.Y != 0)
             {
                 float ny = pos.Y + delta.Y;
                 int colMin = (int)Math.Floor(pos.X - r), colMax = (int)Math.Floor(pos.X + r);
-                if (delta.Y > 0)
-                {
-                    int line = (int)Math.Floor(pos.Y + r) + 1;
-                    if (ny + r >= line)
-                        for (int col = colMin; col <= colMax; col++)
-                            if (WallOnHorizontalLine(bp, line, col)) { ny = line - r - eps; break; }
-                }
-                else
-                {
-                    int line = (int)Math.Floor(pos.Y - r);
-                    if (ny - r <= line)
-                        for (int col = colMin; col <= colMax; col++)
-                            if (WallOnHorizontalLine(bp, line, col)) { ny = line + r + eps; break; }
-                }
+                int line = delta.Y > 0 ? (int)Math.Floor(pos.Y) + 1 : (int)Math.Floor(pos.Y);
+                bool crossing = delta.Y > 0 ? ny + r >= line : ny - r <= line;
+                if (crossing)
+                    for (int col = colMin; col <= colMax; col++)
+                        if (WallOnHorizontalLine(bp, line, col)) { ny = delta.Y > 0 ? line - r - eps : line + r + eps; break; }
                 pos.Y = ny;
             }
             return pos;
@@ -486,7 +603,7 @@ namespace Simitone.Client.VR
             return new Vector2(MathHelper.Clamp(tile.X, -margin, size + margin), MathHelper.Clamp(tile.Y, -margin, size + margin));
         }
 
-        // ------------------------------------------------------------------ matrices
+        // ------------------------------------------------------------------ matrices and pointer
 
         private void UpdateMatrices(World world, VRPose head)
         {
@@ -502,7 +619,7 @@ namespace Simitone.Client.VR
                 for (int i = 0; i < 2; i++)
                 {
                     var view = vr.Views[i];
-                    var eyePos = RigPosition + RotateYaw(VRMath.ToXna(view.Pose.Position) * Scale, RigYaw);
+                    var eyePos = TrackingToWorld(VRMath.ToXna(view.Pose.Position));
                     var eyeRot = rigRotation * VRMath.ToXna(view.Pose.Orientation);
                     var eyeWorld = Matrix.CreateFromQuaternion(eyeRot) * Matrix.CreateTranslation(eyePos);
                     cam.EyeView[i] = Matrix.Invert(eyeWorld);
@@ -534,6 +651,33 @@ namespace Simitone.Client.VR
             _Zoom3D = 4f;
             FPCamHeight = 0;
             CamHeight = HeadWorld.Y - 3;
+        }
+
+        private void UpdatePointer(VRInput input)
+        {
+            if (input == null || !input.Active)
+            {
+                PointerVisible = false;
+                return;
+            }
+            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
+            if (!aim.Valid)
+            {
+                PointerVisible = false;
+                return;
+            }
+            PointerStart = TrackingToWorld(aim.Position);
+            PointerDirection = Vector3.Normalize(RotateYaw(aim.Forward, RigYaw));
+        }
+
+        /// <summary>Sets up the pointer camera along the controller ray (for FreeSO's picking).</summary>
+        public void AimPointerCamera(Viewport viewport)
+        {
+            var cam = EyeCamera;
+            var up = Math.Abs(PointerDirection.Y) > 0.99f ? Vector3.Forward : Vector3.Up;
+            cam.PointerView = Matrix.CreateLookAt(PointerStart, PointerStart + PointerDirection, up);
+            cam.PointerProjection = Matrix.CreatePerspectiveFieldOfView(0.05f, Math.Max(0.1f, viewport.AspectRatio),
+                Math.Max(0.01f, Settings.NearClip) * Scale, 1000f);
         }
     }
 }

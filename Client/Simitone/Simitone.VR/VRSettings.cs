@@ -8,6 +8,9 @@ namespace Simitone.VR
 {
     public enum VRTurnMode { Snap, Smooth }
     public enum VRMoveDirection { Head, LeftHand }
+    /// <summary>Sim: see through your Sim's eyes and walk them. Observer: roam the lot freely as yourself.</summary>
+    public enum VRPlayMode { Sim, Observer }
+    public enum VRWristMode { Auto, Always, Off }
 
     /// <summary>
     /// User tunable VR options, stored as key=value lines in &lt;UserDir&gt;/vr.ini.
@@ -15,6 +18,8 @@ namespace Simitone.VR
     /// </summary>
     public class VRSettings
     {
+        /// <summary>How you start on a lot: as your Sim (first person, walking them) or as a free observer.</summary>
+        public VRPlayMode PlayMode = VRPlayMode.Sim;
         /// <summary>Multiplier on the runtime's recommended per-eye resolution. Lower this on the Steam Frame if frame rate suffers.</summary>
         public float RenderScale = 1.0f;
         /// <summary>FreeSO world units per real-world metre. 3 = one TS1 tile per metre, i.e. life size.</summary>
@@ -39,6 +44,18 @@ namespace Simitone.VR
         /// <summary>Virtual screen (menus, build/buy, CAS, neighbourhood) distance and width in metres.</summary>
         public float ScreenDistance = 2.0f;
         public float ScreenWidth = 2.4f;
+        /// <summary>Pie menus and dialogs float this far in front of you (metres), this wide.</summary>
+        public float PanelDistance = 1.3f;
+        public float PanelWidth = 1.7f;
+        /// <summary>Clock (right wrist) and needs (left wrist): Auto shows them when you turn your wrist to look.</summary>
+        public VRWristMode WristDisplays = VRWristMode.Auto;
+        /// <summary>
+        /// How quickly the view follows your Sim's head (per second). Lower is smoother but laggier; the head bone
+        /// bobs with every animation, so following it exactly is uncomfortable.
+        /// </summary>
+        public float SimHeadSmoothing = 8f;
+        /// <summary>How far (metres) you can lean away from your Sim's head before the view drags along with you.</summary>
+        public float LeanLimit = 0.3f;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>
         public string MirrorEye = "Left";
         /// <summary>Near clip plane in metres.</summary>
@@ -114,7 +131,8 @@ namespace Simitone.VR
                 var lines = new List<string>
                 {
                     "# Simitone VR settings. Delete a line to restore its default.",
-                    "# Options: TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand, MirrorEye = Left|Right|None",
+                    "# Options: PlayMode = Sim|Observer, TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand,",
+                    "#          WristDisplays = Auto|Always|Off, MirrorEye = Left|Right|None",
                 };
                 foreach (var field in typeof(VRSettings).GetFields(BindingFlags.Public | BindingFlags.Instance))
                 {

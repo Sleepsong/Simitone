@@ -126,10 +126,14 @@ class SmokeGame : Game
                         GLInterop.BlitBackbuffer(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height, image, Quad.Width, Quad.Height);
                         GLInterop.FillRects(image, new[] { (10, 10, 20, 20, 1f, 1f, 1f) });
                         Quad.Release();
-                        submission.QuadSwapchain = Quad;
-                        submission.QuadPose = VRMath.Pose(new Vector3(0, 1.5f, -2), Quaternion.Identity);
-                        submission.QuadWidth = 1.6f;
-                        submission.QuadHeight = 0.9f;
+                        submission.AddQuad(new VRQuad
+                        {
+                            Swapchain = Quad,
+                            Pose = VRMath.Pose(new Vector3(0, 1.5f, -2), Quaternion.Identity),
+                            Width = 1.6f,
+                            Height = 0.9f,
+                            Transparent = Frames % 4 == 0
+                        });
                     }
                     Submitted++;
                 }
