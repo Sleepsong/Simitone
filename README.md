@@ -275,6 +275,8 @@ Simitone finds The Sims 1 installation in this priority order:
 -nosound         # Disable audio
 ```
 
+**Remesh packs (3D mode):** put the pack's `.fsom` meshes and `_TEX_` textures in `Content/MeshReplace`, next to the game's other content (in a release: `lib/Content/MeshReplace`), or in a `MeshReplace` folder in your user data folder, which takes priority. File names can be in any case, so packs made on Windows also work on Linux. If a replacement mesh's textures are missing, the object keeps its normal look rather than turning invisible.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.
