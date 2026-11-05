@@ -298,13 +298,23 @@ Next steps, in order (status, November 2026):
 2. **Vignette** for any motion the player didn't drive (and optionally while steering). *Done:* `Vignette` and
    `VignetteWhenMoving`, Off/Low/Medium/High.
 3. **In-game VR options:** comfort tier, vignette, movement type (stick / arc / teleport), snap or smooth turn,
-   seated height. Changes apply live and are saved to `vr.ini`. *Done:* the VR menu (left menu button, left
-   wrist + trigger, or F9). It isn't in the game's own Options panel yet, and there is no first-run wizard.
+   seated height. Changes apply live and are saved to `vr.ini`. *Done:*
+   - the VR menu (left menu button, left wrist + trigger, or F9);
+   - the same options in the game's Options panel (VR button);
+   - a first-run comfort setup (tier, turning, movement, standing or seated, vignette), which can be run again.
+
+   Not done: a dominant-hand choice.
 4. **Arc movement** (Sim mode) and **teleport movement** (observer), reusing the build-mode arc and the blink.
    *Done:* left trigger.
 5. **Posture blinks** (sit, lie, stand) and the "step out" for sleeping and bathing. *Done*, for every tier.
 6. **Remove head-bob:** anchor horizontally on the Sim's position. *Done*, for every tier.
-7. **Measure** Sim walk and run speeds in VR and tune them (or blink). *Not yet: needs the game running.*
+7. **Measure** Sim walk and run speeds in VR and tune them (or blink). *Done:*
+   - **From the engine:** steered walking is about 1.7 m/s, running about 5.1 m/s, and routed walking about 1.5 m/s,
+     at normal game speed; game speeds 2 and 3 multiply these by 3 and 10 (details in
+     [VR.md](VR.md#speeds)).
+   - **Tuning:** running now needs a stick click; a fast game drops to normal speed while you walk; the Moderate
+     glide is 1.6 m/s, so it keeps up.
+   - **In play:** `vr.log` records the speeds actually seen.
    - Related, *done:* holding the stick while the Sim is busy cancels their actions so you can take over. It
      follows the "player control" principle: you're never stuck riding along when you want to move.
 8. Later: **dollhouse view** (two-hand grab and scale).

@@ -63,6 +63,8 @@ namespace Simitone.Client.VR
         private static VRWristHud Wrists;
         private static VRMenu Menu;
         private static VRKeyboard Keyboard;
+        private static VRSetup Setup;
+        private static bool SetupRequested, SetupShownThisSession;
         private static bool PendingEyeResize;
         private static bool KeyboardMenuToggle;
         private static VRPose LastHead;
@@ -161,6 +163,7 @@ namespace Simitone.Client.VR
                 Wrists = new VRWristHud();
                 Menu = new VRMenu();
                 Keyboard = new VRKeyboard();
+                Setup = new VRSetup();
             }
             catch (Exception e)
             {
@@ -219,6 +222,12 @@ namespace Simitone.Client.VR
         }
 
         public static bool MenuOpen => Menu?.Open == true;
+        public static bool SetupOpen => Setup?.Open == true;
+        /// <summary>The VR menu or the comfort setup is open (it has the pointer and the trigger).</summary>
+        public static bool OverlayOpen => MenuOpen || SetupOpen;
+
+        /// <summary>Opens the comfort setup (from the VR menu or the game's Options panel) at the next frame.</summary>
+        public static void StartSetup() => SetupRequested = true;
 
         public static void Shutdown()
         {
@@ -231,6 +240,7 @@ namespace Simitone.Client.VR
                 Wrists?.Dispose();
                 Menu?.Dispose();
                 Keyboard?.Dispose();
+                Setup?.Dispose();
                 Runtime.Dispose();
             }
             catch { }
@@ -359,10 +369,21 @@ namespace Simitone.Client.VR
             // ---- wrists: the left display's queue icons (trigger cancels) and the rest of it (trigger opens the VR
             // menu); messages waiting on the watch (look at it and pull that hand's trigger to read the oldest)
             if (immersive && Wrists != null) Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
-            var menuWasOpen = MenuOpen;
+            var overlayWasOpen = OverlayOpen;
             var overlayUsedPress = false;
+
+            // ---- comfort setup: the first time VR runs, or when asked for
+            if (Setup != null && LastHead.Valid && (SetupRequested || (!Settings.ComfortSetupDone && !SetupShownThisSession)))
+            {
+                Menu?.Close();
+                Setup.Show(LastHead, inputActive ? input : null);
+                SetupRequested = false;
+                SetupShownThisSession = true;
+            }
+            if (SetupOpen) Setup.Update(input, Runtime);
+
             var needsHover = VRWristHud.NotPointed;
-            if (immersive && inputActive && Wrists != null && !MenuOpen && Wrists.PointNeeds(input.RightAim, out var needsPixel))
+            if (immersive && inputActive && Wrists != null && !OverlayOpen && Wrists.PointNeeds(input.RightAim, out var needsPixel))
             {
                 var slot = VRWristHud.QueueSlotAt(needsPixel);
                 needsHover = hud != null && slot >= 0 && slot < hud.QueueCount ? slot : VRWristHud.PointedAtDisplay;
@@ -376,13 +397,13 @@ namespace Simitone.Client.VR
                 overlayUsedPress = true;
             }
             else if (triggerFree && needsHover == VRWristHud.NotPointed && immersive && Wrists?.WatchFacing == true
-                && Messages.Count > 0 && !MenuOpen)
+                && Messages.Count > 0 && !OverlayOpen)
             {
                 GameThread.NextUpdate(_ => ShowOldestMessage());
                 Runtime.Haptic(true, 0.25f, 0.02f);
                 overlayUsedPress = true;
             }
-            if (Menu != null)
+            if (Menu != null && !SetupOpen)
             {
                 var wristMenu = triggerFree && needsHover == VRWristHud.PointedAtDisplay;
                 if ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || wristMenu)
@@ -401,7 +422,7 @@ namespace Simitone.Client.VR
             if (wantKeyboard && !Keyboard.Visible) Keyboard.Show(LastHead, inputActive ? input : null);
             else if (!wantKeyboard && Keyboard?.Visible == true) Keyboard.Hide();
             var keyboardHasPointer = false;
-            if (Keyboard?.Visible == true && !MenuOpen && !overlayUsedPress)
+            if (Keyboard?.Visible == true && !OverlayOpen && !overlayUsedPress)
             {
                 keyboardHasPointer = Keyboard.Update(input, Runtime, FrameDelta);
                 if (keyboardHasPointer && inputActive && (input.Select.Pressed || input.Secondary.Pressed)) NeedsRelease = true;
@@ -412,16 +433,17 @@ namespace Simitone.Client.VR
                     Keyboard.Hide();
                 }
             }
-            OverlayHasPointer = MenuOpen || keyboardHasPointer;
-            OverlayPointerDistance = MenuOpen ? Menu.PointerDistance : keyboardHasPointer ? Keyboard.PointerDistance : 0;
-            if (overlayUsedPress || (menuWasOpen && !MenuOpen)) NeedsRelease = true;
+            OverlayHasPointer = OverlayOpen || keyboardHasPointer;
+            OverlayPointerDistance = SetupOpen ? Setup.PointerDistance : MenuOpen ? Menu.PointerDistance
+                : keyboardHasPointer ? Keyboard.PointerDistance : 0;
+            if (overlayUsedPress || (overlayWasOpen && !OverlayOpen)) NeedsRelease = true;
 
             // ---- laser pointer (not while an overlay has it, nor on the frame one used a press)
             PointerActive = false;
             CursorOnSurface = false;
             PanelPointerOnPanel = false;
             PanelPointerDistance = 0;
-            if (inputActive && !menuWasOpen && !OverlayHasPointer && !overlayUsedPress)
+            if (inputActive && !overlayWasOpen && !OverlayHasPointer && !overlayUsedPress)
             {
                 if (!immersive)
                 {
@@ -476,6 +498,7 @@ namespace Simitone.Client.VR
             {
                 Keyboard?.Render(gd);
                 Menu?.Render(gd);
+                Setup?.Render(gd);
             }
             catch (Exception e) { Log("VR menu/keyboard error: " + e.Message); }
         }
@@ -508,6 +531,7 @@ namespace Simitone.Client.VR
                     }
                     Keyboard?.Submit(Runtime, ref submission);
                     Menu?.Submit(Runtime, ref submission);
+                    Setup?.Submit(Runtime, ref submission);
                 }
                 Runtime.EndFrame(submission);
             }

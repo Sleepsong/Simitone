@@ -85,8 +85,11 @@ namespace Simitone.VR
         public VRMovement Movement = VRMovement.StickAndArc;
         /// <summary>Comfortable view: how far (metres) your Sim can get from you before you blink after them.</summary>
         public float LeashDistance = 4f;
-        /// <summary>Moderate view: the speed (m/s) you glide after your Sim at; constant, about walking pace.</summary>
-        public float GlideSpeed = 1.4f;
+        /// <summary>
+        /// Moderate view: the speed (m/s) you glide after your Sim at; constant, a little above the pace Sims walk
+        /// somewhere on their own (about 1.5 m/s at normal game speed), so you keep up.
+        /// </summary>
+        public float GlideSpeed = 1.6f;
         /// <summary>Length of a blink (fade out, move, fade in) in seconds.</summary>
         public float BlinkDuration = 0.25f;
         /// <summary>
@@ -101,6 +104,18 @@ namespace Simitone.VR
         /// up in front of you. Look at the watch and pull that hand's trigger to read one.
         /// </summary>
         public bool WatchMessages = true;
+        /// <summary>
+        /// Playing as your Sim, pushing the stick all the way makes them run. Off (the default): they walk (about 1.7 m/s)
+        /// and run (about 5 m/s, fast for VR) only after you click the stick, until you let go of it.
+        /// </summary>
+        public bool RunAtFullTilt = false;
+        /// <summary>
+        /// When you walk your Sim with the stick while the game runs fast (speed 2 or 3, which makes them walk 3 or 10
+        /// times as fast), the game drops to normal speed, and goes back to yours 2 s after you let go.
+        /// </summary>
+        public bool NormalSpeedWhenSteering = true;
+        /// <summary>The first-run comfort setup has been done (set it to False to see it again, or use the VR menu).</summary>
+        public bool ComfortSetupDone = false;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>
         public string MirrorEye = "Left";
         /// <summary>Near clip plane in metres.</summary>

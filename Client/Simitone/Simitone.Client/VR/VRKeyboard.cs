@@ -17,11 +17,10 @@ namespace Simitone.Client.VR
     /// Point with the right controller and pull the trigger on a key. Letters start each word in capitals; SHIFT
     /// changes the next letter's case. HIDE puts it away until another text box wants it.
     /// </summary>
-    public class VRKeyboard : IDisposable
+    public class VRKeyboard : VRPanel
     {
         private const int KeyW = 64, KeyH = 54, Gap = 6, Margin = 12, PreviewHeight = 58, Stagger = 16;
         private const int Width = Margin * 2 + 10 * KeyW + 9 * Gap + 2 * Stagger;
-        private const float WidthMetres = 0.56f;
 
         private enum KeyKind { Char, Shift, Backspace, Space, Hide }
 
@@ -36,27 +35,19 @@ namespace Simitone.Client.VR
         private readonly List<Key> Keys = new List<Key>();
         private readonly int Height;
         public bool Visible { get; private set; }
-        /// <summary>Distance (metres) from the controller to where it points on the keyboard, or 0 if not on it.</summary>
-        public float PointerDistance { get; private set; }
         private int Hover = -1;
         private bool Armed;
         private bool Dirty = true;
         private bool Shift;      // the next letter's case is flipped
         private string LastText;
         private float RepeatTimer;
-        private Vector3 Position;
-        private Quaternion Orientation = Quaternion.Identity;
 
         // keys pressed since the last game update, in order ('\b' = backspace), applied there to the text box
         private readonly List<char> Pending = new List<char>();
 
-        private RenderTarget2D Target;
-        private VRSwapchain Chain;
-        private SpriteBatch Batch;
-        private Texture2D White;
-
         public VRKeyboard()
         {
+            WidthMetres = 0.56f;
             var rows = new[] { "1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM-" };
             int y = Margin + PreviewHeight + Gap;
             for (int r = 0; r < rows.Length; r++)
@@ -85,10 +76,7 @@ namespace Simitone.Client.VR
         public void Show(VRPose head, VRInput input)
         {
             if (!head.Valid) return;
-            var yaw = Quaternion.CreateFromAxisAngle(Vector3.Up, VRMath.Yaw(head.Orientation));
-            var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
-            Orientation = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-40));
-            Position = head.Position + forward * 0.5f - new Vector3(0, 0.4f, 0);
+            PlaceInFront(head, 0.5f, 0.4f, 40);
             Visible = true;
             Armed = input == null || !input.Select.Down;
             Hover = -1;
@@ -114,34 +102,14 @@ namespace Simitone.Client.VR
             if (!input.Select.Down) Armed = true;
 
             var hover = -1;
-            var onKeyboard = false;
-            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
-            if (aim.Valid)
+            var onKeyboard = PointAt(input, Width, Height, out var pixel);
+            if (onKeyboard)
             {
-                var normal = Vector3.Transform(Vector3.UnitZ, Orientation);
-                var denom = Vector3.Dot(aim.Forward, normal);
-                if (Math.Abs(denom) > 1e-4f)
+                for (int i = 0; i < Keys.Count; i++)
                 {
-                    var t = Vector3.Dot(Position - aim.Position, normal) / denom;
-                    if (t > 0)
-                    {
-                        var local = Vector3.Transform(aim.Position + aim.Forward * t - Position, Quaternion.Inverse(Orientation));
-                        var heightMetres = WidthMetres * Height / Width;
-                        var u = local.X / WidthMetres + 0.5f;
-                        var v = 0.5f - local.Y / heightMetres;
-                        if (u >= 0 && u <= 1 && v >= 0 && v <= 1)
-                        {
-                            onKeyboard = true;
-                            PointerDistance = t;
-                            var pixel = new Point((int)(u * Width), (int)(v * Height));
-                            for (int i = 0; i < Keys.Count; i++)
-                            {
-                                var r = Keys[i].Rect;
-                                r.Inflate(Gap / 2, Gap / 2);
-                                if (r.Contains(pixel)) { hover = i; break; }
-                            }
-                        }
-                    }
+                    var r = Keys[i].Rect;
+                    r.Inflate(Gap / 2, Gap / 2);
+                    if (r.Contains(pixel)) { hover = i; break; }
                 }
             }
             if (hover != Hover)
@@ -251,78 +219,36 @@ namespace Simitone.Client.VR
         {
             if (!Visible || (!Dirty && Target != null)) return;
             Dirty = false;
-            Batch ??= new SpriteBatch(gd);
-            if (White == null)
-            {
-                White = new Texture2D(gd, 1, 1);
-                White.SetData(new[] { Color.White });
-            }
-            Target ??= new RenderTarget2D(gd, Width, Height, false, SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
 
             var bg = new Color(16, 20, 28) * 0.94f;
             var frame = new Color(90, 200, 255);
             var keyBg = new Color(40, 48, 62);
             var text = Color.White * 0.92f;
 
-            gd.SetRenderTarget(Target);
-            gd.Clear(Color.Transparent);
-            Batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
-            Batch.Draw(White, new Rectangle(0, 0, Width, Height), bg);
+            BeginRender(gd, Width, Height);
+            Fill(new Rectangle(0, 0, Width, Height), bg);
             Border(new Rectangle(0, 0, Width, Height), frame, 3);
 
             // what's in the text box (the font only has capitals; the box itself shows the real text)
             var preview = new Rectangle(Margin, Margin, Width - Margin * 2, PreviewHeight);
-            Batch.Draw(White, preview, Color.Black * 0.5f);
+            Fill(preview, Color.Black * 0.5f);
             var shown = VRPixelFont.FitEnd((LastText ?? "") + "_", 3, preview.Width - 24);
-            VRPixelFont.Draw(Batch, White, shown, new Vector2(preview.X + 12, preview.Y + (PreviewHeight - 21) / 2), 3, new Color(140, 255, 190));
+            Text(shown, preview.X + 12, preview.Y + (PreviewHeight - 21) / 2, 3, new Color(140, 255, 190));
 
             for (int i = 0; i < Keys.Count; i++)
             {
                 var key = Keys[i];
                 var active = key.Kind == KeyKind.Shift && Shift;
-                Batch.Draw(White, key.Rect, i == Hover ? frame * 0.55f : active ? frame * 0.35f : keyBg);
-                var dot = key.Label.Length == 1 ? 4 : 2;
-                var size = new Vector2(VRPixelFont.Measure(key.Label, dot), VRPixelFont.GlyphHeight * dot);
-                var pos = new Vector2(key.Rect.X + (key.Rect.Width - size.X) / 2, key.Rect.Y + (key.Rect.Height - size.Y) / 2);
-                VRPixelFont.Draw(Batch, White, key.Label, pos, dot, i == Hover ? Color.White : text);
+                Fill(key.Rect, i == Hover ? frame * 0.55f : active ? frame * 0.35f : keyBg);
+                TextCentred(key.Label, key.Rect, key.Label.Length == 1 ? 4 : 2, i == Hover ? Color.White : text);
             }
-            Batch.End();
-            gd.SetRenderTarget(null);
+            EndRender(gd);
         }
 
-        private void Border(Rectangle r, Color colour, int thickness)
-        {
-            Batch.Draw(White, new Rectangle(r.X, r.Y, r.Width, thickness), colour);
-            Batch.Draw(White, new Rectangle(r.X, r.Bottom - thickness, r.Width, thickness), colour);
-            Batch.Draw(White, new Rectangle(r.X, r.Y, thickness, r.Height), colour);
-            Batch.Draw(White, new Rectangle(r.Right - thickness, r.Y, thickness, r.Height), colour);
-        }
-
-        /// <summary>Copies the keyboard into its swapchain and adds it to the frame.</summary>
+        /// <summary>Adds the keyboard to the frame while it's shown.</summary>
         public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
         {
-            if (!Visible || Target == null) return;
-            Chain ??= runtime.CreateSwapchain(Target.Width, Target.Height);
-            var image = Chain.Acquire();
-            GLInterop.BlitTexture(GLInterop.GetTextureHandle(Target), Target.Width, Target.Height, image, 0, 0, Chain.Width, Chain.Height, flipY: true);
-            Chain.Release();
-            submission.AddQuad(new VRQuad
-            {
-                Swapchain = Chain,
-                Pose = VRMath.Pose(Position, Orientation),
-                Width = WidthMetres,
-                Height = WidthMetres * Target.Height / Target.Width,
-                Transparent = true
-            });
-        }
-
-        public void Dispose()
-        {
-            Chain?.Dispose();
-            Chain = null;
-            Target?.Dispose();
-            White?.Dispose();
-            Batch?.Dispose();
+            if (Visible) SubmitPanel(runtime, ref submission);
         }
     }
 }

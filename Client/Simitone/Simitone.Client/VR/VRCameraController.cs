@@ -949,7 +949,7 @@ namespace Simitone.Client.VR
         {
             MoveArcCount = 0;
             var enabled = Settings.Movement != VRMovement.Stick && input != null && input.Active && input.LeftAim.Valid
-                && !SimitoneVR.MenuOpen;
+                && !SimitoneVR.OverlayOpen;
             if (!enabled)
             {
                 MoveArcHeld = false;
@@ -1276,7 +1276,7 @@ namespace Simitone.Client.VR
         /// </summary>
         private void UpdateBuildCursor(World world, VRInput input, float dt)
         {
-            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.MenuOpen))
+            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.OverlayOpen))
             {
                 // Choosing from the catalogue (or using the VR menu): keep the cursor where it was in the world and hide
                 // the arc, so what you hold doesn't fly about while the pointer is elsewhere.

@@ -90,6 +90,56 @@ namespace Simitone.Client.VR
             return ".." + text.Substring(Math.Max(0, text.Length - chars));
         }
 
+        /// <summary>Breaks <paramref name="text"/> into lines no wider than <paramref name="maxWidth"/> pixels, at spaces.</summary>
+        public static List<string> Wrap(string text, int dot, int maxWidth)
+        {
+            var lines = new List<string>();
+            var line = "";
+            foreach (var word in (text ?? "").Split(' '))
+            {
+                var candidate = line.Length == 0 ? word : line + " " + word;
+                if (line.Length > 0 && Measure(candidate, dot) > maxWidth)
+                {
+                    lines.Add(line);
+                    line = word;
+                }
+                else line = candidate;
+            }
+            if (line.Length > 0) lines.Add(line);
+            return lines;
+        }
+
+        /// <summary>
+        /// A texture with <paramref name="text"/> centred in it (transparent elsewhere), built on the CPU, so it can be
+        /// made at any time (e.g. a button icon while the UI updates).
+        /// </summary>
+        public static Texture2D MakeTexture(GraphicsDevice gd, string text, int dot, int width, int height, Color colour)
+        {
+            var pixels = new Color[width * height];
+            var x0 = (width - Measure(text, dot)) / 2;
+            var y0 = (height - GlyphHeight * dot) / 2;
+            var x = x0;
+            foreach (var raw in text)
+            {
+                if (Glyphs.TryGetValue(char.ToUpperInvariant(raw), out var rows))
+                {
+                    for (int row = 0; row < GlyphHeight; row++)
+                        for (int col = 0; col < GlyphWidth; col++)
+                            if ((rows[row] & (0x10 >> col)) != 0)
+                                for (int dy = 0; dy < dot; dy++)
+                                    for (int dx = 0; dx < dot; dx++)
+                                    {
+                                        int px = x + col * dot + dx, py = y0 + row * dot + dy;
+                                        if (px >= 0 && py >= 0 && px < width && py < height) pixels[py * width + px] = colour;
+                                    }
+                }
+                x += (GlyphWidth + 1) * dot;
+            }
+            var texture = new Texture2D(gd, width, height);
+            texture.SetData(pixels);
+            return texture;
+        }
+
         /// <summary>Width in pixels of <paramref name="text"/> at the given dot size.</summary>
         public static int Measure(string text, int dot) => text.Length == 0 ? 0 : (text.Length * (GlyphWidth + 1) - 1) * dot;
 

@@ -62,6 +62,16 @@ namespace Simitone.Client.VR
         private float UpdateDelta = 1 / 60f;
         private float TakeOverHeldFor;
         private double TakeOverSentAt = -100;
+        private bool RunLatched;            // clicked the stick: run until it's let go
+        private int SpeedBeforeSteering;    // the game speed we dropped from to walk, or 0
+        private double LastSteerInputAt = -100;
+
+        // measured speeds, written to vr.log (see MeasureSpeed)
+        private enum MoveKind { None, Walk, Run, Routed }
+        private MoveKind SegmentKind;
+        private float SegmentTime, SegmentDistance, SegmentStill;
+        private Vector2 LastSimTile;
+        private VMAvatar LastMeasured;
         private readonly FSO.SimAntics.VMEntity[] IconOwners = new FSO.SimAntics.VMEntity[VRHudData.MaxQueue];
 
         private bool LeftForFlatScreen;
@@ -94,6 +104,9 @@ namespace Simitone.Client.VR
         public void Reset()
         {
             DirectAvatar = null;
+            LastMeasured = null;
+            SegmentKind = MoveKind.None;
+            SpeedBeforeSteering = 0;
             WasImmersive = false;
             LeftForFlatScreen = false;
             Hud.Valid = false;
@@ -174,10 +187,13 @@ namespace Simitone.Client.VR
             camera.BubbleUID = running?.UID ?? 0;
             camera.RoomAt = RoomAtFunc;
             if (DirectAvatar != null) DriveSim(camera, input, vm, lc, state);
+            RestoreSpeed(vm);
+            MeasureSpeed(DirectAvatar);
             if (camera.ConsumeMoveArc(out var arcTile, out var arcLevel) && DirectAvatar != null)
             {
                 // the movement arc: walk there, as clicking the floor and choosing "Go Here" does
                 var tile = LotTilePos.FromBigTile((short)Math.Floor(arcTile.X), (short)Math.Floor(arcTile.Y), arcLevel);
+                CancelWalks(vm, DirectAvatar); // a new arc replaces the walk you sent before, rather than queueing after it
                 if (SendGoHere(vm, lc, DirectAvatar, tile)) HITVM.Get()?.PlaySoundEvent(UISounds.QueueAdd);
                 else SimitoneVR.Runtime?.Haptic(false, 0.6f, 0.08f);
             }
@@ -251,14 +267,30 @@ namespace Simitone.Client.VR
 
             if (move == Vector2.Zero)
             {
-                DirectRunning = false;
+                DirectRunning = RunLatched = false;
                 SendDirectInput(new VMDirectControlInput { ID = DirectInputID++, LookDirectionInt = look });
                 return;
             }
 
+            // Walking at speed 2 or 3 would be 3 or 10 times as fast: drop to normal speed (restored in RestoreSpeed).
+            LastSteerInputAt = Now;
+            if (SimitoneVR.Settings.NormalSpeedWhenSteering)
+            {
+                var speed = CurrentSpeed(vm);
+                if (speed > 1)
+                {
+                    SpeedBeforeSteering = speed;
+                    Screen.ChangeSpeedTo(1);
+                    SimitoneVR.Log($"walking: game speed {speed} -> 1");
+                }
+            }
+
+            // Walk (about 1.7 m/s); run (about 5 m/s) after clicking the stick, until it's let go, or at full tilt if
+            // RunAtFullTilt is on.
             var tileMove = StickToTiles(move, camera.MoveYaw);
-            var sprintHeld = input != null && input.Active && input.Sprint.Down;
-            DirectRunning = sprintHeld || (DirectRunning ? move.Length() > RunOff : move.Length() > RunOn);
+            if (input != null && input.Active && input.Sprint.Down) RunLatched = true;
+            var fullTilt = SimitoneVR.Settings.RunAtFullTilt && (DirectRunning ? move.Length() > RunOff : move.Length() > RunOn);
+            DirectRunning = RunLatched || fullTilt;
             SendDirectInput(new VMDirectControlInput
             {
                 ID = DirectInputID++,
@@ -267,6 +299,68 @@ namespace Simitone.Client.VR
                 LookDirectionInt = look,
                 Sprint = DirectRunning
             });
+        }
+
+        /// <summary>
+        /// Two seconds after you stop walking your Sim, the game goes back to the speed it had before walking slowed it
+        /// down, unless you've changed the speed yourself meanwhile.
+        /// </summary>
+        private void RestoreSpeed(VM vm)
+        {
+            if (SpeedBeforeSteering == 0 || Now - LastSteerInputAt < 2.0) return;
+            var restore = SpeedBeforeSteering;
+            SpeedBeforeSteering = 0;
+            if (CurrentSpeed(vm) != 1) return; // paused, or changed by hand: leave it
+            Screen.ChangeSpeedTo(restore);
+            SimitoneVR.Log($"walking done: game speed 1 -> {restore}");
+        }
+
+        /// <summary>
+        /// Measures how fast your Sim really moves in VR (metres per second, at the current WorldScale): while you walk
+        /// or run them, and while they walk somewhere on their own. Each stretch of 1.5 s or more is written to vr.log.
+        /// </summary>
+        private void MeasureSpeed(VMAvatar avatar)
+        {
+            if (avatar != LastMeasured)
+            {
+                EndSegment();
+                LastMeasured = avatar;
+                if (avatar != null) LastSimTile = new Vector2(avatar.Position.x / 16f, avatar.Position.y / 16f);
+                return;
+            }
+            if (avatar == null) return;
+            var tile = new Vector2(avatar.Position.x / 16f, avatar.Position.y / 16f);
+            var step = Vector2.Distance(tile, LastSimTile);
+            LastSimTile = tile;
+            if (step > 2f) { EndSegment(); return; } // a jump (stairs, a snap), not walking
+
+            var kind = Steering ? (DirectRunning ? MoveKind.Run : MoveKind.Walk) : IsRouting(avatar) ? MoveKind.Routed : MoveKind.None;
+            if (kind != SegmentKind)
+            {
+                EndSegment();
+                SegmentKind = kind;
+            }
+            if (kind == MoveKind.None) return;
+            SegmentTime += UpdateDelta;
+            if (step > 0)
+            {
+                SegmentDistance += step * VRCameraController.TileUnits / SimitoneVR.Settings.WorldScale;
+                SegmentStill = 0;
+            }
+            else if ((SegmentStill += UpdateDelta) > 0.5f) EndSegment(); // stopped
+        }
+
+        private void EndSegment()
+        {
+            var moving = SegmentTime - SegmentStill;
+            if (SegmentKind != MoveKind.None && moving >= 1.5f && SegmentDistance > 0.5f)
+            {
+                var vm = Screen.vm;
+                SimitoneVR.Log($"speed: {SegmentKind.ToString().ToLowerInvariant()} {SegmentDistance / moving:0.00} m/s over "
+                    + $"{moving:0.0} s ({SegmentDistance:0.0} m) at game speed {(vm != null ? CurrentSpeed(vm) : 0)}");
+            }
+            SegmentKind = MoveKind.None;
+            SegmentTime = SegmentDistance = SegmentStill = 0;
         }
 
         /// <summary>
@@ -382,6 +476,18 @@ namespace Simitone.Client.VR
                 level = tile.Level
             });
             return true;
+        }
+
+        /// <summary>Cancels the Sim's walks ("Go Here", from an earlier arc or a floor click), running or queued.</summary>
+        private static void CancelWalks(VM vm, VMAvatar avatar)
+        {
+            var queue = avatar?.Thread?.Queue;
+            if (queue == null) return;
+            foreach (var action in queue.ToList())
+            {
+                if (action.Callee?.Object?.OBJ?.GUID == GotoGuid && !IsCancelled(avatar, action))
+                    vm.SendCommand(new VMNetInteractionCancelCmd { ActionUID = action.UID, ActorUID = avatar.PersistID });
+            }
         }
 
         private int RoomAt(Vector2 tile, sbyte level)

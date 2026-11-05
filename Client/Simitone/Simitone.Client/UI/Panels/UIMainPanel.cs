@@ -16,6 +16,7 @@ using FSO.Common.Rendering.Framework.Model;
 using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Screens;
 using FSO.Client.UI.Controls;
+using Simitone.Client.VR;
 
 namespace Simitone.Client.UI.Panels
 {
@@ -275,6 +276,7 @@ namespace Simitone.Client.UI.Panels
                         new UICatFunc(GameFacade.Strings.GetString("145", "5"), "opt_quit.png", () => { Game.CloseAttempt(); }),
                     });
                     AddFreeWillToggle(panel);
+                    if (SimitoneVR.Requested) AddVRButton(panel);
                     break;
             }
             SetSubpanel(panel);
@@ -535,6 +537,38 @@ namespace Simitone.Client.UI.Panels
                 ShowingSelect = false;
                 OnEndSelect?.Invoke();
             };
+        }
+
+        private static Texture2D VRIcon;
+
+        /// <summary>Options mode, with -vr: a VR button (after Free Will) that opens the VR options.</summary>
+        private void AddVRButton(UISubpanel parent)
+        {
+            int index = 4;
+            float buttonX = 50 + index * 120f;
+            float labelX = buttonX - 27;
+
+            var label = new UILabel();
+            label.Alignment = TextAlignment.Middle | TextAlignment.Center;
+            label.Wrapped = true;
+            label.Position = new Vector2(labelX - 77, 106);
+            label.Size = new Vector2(120, 1);
+            label.CaptionStyle = label.CaptionStyle.Clone();
+            label.CaptionStyle.Size = 12;
+            label.CaptionStyle.Color = UIStyle.Current.Text;
+            label.Caption = "VR Options";
+
+            if (VRIcon == null || VRIcon.IsDisposed)
+                VRIcon = VRPixelFont.MakeTexture(GameFacade.GraphicsDevice, "VR", 5, 65, 65, Color.White);
+            var button = new UICatButton(VRIcon);
+            button.Position = new Vector2(buttonX - 50, 16);
+            button.OnButtonClick += (btn) => UIScreen.GlobalShowDialog(new UIVROptionsDialog(), true);
+
+            GameFacade.Screens.Tween.To(label, 0.5f, new Dictionary<string, float>() { { "X", labelX } }, TweenQuad.EaseOut);
+            GameFacade.Screens.Tween.To(button, 0.5f, new Dictionary<string, float>() { { "X", buttonX } }, TweenQuad.EaseOut);
+
+            parent.Add(label);
+            parent.Add(button);
         }
 
         private void AddFreeWillToggle(UISubpanel parent)
