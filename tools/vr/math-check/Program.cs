@@ -132,6 +132,74 @@ static class Program
             Check("movement arc: lands within TraceArc's 300 steps at any pitch", allLand, detail.Trim());
         }
 
+        // ---- single-pass stereo: one view that encloses both eyes, and each eye's clip-space delta from it
+        {
+            var rnd = new Random(7);
+            foreach (var (ipd, cant) in new[] { (0.064f, 0f), (0.072f, 5f), (0.058f, -3f) })
+            {
+                var head = new Vector3(12, 5, -7);
+                var headRot = Quaternion.CreateFromYawPitchRoll(0.7f, -0.2f, 0.05f);
+                var w = scale; // world units per metre
+                VRMath.ViewFrustum Eye(int side) => new VRMath.ViewFrustum
+                {
+                    Position = head + Vector3.Transform(new Vector3(side * ipd / 2 * w, 0, 0), headRot),
+                    Orientation = headRot * Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.ToRadians(-side * cant)),
+                    Left = (float)Math.Tan(MathHelper.ToRadians(side < 0 ? -54 : -48)), Right = (float)Math.Tan(MathHelper.ToRadians(side < 0 ? 48 : 54)),
+                    Down = (float)Math.Tan(MathHelper.ToRadians(-55)), Up = (float)Math.Tan(MathHelper.ToRadians(50))
+                };
+                var left = Eye(-1); var right = Eye(1);
+                var both = VRMath.Enclose(left, right);
+                const float near = 0.05f * 3, far = 1000;
+                var vpBoth = both.View * both.Projection(near * 0.5f, far);
+                var frustumBoth = new BoundingFrustum(vpBoth);
+                int seen = 0, missed = 0;
+                float worstClip = 0;
+                foreach (var eye in new[] { left, right })
+                {
+                    var vpEye = eye.View * eye.Projection(near, far);
+                    var frustumEye = new BoundingFrustum(vpEye);
+                    var delta = VRMath.ClipDelta(vpBoth, vpEye);
+                    for (int i = 0; i < 4000; i++)
+                    {
+                        // points anywhere near the eye, from a few cm to 30 m away
+                        var dir = Vector3.Normalize(new Vector3((float)rnd.NextDouble() * 2 - 1, (float)rnd.NextDouble() * 2 - 1, (float)rnd.NextDouble() * 2 - 1));
+                        var p = eye.Position + dir * (float)(0.06 + Math.Pow(rnd.NextDouble(), 2) * 30) * w;
+                        if (frustumEye.Contains(p) == ContainmentType.Disjoint) continue;
+                        seen++;
+                        if (frustumBoth.Contains(p) == ContainmentType.Disjoint) missed++;
+                        var viaDelta = Vector4.Transform(Vector4.Transform(new Vector4(p, 1), vpBoth), delta);
+                        var direct = Vector4.Transform(new Vector4(p, 1), vpEye);
+                        worstClip = Math.Max(worstClip, (new Vector3(viaDelta.X, viaDelta.Y, viaDelta.Z) / viaDelta.W - new Vector3(direct.X, direct.Y, direct.Z) / direct.W).Length());
+                    }
+                }
+                Check($"stereo (IPD {ipd * 1000:0} mm, cant {cant} deg): the shared view sees everything either eye does", seen > 1000 && missed == 0,
+                    $"{seen} points seen, {missed} missed");
+                Check($"stereo (IPD {ipd * 1000:0} mm, cant {cant} deg): the clip delta gives each eye's own projection", worstClip < 2e-3f,
+                    $"worst NDC difference {worstClip:0.000000}");
+            }
+        }
+
+        // ---- foveation: the sharp inset follows the gaze, stays inside the eye's view, and maps to the right pixels
+        {
+            var eye = new VRMath.ViewFrustum { Position = Vector3.Zero, Orientation = Quaternion.Identity, Left = -1.2f, Right = 1.0f, Down = -1.3f, Up = 1.1f };
+            var centred = VRMath.Inset(eye, new Vector2(0.1f, -0.05f), 0.35f);
+            Check("foveation: an inset sits on the gaze", Math.Abs((centred.Left + centred.Right) / 2 - 0.1f) < 1e-5f
+                && Math.Abs((centred.Down + centred.Up) / 2 + 0.05f) < 1e-5f && Math.Abs(centred.Right - centred.Left - 0.7f) < 1e-5f, "0.7 x 0.7 tangents");
+            var edge = VRMath.Inset(eye, new Vector2(0.98f, 1.5f), 0.35f);
+            Check("foveation: near the edge it slides back inside (same size)", Math.Abs(edge.Right - 1.0f) < 1e-5f && Math.Abs(edge.Up - 1.1f) < 1e-5f
+                && Math.Abs(edge.Right - edge.Left - 0.7f) < 1e-5f && Math.Abs(edge.Up - edge.Down - 0.7f) < 1e-5f, $"x {edge.Left:0.00}..{edge.Right:0.00}, y {edge.Down:0.00}..{edge.Up:0.00}");
+            var rect = VRMath.InsetRect(eye, centred, 2200, 2400);
+            // a point in the inset's view lands at the same pixel through the inset as through the whole eye
+            var t = new Vector2(0.3f, 0.2f);
+            var fullX = (t.X - eye.Left) / (eye.Right - eye.Left) * 2200; var fullY = (eye.Up - t.Y) / (eye.Up - eye.Down) * 2400;
+            var insetX = rect.X + (t.X - centred.Left) / (centred.Right - centred.Left) * rect.Width;
+            var insetY = rect.Y + (centred.Up - t.Y) / (centred.Up - centred.Down) * rect.Height;
+            Check("foveation: the inset's pixels line up with the whole eye's", Math.Abs(fullX - insetX) < 1f && Math.Abs(fullY - insetY) < 1f,
+                $"rect {rect}, off by {fullX - insetX:0.00}, {fullY - insetY:0.00} px");
+            var gaze = VRMath.Tangents(eye, Vector3.Normalize(new Vector3(0.2f, -0.1f, -1)));
+            Check("foveation: a gaze direction as tangents", gaze != null && Math.Abs(gaze.Value.X - 0.2f) < 1e-5f && Math.Abs(gaze.Value.Y + 0.1f) < 1e-5f, gaze?.ToString() ?? "null");
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }

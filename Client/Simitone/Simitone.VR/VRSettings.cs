@@ -23,6 +23,11 @@ namespace Simitone.VR
     /// observer you teleport there). StickAndArc: both.
     /// </summary>
     public enum VRMovement { StickAndArc, Stick, Arc }
+    /// <summary>
+    /// Foveated rendering: the edges of your view are drawn at lower resolution and only where you look (or, without
+    /// eye tracking, the middle) at full. Light: 70% resolution outside a 48 degree centre; Strong: 50% outside 40.
+    /// </summary>
+    public enum VRFoveation { Off, Light, Strong }
 
     /// <summary>
     /// User tunable VR options, stored as key=value lines in &lt;UserDir&gt;/vr.ini.
@@ -124,6 +129,18 @@ namespace Simitone.VR
         public bool SimHands = true;
         /// <summary>Show simple controller models in your hands when you're not in your Sim's body (observer, stepped out).</summary>
         public bool ControllerModels = true;
+        /// <summary>
+        /// Draw the lot once for both eyes (OpenGL multiview) instead of once per eye: about half the CPU cost of drawing
+        /// it. Used when the graphics driver supports it; otherwise each eye is drawn separately.
+        /// </summary>
+        public bool SinglePassStereo = true;
+        /// <summary>Foveated rendering (see <see cref="VRFoveation"/>); follows your eyes when the headset tracks them.</summary>
+        public VRFoveation Foveation = VRFoveation.Off;
+        /// <summary>
+        /// Left-handed: the left controller points and interacts, the right one walks, and the wrist displays swap
+        /// over (the needs display, which you point at, goes on your right wrist).
+        /// </summary>
+        public bool LeftHanded = false;
         /// <summary>The first-run comfort setup has been done (set it to False to see it again, or use the VR menu).</summary>
         public bool ComfortSetupDone = false;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>

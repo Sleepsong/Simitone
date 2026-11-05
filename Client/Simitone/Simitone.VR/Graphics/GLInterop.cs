@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace Simitone.VR.Graphics
@@ -49,6 +50,7 @@ namespace Simitone.VR.Graphics
         public const uint GL_COLOR_ATTACHMENT0 = 0x8CE0;
         public const uint GL_FRAMEBUFFER_COMPLETE = 0x8CD5;
         public const uint GL_COLOR_BUFFER_BIT = 0x4000;
+        public const uint GL_DEPTH_BUFFER_BIT = 0x100;
         public const uint GL_NEAREST = 0x2600;
         public const uint GL_LINEAR = 0x2601;
         public const uint GL_SCISSOR_TEST = 0x0C11;
@@ -167,6 +169,14 @@ namespace Simitone.VR.Graphics
                 }
             }
             throw new DllNotFoundException("Could not locate the SDL2 library used by MonoGame.");
+        }
+
+        /// <summary>An OpenGL function's address, or zero if the driver doesn't have it (after <see cref="Load"/>).</summary>
+        public static IntPtr TryGetProc(string name)
+        {
+            if (SDL_GL_GetProcAddress == null) return IntPtr.Zero;
+            var bytes = Encoding.ASCII.GetBytes(name + "\0");
+            fixed (byte* p = bytes) return SDL_GL_GetProcAddress(p);
         }
 
         private static IntPtr GL(string name)
@@ -401,6 +411,33 @@ namespace Simitone.VR.Graphics
             // Detach so the swapchain image is not referenced by our FBO when the runtime takes it back.
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+            Restore(saved);
+        }
+
+        /// <summary>
+        /// Copies a rectangle of one MonoGame render target into another (colour and/or depth), scaling with nearest or
+        /// linear filtering (depth is always nearest). Rectangles are in image pixels, top row first, as MonoGame stores
+        /// render targets. Leaves <paramref name="destination"/> set on the device.
+        /// </summary>
+        public static void BlitTargets(GraphicsDevice device, RenderTarget2D source, Rectangle sourceRect, RenderTarget2D destination,
+            Rectangle destinationRect, bool color, bool depth, bool linear)
+        {
+            int src, dst;
+            device.SetRenderTarget(source);
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &src);
+            device.SetRenderTarget(destination);
+            glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &dst);
+            var saved = Save();
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, (uint)src);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (uint)dst);
+            var sx1 = sourceRect.X + sourceRect.Width; var sy1 = sourceRect.Y + sourceRect.Height;
+            var dx1 = destinationRect.X + destinationRect.Width; var dy1 = destinationRect.Y + destinationRect.Height;
+            if (color)
+                glBlitFramebuffer(sourceRect.X, sourceRect.Y, sx1, sy1, destinationRect.X, destinationRect.Y, dx1, dy1,
+                    GL_COLOR_BUFFER_BIT, linear ? GL_LINEAR : GL_NEAREST);
+            if (depth)
+                glBlitFramebuffer(sourceRect.X, sourceRect.Y, sx1, sy1, destinationRect.X, destinationRect.Y, dx1, dy1,
+                    GL_DEPTH_BUFFER_BIT, GL_NEAREST);
             Restore(saved);
         }
 

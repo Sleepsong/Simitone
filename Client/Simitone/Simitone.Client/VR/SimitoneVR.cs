@@ -93,6 +93,8 @@ namespace Simitone.Client.VR
         private static PanelKind PanelKindShown;
         /// <summary>The part of the UI the panel shows, in window pixels (all of it, or just the open dialog).</summary>
         private static Rectangle PanelRegion;
+        /// <summary>Single-pass stereo as the VR menu shows it ("On", or "Unsupported" by this graphics driver).</summary>
+        public static string StereoStatus = "On";
         /// <summary>Set every update by <see cref="VRGameBridge"/>: a pie menu is open.</summary>
         public static bool PieMenuOpen;
         /// <summary>Set every update by the bridge: the open pie menu (the panel is cropped to it), or null.</summary>
@@ -348,6 +350,7 @@ namespace Simitone.Client.VR
 
             try
             {
+                if (Runtime.Input != null) Runtime.Input.LeftHanded = Settings.LeftHanded; // (read by this frame's sync)
                 FrameActive = Runtime.BeginFrame(Settings.DeadZone);
             }
             catch (Exception e)
@@ -477,7 +480,7 @@ namespace Simitone.Client.VR
             VRUIPanel pointed = null;
             var pointedPixel = Vector2.Zero;
             var pointedDistance = float.MaxValue;
-            var aim = inputActive ? (input.RightAim.Valid ? input.RightAim : input.LeftAim) : default;
+            var aim = inputActive ? (input.AnyPointerAim) : default;
             var panels = new System.Collections.Generic.List<VRUIPanel>(PointablePanels(immersive));
             foreach (var panel in panels)
             {
@@ -809,7 +812,7 @@ namespace Simitone.Client.VR
 
         private static bool HitsSurface(VRInput input, Vector3 position, Quaternion orientation, float width, float aspect)
         {
-            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
+            var aim = input.AnyPointerAim;
             if (!aim.Valid) return false;
             var normal = Vector3.Transform(Vector3.UnitZ, orientation);
             var denom = Vector3.Dot(aim.Forward, normal);
@@ -824,7 +827,7 @@ namespace Simitone.Client.VR
         private static void UpdatePointer(GraphicsDevice gd, VRInput input, Vector3 position, Quaternion orientation,
             float width, float aspect, bool armed, Rectangle region)
         {
-            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
+            var aim = input.AnyPointerAim;
             if (!aim.Valid) return;
 
             var normal = Vector3.Transform(Vector3.UnitZ, orientation);

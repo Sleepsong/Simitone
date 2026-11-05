@@ -17,9 +17,11 @@ namespace Simitone.Client.VR
     /// </summary>
     public class UIVROptionsList : UIContainer
     {
-        public const int ListWidth = 480, ListHeight = 360, ListGap = 40, ListTop = 40;
+        public const int ListWidth = 480, ListGap = 40, ListTop = 40;
+        /// <summary>Lists tall enough for every option (38 px rows), as the VR menu shows them; shorter ones scroll.</summary>
+        public const int FullListHeight = 11 * 38 + 12, ShortListHeight = 360;
         public const int TotalWidth = ListWidth * 2 + ListGap;
-        public const int TotalHeight = ListTop + ListHeight + 20 + 100;
+        public static int TotalHeight(int listHeight) => ListTop + listHeight + 20 + 100;
 
         private readonly List<VROption> Options;
         private readonly UITouchStringList[] Lists = new UITouchStringList[2];
@@ -27,7 +29,7 @@ namespace Simitone.Client.VR
         /// <summary>OK was pressed, or an option that does something (the comfort setup) was chosen.</summary>
         public event Action OnDone;
 
-        public UIVROptionsList(bool includeSetup, string hint)
+        public UIVROptionsList(bool includeSetup, string hint, int listHeight = FullListHeight)
         {
             Options = VROptions.Create(includeSetup);
             Split = (Options.Count + 1) / 2;
@@ -38,7 +40,7 @@ namespace Simitone.Client.VR
             for (int i = 0; i < 2; i++)
             {
                 var list = new UITouchStringList();
-                list.Size = new Vector2(ListWidth, ListHeight);
+                list.Size = new Vector2(ListWidth, listHeight);
                 list.Position = new Vector2(i * (ListWidth + ListGap), ListTop);
                 var offset = i * Split;
                 list.OnSelectionChange += index => Changed(offset + index);
@@ -50,7 +52,7 @@ namespace Simitone.Client.VR
             var done = new UIBigButton(true);
             done.Caption = VRText.Get("142", "0", "OK");
             done.Width = 275;
-            done.Position = new Vector2((TotalWidth - 275) / 2, ListTop + ListHeight + 20);
+            done.Position = new Vector2((TotalWidth - 275) / 2, ListTop + listHeight + 20);
             done.OnButtonClick += _ => OnDone?.Invoke();
             Add(done);
         }
@@ -88,9 +90,10 @@ namespace Simitone.Client.VR
         public UIVROptionsDialog()
         {
             Caption = "VR Options";
-            SetHeight(100 + UIVROptionsList.TotalHeight + 30);
+            SetHeight(100 + UIVROptionsList.TotalHeight(UIVROptionsList.ShortListHeight) + 30);
             var list = new UIVROptionsList(SimitoneVR.SessionRunning,
-                "Click an option to change it. Changes apply at once and are saved to vr.ini. In the headset, the VR menu has the same options.");
+                "Click an option to change it (drag the lists for more). Changes apply at once and are saved to vr.ini.",
+                UIVROptionsList.ShortListHeight);
             list.Position = new Vector2((Width - UIVROptionsList.TotalWidth) / 2, 100);
             list.OnDone += Close;
             Add(list);

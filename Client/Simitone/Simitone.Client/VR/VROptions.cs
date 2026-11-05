@@ -38,12 +38,13 @@ namespace Simitone.Client.VR
             void Add(string label, Func<string> value, Action<int> change)
                 => list.Add(new VROption { Label = label, Value = value, Change = change });
 
+            Add("Hands", () => Settings.LeftHanded ? "Left-handed" : "Right-handed", d => Settings.LeftHanded = !Settings.LeftHanded);
             Add("Sim actions", () => Name(Settings.SimActionView), d => Settings.SimActionView = Cycle(Settings.SimActionView, d));
             Add("Vignette", () => Name(Settings.Vignette), d => Settings.Vignette = Cycle(Settings.Vignette, d));
             Add("Vignette when moving", () => Name(Settings.VignetteWhenMoving), d => Settings.VignetteWhenMoving = Cycle(Settings.VignetteWhenMoving, d));
             Add("Movement", () => MovementName(Settings.Movement), d => Settings.Movement = Cycle(Settings.Movement, d));
             Add("Turning", () => Turns[TurnIndex()].name, d => SetTurn(Turns[Wrap(TurnIndex() + d, Turns.Length)]));
-            Add("Walk towards", () => Settings.MoveDirection == VRMoveDirection.Head ? "Head" : "Left hand",
+            Add("Walk towards", () => Settings.MoveDirection == VRMoveDirection.Head ? "Head" : "Stick hand",
                 d => Settings.MoveDirection = Cycle(Settings.MoveDirection, d));
             Add("Run", () => Settings.RunAtFullTilt ? "Stick full tilt" : "Click the stick", d => Settings.RunAtFullTilt = !Settings.RunAtFullTilt);
             Add("Fast game + walking", () => Settings.NormalSpeedWhenSteering ? "Slow down" : "Keep speed",
@@ -62,6 +63,11 @@ namespace Simitone.Client.VR
             Add("Sim's hands", () => Settings.SimHands ? "Follow yours" : "Animated", d => Settings.SimHands = !Settings.SimHands);
             Add("Controllers", () => Settings.ControllerModels ? "Shown" : "Hidden", d => Settings.ControllerModels = !Settings.ControllerModels);
             Add("Buy and build", () => Settings.VRBuildMode ? "In VR" : "Flat screen", d => Settings.VRBuildMode = !Settings.VRBuildMode);
+            Add("Single-pass stereo", () => !Settings.SinglePassStereo ? "Off" : SimitoneVR.StereoStatus,
+                d => Settings.SinglePassStereo = !Settings.SinglePassStereo);
+            Add("Foveation", () => Settings.Foveation == VRFoveation.Off ? "Off"
+                : Name(Settings.Foveation) + (SimitoneVR.Runtime?.EyeGazeSupported == true ? ", eyes" : ", centre"),
+                d => Settings.Foveation = Cycle(Settings.Foveation, d));
             Add("Render scale", () => (int)Math.Round(Settings.RenderScale * 100) + "%",
                 d => SimitoneVR.SetRenderScale(RenderScales[Wrap(Nearest(RenderScales, Settings.RenderScale) + d, RenderScales.Length)]));
             if (includeSetup)

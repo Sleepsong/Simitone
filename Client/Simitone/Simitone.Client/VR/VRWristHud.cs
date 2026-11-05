@@ -73,8 +73,14 @@ namespace Simitone.Client.VR
             {
                 // grip space: -Z towards the fingers, +X away from the left palm / into the right palm.
                 // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
-                watch = Place(Watch, input.RightGrip, head, new Vector3(-0.035f, 0.005f, 0.085f), -MathHelper.PiOver2, mode, out var watchFacing);
-                needs = Place(Needs, input.LeftGrip, head, new Vector3(0.035f, 0.005f, 0.085f), MathHelper.PiOver2, mode, out _);
+                // The watch is on the pointing hand's wrist and the needs (which you point at) on the other: right and
+                // left, swapped when left-handed.
+                var rightWrist = (offset: new Vector3(-0.035f, 0.005f, 0.085f), yaw: -MathHelper.PiOver2);
+                var leftWrist = (offset: new Vector3(0.035f, 0.005f, 0.085f), yaw: MathHelper.PiOver2);
+                var watchSide = input.LeftHanded ? leftWrist : rightWrist;
+                var needsSide = input.LeftHanded ? rightWrist : leftWrist;
+                watch = Place(Watch, input.PointerGrip, head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);
+                needs = Place(Needs, input.WalkGrip, head, needsSide.offset, needsSide.yaw, mode, out _);
                 WatchFacing = watchFacing;
             }
             SetShown(Watch, watch);

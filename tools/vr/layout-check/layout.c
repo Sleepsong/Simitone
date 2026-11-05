@@ -58,6 +58,7 @@ int main(void) {
   S(XrActionStatePose) O(XrActionStatePose, isActive)
   S(XrHapticActionInfo) O(XrHapticActionInfo, action) O(XrHapticActionInfo, subactionPath)
   S(XrHapticVibration) O(XrHapticVibration, duration) O(XrHapticVibration, frequency) O(XrHapticVibration, amplitude)
+  S(XrSystemEyeGazeInteractionPropertiesEXT) O(XrSystemEyeGazeInteractionPropertiesEXT, supportsEyeGazeInteraction)
 #ifdef XR_EXT_render_model
   /* XR_EXT_render_model / XR_EXT_interaction_render_model (OpenXR headers 1.1.4x and later) */
   S(XrUuidEXT)

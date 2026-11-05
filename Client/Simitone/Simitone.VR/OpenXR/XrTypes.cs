@@ -123,6 +123,8 @@ namespace Simitone.VR.OpenXR
         SwapchainImageOpenGLKHR = 1000023004,
         GraphicsRequirementsOpenGLKHR = 1000023005,
         GraphicsBindingEglMNDX = 1000048004,
+        // XR_EXT_eye_gaze_interaction
+        SystemEyeGazeInteractionPropertiesEXT = 1000030000,
         // XR_EXT_render_model
         RenderModelCreateInfoEXT = 1000300000,
         RenderModelPropertiesGetInfoEXT = 1000300001,
@@ -606,6 +608,14 @@ namespace Simitone.VR.OpenXR
     }
 
     // ---------------------------------------------------------------- events
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XrSystemEyeGazeInteractionPropertiesEXT
+    {
+        public XrStructureType Type;
+        public void* Next;
+        public uint SupportsEyeGazeInteraction;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct XrEventDataBuffer

@@ -28,6 +28,7 @@ class SmokeGame : Game
     private SpriteBatch Batch;
     private Texture2D White;
     private int Frames, Submitted, Focused;
+    private int SyncedRight, SyncedLeft; // input synced with each hand layout's action set
     private bool OrientationChecked;
     private string Failure;
 
@@ -69,8 +70,11 @@ class SmokeGame : Game
         try
         {
             Frames++;
+            // the second half of the run is left-handed: the other action set is synced and read
+            Runtime.Input.LeftHanded = Frames > FramesToRun / 2;
             bool began = Runtime.BeginFrame(0.2f);
             if (Runtime.Focused) Focused++;
+            if (Runtime.Input.Active) { if (Runtime.Input.LeftHanded) SyncedLeft++; else SyncedRight++; }
 
             // Each eye: top half red, bottom half blue (MonoGame/XNA coordinates, y down).
             for (int i = 0; i < 2; i++)
@@ -164,11 +168,14 @@ class SmokeGame : Game
 
         if (Failure != null || Frames >= FramesToRun)
         {
+            if (Failure == null && Focused > 10 && (SyncedRight == 0 || SyncedLeft == 0))
+                Failure = $"input didn't sync in both hand layouts (right-handed {SyncedRight} frames, left-handed {SyncedLeft})";
             ExitCode = (Failure == null && Submitted > 0) ? 0 : 1;
             Summary = (ExitCode == 0 ? "PASS" : "FAIL") +
                 $": {Frames} frames, {Submitted} submitted, {Focused} focused, state {Runtime.SessionState}, " +
                 $"period {Runtime.PredictedDisplayPeriod * 1000:0.0} ms, views valid {Runtime.ViewsValid}, " +
                 $"left eye at {Runtime.Views[0].Pose.Position.X:0.00},{Runtime.Views[0].Pose.Position.Y:0.00},{Runtime.Views[0].Pose.Position.Z:0.00}, " +
+                $"input synced right-handed {SyncedRight} / left-handed {SyncedLeft} frames, " +
                 $"bindings [{string.Join(", ", Runtime.Input.BoundProfiles)}]" + (Failure != null ? "\n" + Failure : "");
             foreach (var e in Eyes) e.Dispose();
             Quad.Dispose();

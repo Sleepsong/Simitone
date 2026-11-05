@@ -15,7 +15,8 @@ namespace Simitone.Client.VR
     /// </summary>
     public class VRMenu : VRUIPanel
     {
-        private const int PanelWidth = 1120, PanelHeight = 100 + UIVROptionsList.TotalHeight + 30;
+        private const int PanelWidth = 1120;
+        private static readonly int PanelHeight = 100 + UIVROptionsList.TotalHeight(UIVROptionsList.FullListHeight) + 30;
         private readonly UIVROptionsList List;
 
         public VRMenu() : base(PanelWidth, PanelHeight, 0.8f)

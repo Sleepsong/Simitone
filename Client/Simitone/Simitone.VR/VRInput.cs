@@ -29,7 +29,7 @@ namespace Simitone.VR
     }
 
     /// <summary>
-    /// OpenXR action set for Simitone. Default bindings:
+    /// OpenXR input for Simitone. Default bindings (right-handed; left-handed mirrors them):
     ///
     ///   Left stick ........ walk (your Sim, or yourself)       Left stick click ... run (hold)
     ///   Right stick X ..... snap / smooth turn                 Right stick Y ...... floor up / down (observer), scroll
@@ -38,36 +38,65 @@ namespace Simitone.VR
     ///   X (left) .......... pause / resume the game            Y (left) ........... next Sim in the family
     ///   Right trigger ..... point and interact / click         Right grip ......... right click / close a pie menu
     ///   Left grip ......... cycle live / buy / build mode      Left trigger ....... movement arc (hold, aim, let go)
-    ///   Left menu ......... VR options menu (Touch; squeeze the left trackpad on Index; on any controller point at your
-    ///                       left wrist and pull the trigger)
+    ///   Left menu ......... VR options menu (Touch; squeeze the walking hand's trackpad on Index; on any controller
+    ///                       point at the needs display on your wrist and pull the trigger)
     ///
     /// In buy and build mode the trigger picks up and places, the right stick rotates (X) and changes the arc's reach
     /// (Y) while holding something, the right grip cancels and B sells what you're holding.
     ///
+    /// <b>Left-handed</b> (<see cref="LeftHanded"/>): every role swaps hands (the left controller points, the right one
+    /// walks; X/Y and A/B swap too), except the menu button, which only the left Touch controller has. The two layouts
+    /// are two action sets ("Simitone" and "Simitone (left-handed)"), both bound up front; switching only changes which
+    /// one is read, so it applies at once, and each can be rebound in SteamVR's binding UI. A third set has what isn't
+    /// a role: the hands' poses and haptics, and eye gaze (XR_EXT_eye_gaze_interaction, for foveated rendering).
+    ///
     /// Bindings are suggested for the Steam Frame controller, Oculus Touch, Valve Index, HTC Vive and the KHR
-    /// simple controller. SteamVR also lets players rebind everything in its controller binding UI.
+    /// simple controller.
     /// </summary>
     public unsafe sealed class VRInput : IDisposable
     {
         public const string FrameControllerExtension = "XR_VALVE_frame_controller_interaction";
+        public const string EyeGazeExtension = "XR_EXT_eye_gaze_interaction";
+
+        private class Roles
+        {
+            public ulong Set;
+            public ulong Move, Turn, Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, BuildMenu, Select, Secondary, MoveArc, Menu;
+        }
 
         private XrApi Api;
-        private ulong ActionSet;
         private ulong LeftHand, RightHand;
-
-        private ulong MoveAction, TurnAction, SprintAction;
-        private ulong ToggleViewAction, SwitchModeAction, PauseAction, SpeedAction, NextSimAction, BuildMenuAction;
-        private ulong SelectAction, SecondaryAction, AimPoseAction, GripPoseAction, HapticAction;
-        private ulong MoveArcAction, MenuAction;
-        private ulong LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace;
+        private Roles RightHanded, LeftHandedRoles;
+        private ulong HandsSet, AimPoseAction, GripPoseAction, HapticAction, GazeAction;
+        private ulong LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace, GazeSpace;
+        private bool GazeBound;
 
         public Vector2 Move;
         public Vector2 Turn;
         public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, BuildMenu, Select, Secondary, MoveArc, Menu;
         public float SelectValue, SecondaryValue, MoveArcValue;
+        /// <summary>The controllers by physical hand.</summary>
         public VRPose LeftAim, RightAim, LeftGrip, RightGrip;
+        /// <summary>
+        /// Where your eyes look (tracking space; forward is the gaze), while the headset tracks them and the player
+        /// allows it. Invalid otherwise.
+        /// </summary>
+        public VRPose Gaze;
         public bool Active;
         public List<string> BoundProfiles = new List<string>();
+        /// <summary>The left controller points and the right one walks (set before each sync; applies at once).</summary>
+        public bool LeftHanded;
+        /// <summary>Eye gaze was offered by the runtime and bound (it may still be untracked, see <see cref="Gaze"/>).</summary>
+        public bool GazeAvailable => GazeBound;
+
+        /// <summary>The pointing hand's controller (right, or left when left-handed).</summary>
+        public VRPose PointerAim => LeftHanded ? LeftAim : RightAim;
+        public VRPose PointerGrip => LeftHanded ? LeftGrip : RightGrip;
+        /// <summary>The walking hand's controller (left, or right when left-handed).</summary>
+        public VRPose WalkAim => LeftHanded ? RightAim : LeftAim;
+        public VRPose WalkGrip => LeftHanded ? RightGrip : LeftGrip;
+        /// <summary>What to point with: the pointing hand, or the other one if it isn't tracked.</summary>
+        public VRPose AnyPointerAim => PointerAim.Valid ? PointerAim : WalkAim;
 
         private Action<string> Log;
 
@@ -76,40 +105,59 @@ namespace Simitone.VR
             Log = log;
         }
 
-        public void Create(XrApi api, bool frameControllerExtension)
+        public void Create(XrApi api, bool frameControllerExtension, bool eyeGaze)
         {
             Api = api;
             LeftHand = api.Path("/user/hand/left");
             RightHand = api.Path("/user/hand/right");
 
-            var info = new XrActionSetCreateInfo { Type = XrStructureType.ActionSetCreateInfo, Priority = 0 };
-            XrConst.WriteString(info.ActionSetName, XrConst.MaxActionSetNameSize, "simitone");
-            XrConst.WriteString(info.LocalizedActionSetName, XrConst.MaxLocalizedActionSetNameSize, "Simitone");
-            ulong set;
-            api.Check(api.CreateActionSet(api.Instance, &info, &set), "xrCreateActionSet");
-            ActionSet = set;
-
-            MoveAction = CreateAction("move", "Move", XrActionType.Vector2fInput, false);
-            TurnAction = CreateAction("turn", "Turn / change floor", XrActionType.Vector2fInput, false);
-            SprintAction = CreateAction("sprint", "Sprint", XrActionType.BooleanInput, false);
-            ToggleViewAction = CreateAction("toggle_view", "First person / flat screen", XrActionType.BooleanInput, false);
-            SwitchModeAction = CreateAction("switch_mode", "Play as Sim / observer, recentre screen", XrActionType.BooleanInput, false);
-            PauseAction = CreateAction("pause", "Pause / resume", XrActionType.BooleanInput, false);
-            SpeedAction = CreateAction("speed", "Cycle game speed", XrActionType.BooleanInput, false);
-            NextSimAction = CreateAction("next_sim", "Next Sim in the family", XrActionType.BooleanInput, false);
-            BuildMenuAction = CreateAction("build_menu", "Cycle live / buy / build mode", XrActionType.BooleanInput, false);
-            SelectAction = CreateAction("select", "Interact / click", XrActionType.FloatInput, false);
-            SecondaryAction = CreateAction("secondary", "Right click / close menu", XrActionType.FloatInput, false);
-            MoveArcAction = CreateAction("move_arc", "Movement arc (walk / teleport there)", XrActionType.FloatInput, false);
-            MenuAction = CreateAction("vr_menu", "VR options menu", XrActionType.BooleanInput, false);
-            AimPoseAction = CreateAction("aim", "Pointer", XrActionType.PoseInput, true);
-            GripPoseAction = CreateAction("grip", "Hand (wrist displays)", XrActionType.PoseInput, true);
-            HapticAction = CreateAction("haptic", "Haptics", XrActionType.VibrationOutput, true);
+            RightHanded = CreateRoles("simitone", "Simitone");
+            LeftHandedRoles = CreateRoles("simitone_left", "Simitone (left-handed)");
+            HandsSet = CreateSet("simitone_hands", "Simitone hands and eyes", 0);
+            AimPoseAction = CreateAction(HandsSet, "aim", "Pointer", XrActionType.PoseInput, true);
+            GripPoseAction = CreateAction(HandsSet, "grip", "Hand (wrist displays)", XrActionType.PoseInput, true);
+            HapticAction = CreateAction(HandsSet, "haptic", "Haptics", XrActionType.VibrationOutput, true);
+            if (eyeGaze) GazeAction = CreateAction(HandsSet, "eye_gaze", "Eye gaze (foveated rendering)", XrActionType.PoseInput, false);
 
             SuggestBindings(frameControllerExtension);
+            if (eyeGaze)
+            {
+                GazeBound = Suggest("/interaction_profiles/ext/eye_gaze_interaction",
+                    new List<(ulong, string)> { (GazeAction, "/user/eyes_ext/input/gaze_ext/pose") });
+                Log?.Invoke(GazeBound ? "OpenXR: eye gaze bound (foveated rendering can follow your eyes)" : "OpenXR: eye gaze binding rejected");
+            }
         }
 
-        private ulong CreateAction(string name, string localized, XrActionType type, bool bothHands)
+        private ulong CreateSet(string name, string localized, uint priority)
+        {
+            var info = new XrActionSetCreateInfo { Type = XrStructureType.ActionSetCreateInfo, Priority = priority };
+            XrConst.WriteString(info.ActionSetName, XrConst.MaxActionSetNameSize, name);
+            XrConst.WriteString(info.LocalizedActionSetName, XrConst.MaxLocalizedActionSetNameSize, localized);
+            ulong set;
+            Api.Check(Api.CreateActionSet(Api.Instance, &info, &set), "xrCreateActionSet(" + name + ")");
+            return set;
+        }
+
+        private Roles CreateRoles(string name, string localized)
+        {
+            var r = new Roles { Set = CreateSet(name, localized, 0) };
+            r.Move = CreateAction(r.Set, "move", "Move", XrActionType.Vector2fInput, false);
+            r.Turn = CreateAction(r.Set, "turn", "Turn / change floor", XrActionType.Vector2fInput, false);
+            r.Sprint = CreateAction(r.Set, "sprint", "Sprint", XrActionType.BooleanInput, false);
+            r.ToggleView = CreateAction(r.Set, "toggle_view", "First person / flat screen", XrActionType.BooleanInput, false);
+            r.SwitchMode = CreateAction(r.Set, "switch_mode", "Play as Sim / observer, recentre screen", XrActionType.BooleanInput, false);
+            r.Pause = CreateAction(r.Set, "pause", "Pause / resume", XrActionType.BooleanInput, false);
+            r.Speed = CreateAction(r.Set, "speed", "Cycle game speed", XrActionType.BooleanInput, false);
+            r.NextSim = CreateAction(r.Set, "next_sim", "Next Sim in the family", XrActionType.BooleanInput, false);
+            r.BuildMenu = CreateAction(r.Set, "build_menu", "Cycle live / buy / build mode", XrActionType.BooleanInput, false);
+            r.Select = CreateAction(r.Set, "select", "Interact / click", XrActionType.FloatInput, false);
+            r.Secondary = CreateAction(r.Set, "secondary", "Right click / close menu", XrActionType.FloatInput, false);
+            r.MoveArc = CreateAction(r.Set, "move_arc", "Movement arc (walk / teleport there)", XrActionType.FloatInput, false);
+            r.Menu = CreateAction(r.Set, "vr_menu", "VR options menu", XrActionType.BooleanInput, false);
+            return r;
+        }
+
+        private ulong CreateAction(ulong set, string name, string localized, XrActionType type, bool bothHands)
         {
             var info = new XrActionCreateInfo { Type = XrStructureType.ActionCreateInfo, ActionType = type };
             XrConst.WriteString(info.ActionName, XrConst.MaxActionNameSize, name);
@@ -121,7 +169,7 @@ namespace Simitone.VR
                 info.SubactionPaths = hands;
             }
             ulong action;
-            Api.Check(Api.CreateAction(ActionSet, &info, &action), "xrCreateAction(" + name + ")");
+            Api.Check(Api.CreateAction(set, &info, &action), "xrCreateAction(" + name + ")");
             return action;
         }
 
@@ -169,38 +217,53 @@ namespace Simitone.VR
             const string L = "/user/hand/left/";
             const string R = "/user/hand/right/";
 
-            List<(ulong, string)> Common(bool faceButtons, bool thumbstickClick, bool menu)
+            // A profile's bindings are suggested in one call (a second call replaces the first): both layouts, and the
+            // hands. "dom" is the pointing hand, "off" the walking hand.
+            List<(ulong, string)> Both(Func<Roles, string, string, List<(ulong, string)>> layout)
             {
-                var b = new List<(ulong, string)>
+                var all = layout(RightHanded, R, L);
+                all.AddRange(layout(LeftHandedRoles, L, R));
+                all.AddRange(new List<(ulong, string)>
                 {
-                    (MoveAction, L + "input/thumbstick"),
-                    (TurnAction, R + "input/thumbstick"),
-                    (SelectAction, R + "input/trigger/value"),
-                    (MoveArcAction, L + "input/trigger/value"),
-                    (SecondaryAction, R + "input/squeeze/value"),
-                    (BuildMenuAction, L + "input/squeeze/value"),
                     (AimPoseAction, L + "input/aim/pose"),
                     (AimPoseAction, R + "input/aim/pose"),
                     (GripPoseAction, L + "input/grip/pose"),
                     (GripPoseAction, R + "input/grip/pose"),
                     (HapticAction, L + "output/haptic"),
                     (HapticAction, R + "output/haptic"),
+                });
+                return all;
+            }
+            // Touch-style face buttons: A/B on the right, X/Y on the left
+            string First(string hand) => hand == R ? "a" : "x";
+            string Second(string hand) => hand == R ? "b" : "y";
+
+            Func<Roles, string, string, List<(ulong, string)>> Common(bool faceButtons, bool thumbstickClick, bool menu) => (r, dom, off) =>
+            {
+                var b = new List<(ulong, string)>
+                {
+                    (r.Move, off + "input/thumbstick"),
+                    (r.Turn, dom + "input/thumbstick"),
+                    (r.Select, dom + "input/trigger/value"),
+                    (r.MoveArc, off + "input/trigger/value"),
+                    (r.Secondary, dom + "input/squeeze/value"),
+                    (r.BuildMenu, off + "input/squeeze/value"),
                 };
                 if (thumbstickClick)
                 {
-                    b.Add((SprintAction, L + "input/thumbstick/click"));
-                    b.Add((faceButtons ? SpeedAction : ToggleViewAction, R + "input/thumbstick/click"));
+                    b.Add((r.Sprint, off + "input/thumbstick/click"));
+                    b.Add((faceButtons ? r.Speed : r.ToggleView, dom + "input/thumbstick/click"));
                 }
                 if (faceButtons)
                 {
-                    b.Add((ToggleViewAction, R + "input/a/click"));
-                    b.Add((SwitchModeAction, R + "input/b/click"));
-                    b.Add((PauseAction, L + "input/x/click"));
-                    b.Add((NextSimAction, L + "input/y/click"));
+                    b.Add((r.ToggleView, dom + "input/" + First(dom) + "/click"));
+                    b.Add((r.SwitchMode, dom + "input/" + Second(dom) + "/click"));
+                    b.Add((r.Pause, off + "input/" + First(off) + "/click"));
+                    b.Add((r.NextSim, off + "input/" + Second(off) + "/click"));
                 }
-                if (menu) b.Add((MenuAction, L + "input/menu/click"));
+                if (menu) b.Add((r.Menu, L + "input/menu/click")); // (only the left controller has one)
                 return b;
-            }
+            };
 
             // Steam Frame controllers (SteamVR 2.15.1+ path, then the older one).
             if (frameControllerExtension)
@@ -208,87 +271,68 @@ namespace Simitone.VR
                 bool ok = false;
                 foreach (var profile in new[] { "/interaction_profiles/valve/frame_controller_valve", "/interaction_profiles/valve/frame_controller" })
                 {
-                    ok = Suggest(profile, Common(true, true, true)) || Suggest(profile, Common(true, true, false))
-                        || Suggest(profile, Common(false, true, false)) || Suggest(profile, Common(false, false, false));
+                    ok = Suggest(profile, Both(Common(true, true, true))) || Suggest(profile, Both(Common(true, true, false)))
+                        || Suggest(profile, Both(Common(false, true, false))) || Suggest(profile, Both(Common(false, false, false)));
                     if (ok) break;
                 }
                 if (!ok) Log?.Invoke("OpenXR: Steam Frame controller bindings were not accepted; SteamVR will fall back to the Touch bindings.");
             }
 
             // Oculus Touch - also SteamVR's fallback for controllers without their own bindings.
-            var touch = Common(true, true, true);
-            Suggest("/interaction_profiles/oculus/touch_controller", touch);
+            Suggest("/interaction_profiles/oculus/touch_controller", Both(Common(true, true, true)));
 
-            // Valve Index: A/B on both hands, no X/Y.
-            Suggest("/interaction_profiles/valve/index_controller", new List<(ulong, string)>
+            // Valve Index: A/B on both hands, no X/Y; the walking hand's trackpad squeeze opens the menu.
+            Suggest("/interaction_profiles/valve/index_controller", Both((r, dom, off) => new List<(ulong, string)>
             {
-                (MoveAction, L + "input/thumbstick"),
-                (TurnAction, R + "input/thumbstick"),
-                (SprintAction, L + "input/thumbstick/click"),
-                (SpeedAction, R + "input/thumbstick/click"),
-                (ToggleViewAction, R + "input/a/click"),
-                (SwitchModeAction, R + "input/b/click"),
-                (PauseAction, L + "input/a/click"),
-                (NextSimAction, L + "input/b/click"),
-                (MenuAction, L + "input/trackpad/force"),
-                (SelectAction, R + "input/trigger/value"),
-                (SecondaryAction, R + "input/squeeze/value"),
-                (BuildMenuAction, L + "input/squeeze/value"),
-                (MoveArcAction, L + "input/trigger/value"),
-                (AimPoseAction, L + "input/aim/pose"),
-                (AimPoseAction, R + "input/aim/pose"),
-                (GripPoseAction, L + "input/grip/pose"),
-                (GripPoseAction, R + "input/grip/pose"),
-                (HapticAction, L + "output/haptic"),
-                (HapticAction, R + "output/haptic"),
-            });
+                (r.Move, off + "input/thumbstick"),
+                (r.Turn, dom + "input/thumbstick"),
+                (r.Sprint, off + "input/thumbstick/click"),
+                (r.Speed, dom + "input/thumbstick/click"),
+                (r.ToggleView, dom + "input/a/click"),
+                (r.SwitchMode, dom + "input/b/click"),
+                (r.Pause, off + "input/a/click"),
+                (r.NextSim, off + "input/b/click"),
+                (r.Menu, off + "input/trackpad/force"),
+                (r.Select, dom + "input/trigger/value"),
+                (r.Secondary, dom + "input/squeeze/value"),
+                (r.BuildMenu, off + "input/squeeze/value"),
+                (r.MoveArc, off + "input/trigger/value"),
+            }));
 
             // HTC Vive wands: trackpads for movement.
-            Suggest("/interaction_profiles/htc/vive_controller", new List<(ulong, string)>
+            Suggest("/interaction_profiles/htc/vive_controller", Both((r, dom, off) => new List<(ulong, string)>
             {
-                (MoveAction, L + "input/trackpad"),
-                (TurnAction, R + "input/trackpad"),
-                (SprintAction, L + "input/trackpad/click"),
-                (ToggleViewAction, R + "input/menu/click"),
-                (PauseAction, L + "input/menu/click"),
-                (SwitchModeAction, L + "input/squeeze/click"),
-                (SelectAction, R + "input/trigger/value"),
-                (SecondaryAction, R + "input/squeeze/click"),
-                (MoveArcAction, L + "input/trigger/value"),
-                (AimPoseAction, L + "input/aim/pose"),
-                (AimPoseAction, R + "input/aim/pose"),
-                (GripPoseAction, L + "input/grip/pose"),
-                (GripPoseAction, R + "input/grip/pose"),
-                (HapticAction, L + "output/haptic"),
-                (HapticAction, R + "output/haptic"),
-            });
+                (r.Move, off + "input/trackpad"),
+                (r.Turn, dom + "input/trackpad"),
+                (r.Sprint, off + "input/trackpad/click"),
+                (r.ToggleView, dom + "input/menu/click"),
+                (r.Pause, off + "input/menu/click"),
+                (r.SwitchMode, off + "input/squeeze/click"),
+                (r.Select, dom + "input/trigger/value"),
+                (r.Secondary, dom + "input/squeeze/click"),
+                (r.MoveArc, off + "input/trigger/value"),
+            }));
 
             // Lowest common denominator: pointer + click only (no locomotion).
-            Suggest("/interaction_profiles/khr/simple_controller", new List<(ulong, string)>
+            Suggest("/interaction_profiles/khr/simple_controller", Both((r, dom, off) => new List<(ulong, string)>
             {
-                (SelectAction, R + "input/select/click"),
-                (ToggleViewAction, L + "input/select/click"),
-                (PauseAction, L + "input/menu/click"),
-                (SwitchModeAction, R + "input/menu/click"),
-                (AimPoseAction, L + "input/aim/pose"),
-                (AimPoseAction, R + "input/aim/pose"),
-                (GripPoseAction, L + "input/grip/pose"),
-                (GripPoseAction, R + "input/grip/pose"),
-                (HapticAction, L + "output/haptic"),
-                (HapticAction, R + "output/haptic"),
-            });
+                (r.Select, dom + "input/select/click"),
+                (r.ToggleView, off + "input/select/click"),
+                (r.Pause, off + "input/menu/click"),
+                (r.SwitchMode, dom + "input/menu/click"),
+            }));
 
             Log?.Invoke("OpenXR: controller bindings suggested for " + string.Join(", ", BoundProfiles));
         }
 
         public void Attach(ulong session)
         {
-            ulong set = ActionSet;
+            ulong* sets = stackalloc ulong[3] { RightHanded.Set, LeftHandedRoles.Set, HandsSet };
             var attach = new XrSessionActionSetsAttachInfo
             {
                 Type = XrStructureType.SessionActionSetsAttachInfo,
-                CountActionSets = 1,
-                ActionSets = &set
+                CountActionSets = 3,
+                ActionSets = sets
             };
             Api.Check(Api.AttachSessionActionSets(session, &attach), "xrAttachSessionActionSets");
 
@@ -296,6 +340,7 @@ namespace Simitone.VR
             RightAimSpace = CreatePoseSpace(session, AimPoseAction, RightHand);
             LeftGripSpace = CreatePoseSpace(session, GripPoseAction, LeftHand);
             RightGripSpace = CreatePoseSpace(session, GripPoseAction, RightHand);
+            if (GazeBound) GazeSpace = CreatePoseSpace(session, GazeAction, 0);
         }
 
         private ulong CreatePoseSpace(ulong session, ulong action, ulong hand)
@@ -315,12 +360,15 @@ namespace Simitone.VR
         /// <summary>Syncs and reads all actions. Only call while the session is focused.</summary>
         public void Sync(ulong session, ulong baseSpace, long displayTime, float deadZone)
         {
-            var active = new XrActiveActionSet { ActionSet = ActionSet, SubactionPath = 0 };
+            var roles = LeftHanded ? LeftHandedRoles : RightHanded;
+            var active = stackalloc XrActiveActionSet[2];
+            active[0] = new XrActiveActionSet { ActionSet = roles.Set, SubactionPath = 0 };
+            active[1] = new XrActiveActionSet { ActionSet = HandsSet, SubactionPath = 0 };
             var sync = new XrActionsSyncInfo
             {
                 Type = XrStructureType.ActionsSyncInfo,
-                CountActiveActionSets = 1,
-                ActiveActionSets = &active
+                CountActiveActionSets = 2,
+                ActiveActionSets = active
             };
             var result = Api.SyncActions(session, &sync);
             if (result != XrResult.Success)
@@ -331,28 +379,30 @@ namespace Simitone.VR
             }
             Active = true;
 
-            Move = ApplyDeadZone(GetVector2(session, MoveAction), deadZone);
-            Turn = ApplyDeadZone(GetVector2(session, TurnAction), deadZone);
-            Sprint.Set(GetBool(session, SprintAction));
-            ToggleView.Set(GetBool(session, ToggleViewAction));
-            SwitchMode.Set(GetBool(session, SwitchModeAction));
-            Pause.Set(GetBool(session, PauseAction));
-            Speed.Set(GetBool(session, SpeedAction));
-            NextSim.Set(GetBool(session, NextSimAction));
-            BuildMenu.Set(GetBool(session, BuildMenuAction));
-            Menu.Set(GetBool(session, MenuAction));
-            SelectValue = GetFloat(session, SelectAction);
-            SecondaryValue = GetFloat(session, SecondaryAction);
-            MoveArcValue = GetFloat(session, MoveArcAction);
+            Move = ApplyDeadZone(GetVector2(session, roles.Move), deadZone);
+            Turn = ApplyDeadZone(GetVector2(session, roles.Turn), deadZone);
+            Sprint.Set(GetBool(session, roles.Sprint));
+            ToggleView.Set(GetBool(session, roles.ToggleView));
+            SwitchMode.Set(GetBool(session, roles.SwitchMode));
+            Pause.Set(GetBool(session, roles.Pause));
+            Speed.Set(GetBool(session, roles.Speed));
+            NextSim.Set(GetBool(session, roles.NextSim));
+            BuildMenu.Set(GetBool(session, roles.BuildMenu));
+            Menu.Set(GetBool(session, roles.Menu));
+            SelectValue = GetFloat(session, roles.Select);
+            SecondaryValue = GetFloat(session, roles.Secondary);
+            MoveArcValue = GetFloat(session, roles.MoveArc);
             // Hysteresis so a resting finger does not chatter the click.
             Select.Set(Select.Down ? SelectValue > 0.35f : SelectValue > 0.75f);
             Secondary.Set(Secondary.Down ? SecondaryValue > 0.35f : SecondaryValue > 0.75f);
             MoveArc.Set(MoveArc.Down ? MoveArcValue > 0.35f : MoveArcValue > 0.75f);
 
-            LeftAim = Locate(LeftAimSpace, baseSpace, displayTime);
-            RightAim = Locate(RightAimSpace, baseSpace, displayTime);
-            LeftGrip = Locate(LeftGripSpace, baseSpace, displayTime);
-            RightGrip = Locate(RightGripSpace, baseSpace, displayTime);
+            LeftAim = Locate(LeftAimSpace, baseSpace, displayTime, false);
+            RightAim = Locate(RightAimSpace, baseSpace, displayTime, false);
+            LeftGrip = Locate(LeftGripSpace, baseSpace, displayTime, false);
+            RightGrip = Locate(RightGripSpace, baseSpace, displayTime, false);
+            // (eye gaze only counts while it's really tracked, not a guess)
+            Gaze = GazeBound ? Locate(GazeSpace, baseSpace, displayTime, true) : default;
         }
 
         public void Clear()
@@ -363,7 +413,7 @@ namespace Simitone.VR
             NextSim.Set(false); BuildMenu.Set(false); Select.Set(false); Secondary.Set(false);
             MoveArc.Set(false); Menu.Set(false);
             SelectValue = SecondaryValue = MoveArcValue = 0;
-            LeftAim.Valid = RightAim.Valid = LeftGrip.Valid = RightGrip.Valid = false;
+            LeftAim.Valid = RightAim.Valid = LeftGrip.Valid = RightGrip.Valid = Gaze.Valid = false;
         }
 
         private static Vector2 ApplyDeadZone(Vector2 v, float deadZone)
@@ -398,13 +448,14 @@ namespace Simitone.VR
             return state.CurrentState;
         }
 
-        private VRPose Locate(ulong space, ulong baseSpace, long time)
+        private VRPose Locate(ulong space, ulong baseSpace, long time, bool mustBeTracked)
         {
             if (space == 0 || baseSpace == 0) return default;
             var loc = new XrSpaceLocation { Type = XrStructureType.SpaceLocation };
             if (Api.LocateSpace(space, baseSpace, time, &loc) != XrResult.Success) return default;
             const ulong both = XrConst.SpaceLocationOrientationValid | XrConst.SpaceLocationPositionValid;
             if ((loc.LocationFlags & both) != both) return default;
+            if (mustBeTracked && (loc.LocationFlags & XrConst.SpaceLocationOrientationTracked) == 0) return default;
             return new VRPose
             {
                 Valid = true,
@@ -413,14 +464,16 @@ namespace Simitone.VR
             };
         }
 
-        public void Haptic(ulong session, bool rightHand, float amplitude, float seconds)
+        /// <summary>A buzz in the pointing hand (true) or the walking hand (false).</summary>
+        public void Haptic(ulong session, bool pointingHand, float amplitude, float seconds)
         {
             if (session == 0 || HapticAction == 0) return;
+            var right = pointingHand != LeftHanded;
             var info = new XrHapticActionInfo
             {
                 Type = XrStructureType.HapticActionInfo,
                 Action = HapticAction,
-                SubactionPath = rightHand ? RightHand : LeftHand
+                SubactionPath = right ? RightHand : LeftHand
             };
             var vibration = new XrHapticVibration
             {
@@ -435,11 +488,13 @@ namespace Simitone.VR
         public void Dispose()
         {
             if (Api == null) return;
-            foreach (var space in new[] { LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace })
+            foreach (var space in new[] { LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace, GazeSpace })
                 if (space != 0) Api.DestroySpace(space);
-            LeftGripSpace = RightGripSpace = 0;
-            if (ActionSet != 0) Api.DestroyActionSet(ActionSet);
-            LeftAimSpace = RightAimSpace = ActionSet = 0;
+            LeftAimSpace = RightAimSpace = LeftGripSpace = RightGripSpace = GazeSpace = 0;
+            foreach (var set in new[] { RightHanded?.Set ?? 0, LeftHandedRoles?.Set ?? 0, HandsSet })
+                if (set != 0) Api.DestroyActionSet(set);
+            RightHanded = LeftHandedRoles = null;
+            HandsSet = 0;
         }
     }
 }

@@ -28,6 +28,7 @@ namespace Simitone.Client.VR
         private BasicEffect BeamEffect;
         private VRComfortOverlay ComfortOverlay;
         private VRControllerRenderer Controllers;
+        private VRStereoRenderer Stereo;
         private readonly VRSimArms Arms = new VRSimArms();
         private BasicEffect IconEffect;
         private Texture2D BubbleBg, BubbleRim, BubbleCancel;
@@ -56,6 +57,7 @@ namespace Simitone.Client.VR
             BeamEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
             ComfortOverlay = new VRComfortOverlay(layer.Device);
             Controllers = new VRControllerRenderer(layer.Device);
+            Stereo = new VRStereoRenderer(layer.Device);
             IconEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = true };
         }
 
@@ -176,11 +178,26 @@ namespace Simitone.Client.VR
             if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
             Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime?.RenderModels);
 
+            // The lot (single pass or one per eye, foveated or not). Per-frame animation that FreeSO advances while
+            // drawing (avatars easing their tilt to the ground, Mario) uses State.FramePerDraw, worked out once per frame
+            // in PreDraw: only the first pass gets it, or it would run once per pass.
+            int pass = 0;
+            var framePerDraw = State.FramePerDraw;
+            try
+            {
+                Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
+                {
+                    if (pass++ > 0) State.FramePerDraw = 0;
+                    base.InternalDraw(device);
+                });
+            }
+            finally { State.FramePerDraw = framePerDraw; }
+
+            // then what's drawn over it, per eye
             for (int eye = 0; eye < 2; eye++)
             {
                 cam.Eye = eye;
-                PPXDepthEngine.SetPPXTarget(targets[eye], null, true, State.OutsideColor);
-                base.InternalDraw(device);
+                PPXDepthEngine.SetPPXTarget(targets[eye], null, false);
                 DrawControllers(device, cam);
                 DrawPointerBeam(device, cam);
                 DrawActionBubble(device, cam);
@@ -398,6 +415,7 @@ namespace Simitone.Client.VR
             BeamEffect?.Dispose();
             ComfortOverlay?.Dispose();
             Controllers?.Dispose();
+            Stereo?.Dispose();
             IconEffect?.Dispose();
             base.Dispose();
         }

@@ -13,10 +13,10 @@ namespace Simitone.Client.VR
 {
     /// <summary>
     /// The first-run comfort setup, as a Simitone dialog floating in front of you: a few pages, each one question with
-    /// outlined choices (the current setting is filled green, and choosing applies it at once): what happens when your
-    /// Sim walks off, turning, moving, standing or seated, and the vignette. Shown the first time VR starts (until
-    /// <see cref="VRSettings.ComfortSetupDone"/>), and from the VR menu's "Comfort setup". Point with the right
-    /// controller and pull the trigger; the grip goes back a page.
+    /// outlined choices (the current setting is filled green, and choosing applies it at once): which hand you point
+    /// with, what happens when your Sim walks off, turning, moving, standing or seated, and the vignette. Shown the
+    /// first time VR starts (until <see cref="VRSettings.ComfortSetupDone"/>), and from the VR menu's "Comfort setup".
+    /// Point with a controller and pull the trigger; the grip goes back a page.
     /// </summary>
     public class VRSetup : VRUIPanel
     {
@@ -75,10 +75,16 @@ namespace Simitone.Client.VR
             Pages.Add(new Page
             {
                 Title = "Welcome to Simitone VR",
-                Intro = "A few quick choices to keep you comfortable. You can change them any time in the VR menu: the left "
-                    + "menu button, or the VR options button on your left wrist. Point with the right controller and pull the "
-                    + "trigger to choose."
+                Intro = "A few quick choices to keep you comfortable. You can change them any time in the VR menu: the "
+                    + "menu button, or the VR options button on your wrist. Point with a controller and pull the trigger to "
+                    + "choose."
             });
+
+            var hands = Add("Which hand do you point with?", "That hand points and picks; the other one walks.");
+            Option(hands, "Right", "Point with the right controller, walk with the left stick.",
+                () => Settings.LeftHanded = false, () => !Settings.LeftHanded);
+            Option(hands, "Left", "Point with the left controller, walk with the right stick.",
+                () => Settings.LeftHanded = true, () => Settings.LeftHanded);
 
             var tiers = Add("When your Sim walks off on their own", "To the fridge, a chair, a friend...");
             Option(tiers, "Comfortable (best to start)", "Step out, watch, and follow them in quick blinks. The view never slides.",
@@ -88,7 +94,7 @@ namespace Simitone.Client.VR
             Option(tiers, "Intense", "Stay in their head while they walk you about. For people used to VR.",
                 () => Settings.SimActionView = VRSimActionView.Intense, () => Settings.SimActionView == VRSimActionView.Intense);
 
-            var turning = Add("Turning", "With the right stick.");
+            var turning = Add("Turning", "With the stick on your pointing hand.");
             Option(turning, "Snap 30 (best to start)", "Turn in quick steps.", () => SetSnap(30), () => IsSnap(30));
             Option(turning, "Snap 45", "Bigger steps.", () => SetSnap(45), () => IsSnap(45));
             Option(turning, "Smooth", "Turn continuously. This can make some people feel sick.",
@@ -96,7 +102,7 @@ namespace Simitone.Client.VR
                 () => Settings.TurnMode == VRTurnMode.Smooth);
 
             var moving = Add("Moving", "Playing as your Sim, they walk; as an observer, you do.");
-            Option(moving, "Stick and arc", "Walk with the left stick, or hold the left trigger, aim the arc and let go to go there.",
+            Option(moving, "Stick and arc", "Walk with the stick, or hold that hand's trigger, aim the arc and let go to go there.",
                 () => Settings.Movement = VRMovement.StickAndArc, () => Settings.Movement == VRMovement.StickAndArc);
             Option(moving, "Arc only (most comfortable)", "Only the arc: your Sim walks there and you follow. No sliding at all.",
                 () => Settings.Movement = VRMovement.Arc, () => Settings.Movement == VRMovement.Arc);

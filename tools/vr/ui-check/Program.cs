@@ -131,7 +131,8 @@ class UIGame : FSO.Common.Rendering.Framework.Game
         Shots.Add(("needs", wrists.Needs, () => wrists.Needs.Show()));
         Shots.Add(("menu", menu, () => menu.Show()));
         Shots.Add(("setup-2", setup, () => setup.ShowPage(1)));
-        Shots.Add(("setup-6", setup, () => setup.ShowPage(5)));
+        Shots.Add(("setup-3", setup, () => setup.ShowPage(2)));
+        Shots.Add(("setup-7", setup, () => setup.ShowPage(6)));
         Shots.Add(("tip", tip, () => tip.ShowAt("There isn't enough room to put that here: something is in the way.", true,
             new Vector3(0.4f, 1.2f, -2.5f), head)));
         Shots.Add(("keyboard", keyboard, () =>
@@ -175,6 +176,8 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             {
                 RenderController();
                 if (GltfCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("glTF checks failed");
+                if (MultiviewCheck.Run(GraphicsDevice, Content, OutDir) > 0) throw new Exception("multiview checks failed");
+                if (StereoCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("stereo rendering checks failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();
@@ -539,5 +542,308 @@ static class GltfCheck
             using (var file = File.Create(Path.Combine(outDir, "controllers-real.png"))) target.SaveAsPng(file, target.Width, target.Height);
         }
         return Failures;
+    }
+}
+
+// Single-pass stereo (Simitone.VR.Graphics.GLMultiview): every vertex shader MonoGame has (FreeSO's effects, MonoGame's
+// own) gets a multiview variant, and a scene drawn once through them lands in both layers of a stereo target, each
+// with its own view; normal drawing works as before afterwards.
+static class MultiviewCheck
+{
+    static int Failures;
+
+    static void Check(string name, bool ok, string detail)
+    {
+        Console.WriteLine($"{(ok ? "ok  " : "FAIL")} multiview: {name}: {detail}");
+        if (!ok) Failures++;
+    }
+
+    public static int Run(GraphicsDevice gd, Microsoft.Xna.Framework.Content.ContentManager content, string outDir)
+    {
+        var mv = Simitone.VR.Graphics.GLMultiview.TryCreate(gd, s => Console.WriteLine("     " + s));
+        if (mv == null)
+        {
+            Check("available", false, Simitone.VR.Graphics.GLMultiview.Unavailable);
+            return Failures;
+        }
+        // all of FreeSO's world effects (as WorldContent loads them), so their shaders are on the device
+        int effects = 0;
+        foreach (var file in Directory.GetFiles(Path.Combine(content.RootDirectory, "Effects"), "*.xnb"))
+        {
+            try { content.Load<Effect>("Effects/" + Path.GetFileNameWithoutExtension(file)); effects++; } catch { }
+        }
+        using var basic = new BasicEffect(gd) { VertexColorEnabled = true };
+        using var batch = new SpriteBatch(gd);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var ready = mv.PrepareShaders(out var made, out var problem);
+        Check("every vertex shader has a multiview variant", ready && made >= 45, $"{made} made from {effects} effects files and MonoGame's own, in {watch.ElapsedMilliseconds} ms{(problem != null ? "; " + problem : "")}");
+        if (!ready) return Failures;
+
+        const int size = 256;
+        var target = mv.CreateTarget(size, size);
+        var left = new RenderTarget2D(gd, size, size, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents);
+        var right = new RenderTarget2D(gd, size, size, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents);
+        var normal = new RenderTarget2D(gd, size, size, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents);
+        var quad = new[]
+        {
+            new VertexPositionColor(new Vector3(-0.25f, -0.25f, 0.5f), Color.Red), new VertexPositionColor(new Vector3(0.25f, -0.25f, 0.5f), Color.Red),
+            new VertexPositionColor(new Vector3(-0.25f, 0.25f, 0.5f), Color.Red), new VertexPositionColor(new Vector3(0.25f, 0.25f, 0.5f), Color.Red)
+        };
+        void Scene()
+        {
+            gd.Clear(Color.Black);
+            basic.World = basic.View = basic.Projection = Matrix.Identity;
+            gd.DepthStencilState = DepthStencilState.Default;
+            gd.RasterizerState = RasterizerState.CullNone;
+            foreach (var pass in basic.CurrentTechnique.Passes) { pass.Apply(); gd.DrawUserPrimitives(PrimitiveType.TriangleStrip, quad, 0, 2); }
+            // and a SpriteBatch quad (MonoGame's sprite shader), green, top left
+            batch.Begin(SpriteSortMode.Immediate, BlendState.Opaque, null, DepthStencilState.None, RasterizerState.CullNone);
+            batch.Draw(Pixel(gd), new Rectangle(10, 10, 30, 30), Color.Lime);
+            batch.End();
+        }
+        (int count, Vector2 centre) Find(RenderTarget2D rt, Func<Color, bool> match)
+        {
+            var data = new Color[size * size];
+            rt.GetData(data);
+            int n = 0; var sum = Vector2.Zero;
+            for (int i = 0; i < data.Length; i++) if (match(data[i])) { n++; sum += new Vector2(i % size, i / size); }
+            return (n, n > 0 ? sum / n : Vector2.Zero);
+        }
+        bool Red(Color c) => c.R > 200 && c.G < 50;
+        bool Green(Color c) => c.G > 200 && c.R < 50;
+
+        // the right eye sees everything 0.5 to the right in clip space (a quarter of the image)
+        var shift = Matrix.Identity;
+        shift.M41 = 0.5f;
+        gd.SetRenderTarget(normal);
+        mv.Begin(target, Matrix.Identity, shift);
+        Scene();
+        mv.End();
+        mv.CopyLayer(target, 0, left);
+        mv.CopyLayer(target, 1, right);
+        var errors = mv.LastError();
+        var l = Find(left, Red);
+        var r = Find(right, Red);
+        Check("one draw fills the left layer", l.count > 3000 && Math.Abs(l.centre.X - 128) < 2, $"{l.count} px at {l.centre}");
+        Check("and the right layer, with its own view", r.count > 3000 && Math.Abs(r.centre.X - 128 - 64) < 2 && Math.Abs(r.centre.Y - l.centre.Y) < 1,
+            $"{r.count} px at {r.centre} (64 px to the right)");
+        var sl = Find(left, Green);
+        var sr = Find(right, Green);
+        Check("MonoGame's own shaders (SpriteBatch) too", sl.count > 500 && sr.count > 500 && sr.centre.X - sl.centre.X > 60,
+            $"left {sl.count} px at {sl.centre}, right {sr.count} px at {sr.centre}");
+        Check("no GL errors", errors == 0, $"0x{errors:x}");
+
+        // depth came along: draw a nearer blue quad over the left eye image with depth testing against the copy
+        gd.SetRenderTarget(left);
+        // (identity projection: depth is z, smaller is nearer; the red quad is at 0.5)
+        var nearQuad = Array.ConvertAll(quad, v => new VertexPositionColor(v.Position + new Vector3(0.1f, 0, -0.3f), Color.Blue));
+        var farQuad = Array.ConvertAll(quad, v => new VertexPositionColor(v.Position + new Vector3(-0.1f, 0, 0.3f), Color.Yellow));
+        gd.DepthStencilState = DepthStencilState.Default;
+        foreach (var pass in basic.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+            gd.DrawUserPrimitives(PrimitiveType.TriangleStrip, nearQuad, 0, 2);
+            gd.DrawUserPrimitives(PrimitiveType.TriangleStrip, farQuad, 0, 2);
+        }
+        gd.SetRenderTarget(null);
+        var blue = Find(left, c => c.B > 200 && c.R < 50 && c.G < 50);
+        var yellowOverRed = Find(left, c => c.R > 200 && c.G > 200 && c.B < 50);
+        Check("the depth buffer is copied too (nearer drawn over, farther hidden behind the scene)",
+            blue.count == 4096 && yellowOverRed.count > 500 && yellowOverRed.count < 1200,
+            $"{blue.count} blue px in front (all of it); {yellowOverRed.count} yellow px, only where the red quad isn't");
+
+        // and normal drawing still works after the pass
+        gd.SetRenderTarget(normal);
+        Scene();
+        gd.SetRenderTarget(null);
+        var n = Find(normal, Red);
+        Check("normal drawing afterwards", n.count > 3000 && Math.Abs(n.centre.X - 128) < 2, $"{n.count} px at {n.centre}");
+
+        using (var f = File.Create(Path.Combine(outDir, "multiview-left.png"))) left.SaveAsPng(f, size, size);
+        using (var f = File.Create(Path.Combine(outDir, "multiview-right.png"))) right.SaveAsPng(f, size, size);
+        mv.DestroyTarget(target);
+        mv.Dispose();
+        left.Dispose(); right.Dispose(); normal.Dispose();
+        return Failures;
+    }
+
+    static Texture2D PixelTexture;
+    static Texture2D Pixel(GraphicsDevice gd)
+    {
+        if (PixelTexture == null) { PixelTexture = new Texture2D(gd, 1, 1); PixelTexture.SetData(new[] { Color.White }); }
+        return PixelTexture;
+    }
+}
+
+// The VR renderer (VRStereoRenderer) on a made-up scene of boxes from 0.4 m to 8 m away, with a headset-like
+// asymmetric field of view and a 64 mm IPD: single-pass stereo (one draw for both eyes) must match drawing each
+// eye separately, and foveated rendering must match full resolution where you look and stay close elsewhere.
+static class StereoCheck
+{
+    static int Failures;
+
+    static void Check(string name, bool ok, string detail)
+    {
+        Console.WriteLine($"{(ok ? "ok  " : "FAIL")} stereo: {name}: {detail}");
+        if (!ok) Failures++;
+    }
+
+    public static int Run(GraphicsDevice gd, string outDir)
+    {
+        FSO.Common.Utils.PPXDepthEngine.InitGD(gd);
+        const float w = 3f; // world units per metre
+        var cam = new VREyeCamera(gd) { NearPlane = 0.05f * w, FarPlane = 1000 };
+        var head = new Vector3(20, 4.8f, 20);
+        var headRot = Quaternion.CreateFromYawPitchRoll(0.3f, -0.15f, 0);
+        for (int i = 0; i < 2; i++)
+        {
+            var side = i == 0 ? -1 : 1;
+            var f = new Simitone.VR.VRMath.ViewFrustum
+            {
+                Position = head + Vector3.Transform(new Vector3(side * 0.032f * w, 0, 0), headRot),
+                Orientation = headRot,
+                Left = (float)Math.Tan(MathHelper.ToRadians(side < 0 ? -52 : -44)), Right = (float)Math.Tan(MathHelper.ToRadians(side < 0 ? 44 : 52)),
+                Down = (float)Math.Tan(MathHelper.ToRadians(-50)), Up = (float)Math.Tan(MathHelper.ToRadians(46))
+            };
+            cam.EyeFrustum[i] = f;
+            cam.EyeView[i] = f.View;
+            cam.EyeProjection[i] = f.Projection(cam.NearPlane, cam.FarPlane);
+        }
+        cam.EyeFrustaValid = true;
+
+        // the scene: boxes in front, at several distances, some near the edges of view
+        var verts = new List<VertexPositionColor>();
+        var rnd = new Random(3);
+        var forward = Vector3.Transform(-Vector3.UnitZ, headRot);
+        var rightDir = Vector3.Transform(Vector3.UnitX, headRot);
+        var up = Vector3.Transform(Vector3.UnitY, headRot);
+        Color[] palette = { Color.Red, Color.Lime, Color.Blue, Color.Yellow, Color.Magenta, Color.Cyan, Color.Orange, Color.White };
+        for (int b = 0; b < 40; b++)
+        {
+            var dist = (0.4f + (float)Math.Pow(rnd.NextDouble(), 1.5) * 7.6f) * w;
+            var centre = head + forward * dist + rightDir * (float)(rnd.NextDouble() * 2 - 1) * dist * 0.9f + up * (float)(rnd.NextDouble() * 2 - 1) * dist * 0.8f;
+            var size = (0.05f + (float)rnd.NextDouble() * 0.3f) * w;
+            AddBox(verts, centre, size, palette[b % palette.Length], (float)rnd.NextDouble() * 6);
+        }
+        var scene = verts.ToArray();
+        using var effect = new BasicEffect(gd) { VertexColorEnabled = true };
+        int draws = 0;
+        void DrawWorld()
+        {
+            draws++;
+            gd.Clear(new Color(40, 50, 70));
+            effect.World = Matrix.Identity;
+            effect.View = cam.View;
+            effect.Projection = cam.Projection;
+            gd.DepthStencilState = DepthStencilState.Default;
+            gd.RasterizerState = RasterizerState.CullNone;
+            gd.BlendState = BlendState.Opaque;
+            foreach (var pass in effect.CurrentTechnique.Passes) { pass.Apply(); gd.DrawUserPrimitives(PrimitiveType.TriangleList, scene, 0, scene.Length / 3); }
+        }
+
+        const int W = 480, H = 480;
+        RenderTarget2D[] Eyes() => new[]
+        {
+            new RenderTarget2D(gd, W, H, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents),
+            new RenderTarget2D(gd, W, H, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents)
+        };
+        var settings = SimitoneVR.Settings;
+        using var renderer = new VRStereoRenderer(gd);
+        Color[][] Render(bool singlePass, VRFoveation foveation, Vector3? gaze, out string mode, out int passes, string file)
+        {
+            settings.SinglePassStereo = singlePass;
+            settings.Foveation = foveation;
+            var eyes = Eyes();
+            draws = 0;
+            for (int frame = 0; frame < 3; frame++) renderer.Render(cam, eyes, new Color(40, 50, 70), gaze, DrawWorld); // (gaze smoothing settles)
+            passes = draws / 3;
+            mode = renderer.Mode;
+            gd.SetRenderTarget(null);
+            var result = new Color[2][];
+            for (int i = 0; i < 2; i++) { result[i] = new Color[W * H]; eyes[i].GetData(result[i]); }
+            using (var f = File.Create(Path.Combine(outDir, file))) { SideBySide(gd, eyes).SaveAsPng(f, W * 2, H); }
+            foreach (var e in eyes) e.Dispose();
+            return result;
+        }
+        (float differing, float meanError) Compare(Color[] a, Color[] b, Rectangle? only = null)
+        {
+            int diff = 0, n = 0; double sum = 0;
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    if (only != null && !only.Value.Contains(x, y)) continue;
+                    var p = a[y * W + x]; var q = b[y * W + x];
+                    var d = Math.Abs(p.R - q.R) + Math.Abs(p.G - q.G) + Math.Abs(p.B - q.B);
+                    if (d > 30) diff++;
+                    sum += d / 3.0; n++;
+                }
+            return (diff / (float)n, (float)(sum / n));
+        }
+
+        var reference = Render(false, VRFoveation.Off, null, out var refMode, out var refPasses, "stereo-two-pass.png");
+        Check("two passes draw the lot twice", refPasses == 2 && refMode == "two passes", $"{refPasses} draws a frame ({refMode})");
+        var single = Render(true, VRFoveation.Off, null, out var singleMode, out var singlePasses, "stereo-single-pass.png");
+        Check("single pass draws the lot once", singlePasses == 1 && singleMode == "single pass", $"{singlePasses} draw a frame ({singleMode})");
+        for (int i = 0; i < 2; i++)
+        {
+            var (differing, mean) = Compare(reference[i], single[i]);
+            Check($"single pass looks the same as two passes ({(i == 0 ? "left" : "right")} eye)", differing < 0.003f && mean < 1f,
+                $"{differing * 100:0.000}% of pixels differ, mean error {mean:0.00}/255");
+        }
+        var leftRightDiffer = Compare(single[0], single[1]).differing;
+        Check("the eyes differ (it is stereo)", leftRightDiffer > 0.02f, $"{leftRightDiffer * 100:0.0}% of pixels differ between eyes");
+
+        // foveated: looking a little left of centre and down, at a point 2 m away
+        var gazePoint = head + Vector3.Transform(Vector3.Normalize(new Vector3(-0.25f, -0.15f, -1)), headRot) * 2 * w;
+        var foveated = Render(true, VRFoveation.Strong, gazePoint, out var fovMode, out var fovPasses, "stereo-foveated.png");
+        Check("foveated single pass draws the lot twice (soft view and sharp centre)", fovPasses == 2 && fovMode.Contains("following your eyes"),
+            $"{fovPasses} draws a frame ({fovMode})");
+        for (int i = 0; i < 2; i++)
+        {
+            var eye = cam.EyeFrustum[i];
+            var t = Simitone.VR.VRMath.Tangents(eye, gazePoint - eye.Position).Value;
+            var rect = Simitone.VR.VRMath.InsetPixels(eye, t, new Point(1, 1), W, H).rect; // (its centre)
+            rect = new Rectangle(rect.X - 70, rect.Y - 70, 140, 140);
+            var core = new Rectangle(rect.X + rect.Width / 4, rect.Y + rect.Height / 4, rect.Width / 2, rect.Height / 2);
+            var inside = Compare(reference[i], foveated[i], core);
+            var whole = Compare(reference[i], foveated[i]);
+            Check($"foveated: full resolution where you look ({(i == 0 ? "left" : "right")} eye)", inside.differing < 0.003f && inside.meanError < 1f,
+                $"{inside.differing * 100:0.000}% differ in the middle of the sharp square {rect}");
+            Check($"foveated: close to full resolution elsewhere ({(i == 0 ? "left" : "right")} eye)", whole.meanError < 6f,
+                $"mean error {whole.meanError:0.00}/255 over the whole eye, {whole.differing * 100:0.0}% of pixels differ visibly (soft edges)");
+        }
+        // two passes + foveation: four draws
+        Render(false, VRFoveation.Light, null, out var fov2Mode, out var fov2Passes, "stereo-foveated-two-pass.png");
+        Check("foveated without single pass draws four times (centre, no eye tracking)", fov2Passes == 4 && fov2Mode.Contains("centre"),
+            $"{fov2Passes} draws a frame ({fov2Mode})");
+        return Failures;
+    }
+
+    static void AddBox(List<VertexPositionColor> v, Vector3 c, float s, Color colour, float spin)
+    {
+        var rot = Matrix.CreateRotationY(spin) * Matrix.CreateRotationX(spin * 0.7f);
+        Vector3 P(int x, int y, int z) => c + Vector3.Transform(new Vector3(x, y, z) * s / 2, rot);
+        var faces = new[] { (0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3) };
+        Vector3 Corner(int i) => P((i & 1) * 2 - 1, ((i >> 1) & 1) * 2 - 1, ((i >> 2) & 1) * 2 - 1);
+        for (int f = 0; f < faces.Length; f++)
+        {
+            var (a, b, cc, d) = faces[f];
+            var shade = new Color(colour.ToVector3() * (0.55f + 0.08f * f));
+            v.Add(new VertexPositionColor(Corner(a), shade)); v.Add(new VertexPositionColor(Corner(b), shade)); v.Add(new VertexPositionColor(Corner(cc), shade));
+            v.Add(new VertexPositionColor(Corner(a), shade)); v.Add(new VertexPositionColor(Corner(cc), shade)); v.Add(new VertexPositionColor(Corner(d), shade));
+        }
+    }
+
+    static RenderTarget2D SideBySide(GraphicsDevice gd, RenderTarget2D[] eyes)
+    {
+        var both = new RenderTarget2D(gd, eyes[0].Width * 2, eyes[0].Height);
+        using var batch = new SpriteBatch(gd);
+        gd.SetRenderTarget(both);
+        batch.Begin(SpriteSortMode.Immediate, BlendState.Opaque);
+        batch.Draw(eyes[0], Vector2.Zero, Color.White);
+        batch.Draw(eyes[1], new Vector2(eyes[0].Width, 0), Color.White);
+        batch.End();
+        gd.SetRenderTarget(null);
+        return both;
     }
 }

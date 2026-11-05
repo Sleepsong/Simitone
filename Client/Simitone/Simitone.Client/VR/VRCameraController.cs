@@ -21,6 +21,8 @@ namespace Simitone.Client.VR
     {
         public const int MonoEye = -1;
         public const int PointerEye = 2;
+        /// <summary>A view set with <see cref="SetCustom"/>: a stereo pass's shared view, or a foveation inset.</summary>
+        public const int CustomEye = 3;
 
         public readonly Matrix[] EyeView = { Matrix.Identity, Matrix.Identity };
         public readonly Matrix[] EyeProjection = { Matrix.Identity, Matrix.Identity };
@@ -28,6 +30,10 @@ namespace Simitone.Client.VR
         public Matrix MonoProjection = Matrix.Identity;
         public Matrix PointerView = Matrix.Identity;
         public Matrix PointerProjection = Matrix.Identity;
+        private Matrix CustomView = Matrix.Identity, CustomProjection = Matrix.Identity;
+        /// <summary>Each eye as a view (world units): where it is, which way it faces, and its field of view.</summary>
+        public readonly VRMath.ViewFrustum[] EyeFrustum = new VRMath.ViewFrustum[2];
+        public bool EyeFrustaValid;
         private int _Eye = MonoEye;
 
         public VREyeCamera(GraphicsDevice device) : base(device, Vector3.Zero, Vector3.Forward, Vector3.Up)
@@ -42,6 +48,14 @@ namespace Simitone.Client.VR
             set { _Eye = value; Invalidate(); }
         }
 
+        /// <summary>Draws from this view until <see cref="Eye"/> is set again.</summary>
+        public void SetCustom(Matrix view, Matrix projection)
+        {
+            CustomView = view;
+            CustomProjection = projection;
+            Eye = CustomEye;
+        }
+
         public void Invalidate()
         {
             m_ViewDirty = true;
@@ -50,12 +64,12 @@ namespace Simitone.Client.VR
 
         protected override void CalculateView()
         {
-            m_View = _Eye switch { 0 => EyeView[0], 1 => EyeView[1], PointerEye => PointerView, _ => MonoView };
+            m_View = _Eye switch { 0 => EyeView[0], 1 => EyeView[1], PointerEye => PointerView, CustomEye => CustomView, _ => MonoView };
         }
 
         protected override void CalculateProjection()
         {
-            m_Projection = _Eye switch { 0 => EyeProjection[0], 1 => EyeProjection[1], PointerEye => PointerProjection, _ => MonoProjection };
+            m_Projection = _Eye switch { 0 => EyeProjection[0], 1 => EyeProjection[1], PointerEye => PointerProjection, CustomEye => CustomProjection, _ => MonoProjection };
         }
     }
 
@@ -438,6 +452,8 @@ namespace Simitone.Client.VR
 
         /// <summary>Tracking space (metres) to world units.</summary>
         public Vector3 TrackingToWorld(Vector3 tracking) => RigPosition + RotateYaw(tracking * Scale, RigYaw);
+        /// <summary>A direction in tracking space, turned into the world (no scaling).</summary>
+        public Vector3 TrackingDirectionToWorld(Vector3 direction) => RotateYaw(direction, RigYaw);
 
         /// <summary>A pose in tracking space as a world matrix for something modelled in metres (e.g. a controller).</summary>
         public Matrix PoseToWorld(VRPose pose) => Matrix.CreateScale(Scale)
@@ -493,8 +509,8 @@ namespace Simitone.Client.VR
             get
             {
                 var input = SimitoneVR.Runtime?.Input;
-                if (Settings.MoveDirection == VRMoveDirection.LeftHand && input != null && input.LeftAim.Valid)
-                    return WorldYaw(input.LeftAim.Orientation);
+                if (Settings.MoveDirection == VRMoveDirection.LeftHand && input != null && input.WalkAim.Valid)
+                    return WorldYaw(input.WalkAim.Orientation); // (the walking hand: the left, or the right when left-handed)
                 return HeadWorldYaw;
             }
         }
@@ -1049,7 +1065,7 @@ namespace Simitone.Client.VR
         private void UpdateMoveArc(World world, VRInput input)
         {
             MoveArcCount = 0;
-            var enabled = Settings.Movement != VRMovement.Stick && input != null && input.Active && input.LeftAim.Valid
+            var enabled = Settings.Movement != VRMovement.Stick && input != null && input.Active && input.WalkAim.Valid
                 && !SimitoneVR.OverlayOpen;
             if (!enabled)
             {
@@ -1059,8 +1075,8 @@ namespace Simitone.Client.VR
             if (input.MoveArc.Down)
             {
                 MoveArcHeld = true;
-                var start = TrackingToWorld(input.LeftAim.Position);
-                var dir = Vector3.Normalize(RotateYaw(input.LeftAim.Forward, RigYaw));
+                var start = TrackingToWorld(input.WalkAim.Position);
+                var dir = Vector3.Normalize(RotateYaw(input.WalkAim.Forward, RigYaw));
                 var end = TraceArc(world, start, dir * MoveArcSpeed * Scale, PlayerLevel, MoveArcPoints, out MoveArcCount, out var landed);
                 var tile = new Vector2(end.X, end.Z) / TileUnits;
                 var bp = Lot(world);
@@ -1364,7 +1380,9 @@ namespace Simitone.Client.VR
                     var eyeWorld = Matrix.CreateFromQuaternion(eyeRot) * Matrix.CreateTranslation(eyePos);
                     cam.EyeView[i] = Matrix.Invert(eyeWorld);
                     cam.EyeProjection[i] = VRMath.Projection(view.Fov, near, far);
+                    cam.EyeFrustum[i] = VRMath.Frustum(eyePos, eyeRot, view.Fov);
                 }
+                cam.EyeFrustaValid = true;
             }
 
             // Mono camera: centre eye, symmetric projection with the desktop window's aspect ratio.
@@ -1402,7 +1420,7 @@ namespace Simitone.Client.VR
                 PointerVisible = false;
                 return;
             }
-            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
+            var aim = input.AnyPointerAim;
             if (!aim.Valid)
             {
                 PointerVisible = false;

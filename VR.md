@@ -235,9 +235,16 @@ running or routing. If you share a log from a headset session, the defaults can 
 | X | Pause / resume | Pause / resume | n/a | Pause / resume |
 | Y | Next Sim in the family | Next Sim in the family | n/a | Next Sim in the family |
 
+**Left-handed** (`LeftHanded`; *Hands* in the VR menu, or the second page of the comfort setup): every row above
+swaps hands. The left controller points and picks, the right stick walks and its trigger throws the movement arc,
+X/Y do what A/B did and the other way round, and the wrist displays swap (the needs display, which you point at,
+goes on your right wrist; the watch on your left). The menu button stays on the left Touch controller (the right
+one hasn't got one). It applies at once.
+
 Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_controller_interaction`),
-**Oculus Touch**, **Valve Index** (left A/B act as X/Y), **HTC Vive** wands (trackpads move and turn) and the
-KHR simple controller. SteamVR lets you rebind everything in its controller binding UI.
+**Oculus Touch**, **Valve Index** (A/B on the walking hand act as X/Y), **HTC Vive** wands (trackpads move and
+turn) and the KHR simple controller. SteamVR lets you rebind everything in its controller binding UI; the two
+layouts are the action sets "Simitone" and "Simitone (left-handed)".
 
 Keyboard fallback in first person, for testing without controllers: WASD/arrows to move, Shift to sprint,
 Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
@@ -270,7 +277,10 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
 | `MoveSpeed` | 1.6 | Observer walking speed, m/s |
 | `SprintMultiplier` | 2.5 | Observer speed multiplier while sprinting |
-| `MoveDirection` | Head | `Head` or `LeftHand`: what "forward" on the stick means |
+| `MoveDirection` | Head | `Head` or `LeftHand`: what "forward" on the stick means (`LeftHand` is the hand holding that stick: the right one when left-handed) |
+| `LeftHanded` | False | Point with the left controller and walk with the right (see [Controls](#controls)) |
+| `SinglePassStereo` | True | Draw the lot once for both eyes (OpenGL multiview) when the graphics driver can; `False` draws each eye separately |
+| `Foveation` | Off (Frame: Light) | `Off`, `Light` (70% resolution outside a 48 degree centre) or `Strong` (50% outside 40): the centre follows your eyes when the headset tracks them |
 | `TurnMode` | Snap | `Snap` or `Smooth` |
 | `SnapTurnDegrees` | 30 | Snap turn angle |
 | `SmoothTurnDegreesPerSecond` | 120 | Smooth turn speed |
@@ -327,6 +337,12 @@ What it relies on from SteamOS:
 - **OpenGL through Mesa (Zink on Turnip).** Simitone hands SteamVR its SDL/GLX context through
   `XR_KHR_opengl_enable` with the Xlib binding, the route other native OpenGL ports on the Frame use. If SDL
   ends up on EGL instead, `XR_MNDX_egl_enable` is used.
+- **OpenGL multiview** (`GL_OVR_multiview2`, with `GL_ARB_shading_language_420pack`) for single-pass stereo, which
+  Mesa offers on most drivers. If the Frame's driver doesn't, `vr.log` says "single-pass stereo unavailable" and
+  each eye is drawn separately.
+- **Eye tracking** through `XR_EXT_eye_gaze_interaction`, which is how Valve exposes the Frame's eye tracking to
+  apps. If SteamVR asks whether apps may use your eye data, allow it for foveated rendering to follow your eyes;
+  otherwise it stays centred (`vr.log` says which).
 - **SDL2 and OpenAL** system libraries (MonoGame doesn't ship arm64 builds). SteamOS includes both. To
   bundle your own, pass `--native-dir DIR` containing arm64 `libSDL2-2.0.so.0` / `libopenal.so`.
 
@@ -515,26 +531,59 @@ Design choices:
   - a hand without a runtime model gets the built-in one at the grip pose.
 
   The extensions are newer than OpenXR 1.0.20, so the layout check needs newer Khronos headers for them (below).
+- **Single-pass stereo (`GLMultiview`, `VRStereoRenderer`).** FreeSO's effects are compiled MonoGame effects
+  (MojoShader GLSL) and know nothing of stereo, so it's done underneath them:
+  - every vertex shader MonoGame has (FreeSO's and its own) gets a second variant, made at runtime: GLSL 1.30 with
+    `GL_OVR_multiview2`, its attribute locations pinned to the original's (MonoGame caches them per shader), and
+    one line added before MonoGame's clip-space fix-ups, `gl_Position += delta[gl_ViewID_OVR] * gl_Position`,
+    with each eye's delta (minus identity) in a uniform block;
+  - FreeSO draws the lot once, for a view that encloses both eyes (`VRMath.Enclose`: facing between them, a field
+    of view covering both, set back until both eyes' viewpoints are inside), so its culling, sorting and draw calls
+    happen once; each eye's delta is `VRMath.ClipDelta`, which turns that view's clip position into the eye's own,
+    exactly;
+  - for that pass, MonoGame's shaders are switched to their variants (its program cache is swapped for a second
+    one) and a two-layer framebuffer is bound under the render target MonoGame thinks it's drawing to; afterwards
+    each layer's colour and depth are copied into its eye's target.
+
+  This uses MonoGame 3.8 DesktopGL internals by reflection; if anything is missing (a field, a GL extension, a
+  shader that won't convert) it falls back to one pass per eye and says why in `vr.log`. Anything drawn in screen
+  space during the lot pass would be offset in the second eye; FreeSO's 3D lot pass has none.
+- **Foveated rendering.** Each eye is drawn twice: the whole view into a smaller render target, and a square around
+  your gaze at the eye's own pixel density, snapped to the eye's pixels so it lines up exactly. The sharp square is
+  blended over the soft view with a feathered edge (a mask written into its alpha, then SpriteBatch; no custom
+  shaders), and both depths are copied in for what's drawn on top. The gaze is the point 2 m along
+  `XR_EXT_eye_gaze_interaction`'s gaze, seen from each eye; through a blink the square stays put, and it eases back
+  to the middle if tracking is lost. With single-pass stereo the frame is two lot passes; without, four.
+- **Once-per-frame animation.** FreeSO eases some things while drawing (an avatar settling its tilt on sloped
+  ground, Mario) by `WorldState.FramePerDraw`, worked out once per frame; only the first lot pass of a frame gets
+  it, so extra passes don't speed them up.
+- **Hands.** Two action sets carry the same actions with mirrored bindings, both attached; the one for your
+  handedness is the one synced and read. A third set has the hands' poses, haptics and eye gaze. Haptics are
+  addressed by role (pointing hand, walking hand), so they follow.
 - **Panels on the headset.** Projection layer plus up to eight quads: the two wrist displays, the floating panel,
   the tip, the keyboard, the menu and the setup.
 
 ### Tests
 
 - `tools/vr/layout-check/run.sh` compares every hand-written OpenXR struct's size and field offsets with the
-  Khronos C headers (165 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
-  `include`, 1.1.4x or later) it also checks the render model structs (201 checks).
+  Khronos C headers (167 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
+  `include`, 1.1.4x or later) it also checks the render model structs (203 checks).
 - `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
   - the picking camera reproduces the controller ray;
   - the arc solver lands on a grabbed object;
-  - the movement arc reaches about 7.5 m at 45 degrees and lands within its step budget at any pitch.
+  - the movement arc reaches about 7.5 m at 45 degrees and lands within its step budget at any pitch;
+  - single-pass stereo: the shared view contains every point either eye sees, and each eye's clip delta reproduces
+    its own projection (three IPDs and cants);
+  - foveation: the sharp square follows the gaze, slides back inside the view at the edges, and its pixels line
+    up with the eye's.
 - `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
   field of view, to a PNG file under Xvfb.
 - `tools/vr/ui-check/run.sh <published Simitone> [dir]` renders every VR panel with Simitone's real UI (its fonts,
   art and controls, through FreeSO's UI layer) and sample game data, to PNG files under Xvfb:
   - the watch and the left wrist display;
   - the VR menu;
-  - two comfort setup pages;
+  - three comfort setup pages;
   - the keyboard and the placement tip;
   - the built-in controller model, from the side and from above.
 
@@ -549,11 +598,18 @@ Design choices:
   models laid out like the webxr-input-profiles assets' `profiles` folder (MIT; not included), it also draws
   Index, Touch, Touch Plus and Vive models with their trigger pulled through the same node-pose mechanism.
 
+  Single-pass stereo, on the GPU (Mesa llvmpipe here): every vertex shader (FreeSO's 17 effect files and MonoGame's
+  own, 66 shaders) converts; one draw fills both layers, each with its own view; depth comes across; normal drawing
+  works afterwards. Then the real renderer on a scene of boxes with a headset-like field of view: single pass matches
+  two passes (under 0.01% of pixels differ), and foveated rendering matches full resolution where you look and
+  stays within about 1/255 on average elsewhere (images: `stereo-*.png`).
+
   It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
-  path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding. Ubuntu packages: `monado-service libopenxr1-monado
+  path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding. The second half of the run is left-handed, and input must sync
+  in both layouts. Ubuntu packages: `monado-service libopenxr1-monado
   libopenxr-loader1 xvfb mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri libsdl2-2.0-0`.
 
 ## Known limitations and next steps
@@ -572,7 +628,6 @@ Design choices:
   - the 4 m leash, the blink timing and the vignette strengths.
 
   The speeds in [Speeds](#speeds) are worked out from the engine; `vr.log` records the real ones while you play.
-- **No left-handed mode yet:** the right controller always points and the left one walks.
 - **Popups, actions and typing:** only Simitone's full-width dialogs, pie menus and the travel pickers are
   cropped on the panel; anything else shows with the whole UI.
 - **Pie menus** float at the object, but they are the regular 2D menus on a panel.
@@ -587,13 +642,16 @@ Design choices:
   simple built-in controller.
 - **Sound** is the game's stereo panning by direction and distance, not 3D (HRTF) audio.
 - **Observer stairs** take you from end to end in a blink; you don't climb them.
-- **Performance:**
-  - the lot is drawn twice (no multiview);
-  - no foveated rendering (`XR_FB_foveation` / eye-tracked foveation on the Frame);
+- **Performance** is unmeasured on the Frame:
+  - single-pass stereo is tested on Mesa's llvmpipe, not on the Frame's driver (Zink on Turnip); if that lacks
+    multiview it falls back to two passes;
+  - foveation is the renderer's own (two images blended), since Valve's foveated rendering for the Frame
+    (`XR_FB_foveation` with fragment density maps) is for Vulkan apps; without single-pass stereo it costs CPU (four
+    lot passes) to save GPU;
+  - eye-tracked foveation is untested with a real eye tracker (Monado here has none); the centre fallback is what
+    the tests cover;
   - the Steam Frame defaults are a guess.
 - Windows VR is implemented (WGL binding; loader or registry runtime lookup) but untested.
-- Cosmetic: FreeSO smooths avatar normals in its draw call, so with two eye passes that smoothing runs twice as
-  fast.
 
 **Buy/build mode: next steps.**
 - **Catalogue:** it is the 2D catalogue on a panel; a VR-native catalogue would be a wrist tablet with 3D

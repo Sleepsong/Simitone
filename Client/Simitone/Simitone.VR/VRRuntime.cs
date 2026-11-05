@@ -144,6 +144,8 @@ namespace Simitone.VR
         public HashSet<string> EnabledExtensions { get; } = new HashSet<string>();
 
         public VRInput Input { get; private set; }
+        /// <summary>The headset tracks your eyes and lets apps read the gaze (XR_EXT_eye_gaze_interaction).</summary>
+        public bool EyeGazeSupported { get; private set; }
         /// <summary>The controllers as the runtime models them, or null if it can't (see <see cref="VRRenderModels"/>).</summary>
         public VRRenderModels RenderModels { get; private set; }
 
@@ -205,7 +207,7 @@ namespace Simitone.VR
                     throw new InvalidOperationException("SDL created an EGL context but the runtime lacks XR_MNDX_egl_enable. Try SDL_VIDEODRIVER=x11.");
                 wanted.Add("XR_MNDX_egl_enable");
             }
-            foreach (var optional in new[] { "XR_EXT_local_floor", VRInput.FrameControllerExtension })
+            foreach (var optional in new[] { "XR_EXT_local_floor", VRInput.FrameControllerExtension, VRInput.EyeGazeExtension })
                 if (available.Contains(optional)) wanted.Add(optional);
             // the controllers' own models (SteamVR, including on the Steam Frame), when the runtime offers them
             if (available.Contains(XrRenderModelApi.RenderModelExtension) && available.Contains(XrRenderModelApi.InteractionRenderModelExtension))
@@ -256,7 +258,12 @@ namespace Simitone.VR
             Api.Check(Api.GetSystem(Instance, &sysInfo, &systemId), "xrGetSystem (is the headset connected and SteamVR running?)");
             SystemId = systemId;
             var sysProps = new XrSystemProperties { Type = XrStructureType.SystemProperties };
+            var eyeGazeProps = new XrSystemEyeGazeInteractionPropertiesEXT { Type = XrStructureType.SystemEyeGazeInteractionPropertiesEXT };
+            if (EnabledExtensions.Contains(VRInput.EyeGazeExtension)) sysProps.Next = &eyeGazeProps;
             Api.Check(Api.GetSystemProperties(Instance, SystemId, &sysProps), "xrGetSystemProperties");
+            EyeGazeSupported = EnabledExtensions.Contains(VRInput.EyeGazeExtension) && eyeGazeProps.SupportsEyeGazeInteraction != 0;
+            if (EnabledExtensions.Contains(VRInput.EyeGazeExtension))
+                Log("OpenXR: eye tracking " + (EyeGazeSupported ? "available" : "not available on this headset"));
             SystemName = XrConst.ReadString(sysProps.SystemName, XrConst.MaxSystemNameSize);
             Log($"OpenXR: system '{SystemName}' (vendor 0x{sysProps.VendorId:x}), position tracking: {sysProps.TrackingProperties.PositionTracking != 0}");
 
@@ -288,7 +295,7 @@ namespace Simitone.VR
 
             // ---- input (bindings must be suggested before the action set is attached)
             Input = new VRInput(Log);
-            Input.Create(Api, EnabledExtensions.Contains(VRInput.FrameControllerExtension));
+            Input.Create(Api, EnabledExtensions.Contains(VRInput.FrameControllerExtension), EyeGazeSupported);
 
             // ---- session
             CreateSession();
@@ -632,9 +639,10 @@ namespace Simitone.VR
             Api.Check(r, "xrEndFrame");
         }
 
-        public void Haptic(bool rightHand, float amplitude, float seconds)
+        /// <summary>A buzz in the pointing hand (true; right unless left-handed) or the walking hand (false).</summary>
+        public void Haptic(bool pointingHand, float amplitude, float seconds)
         {
-            if (SessionRunning && Focused) Input?.Haptic(Session, rightHand, amplitude, seconds);
+            if (SessionRunning && Focused) Input?.Haptic(Session, pointingHand, amplitude, seconds);
         }
 
         public void RequestExit()
