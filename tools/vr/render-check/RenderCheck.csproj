@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Renders the VR comfort overlay (vignette, blink), the VR options menu and the wrist needs display to PNG files
+    with the real Simitone.Client code, so they can be looked at without a headset. Run with run.sh (Xvfb).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RollForward>Major</RollForward>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors></WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4" />
+    <ProjectReference Include="../../../Client/Simitone/Simitone.Client/Simitone.Client.csproj" />
+  </ItemGroup>
+</Project>

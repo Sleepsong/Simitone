@@ -293,16 +293,33 @@ Decided (November 2026):
   - **How:** changes apply immediately and are saved back to `vr.ini` (`VRSettings.Save` already exists).
 - **Dollhouse view:** later, and secondary to first person.
 
-Next steps, in order:
-1. **Comfortable `SimActionView`:** detach on yield, blink-follow, blink back.
-2. **Vignette** for any motion the player didn't drive (and optionally while steering).
+Next steps, in order (status, November 2026):
+1. **Comfortable `SimActionView`:** detach on yield, blink-follow, blink back. *Done.*
+2. **Vignette** for any motion the player didn't drive (and optionally while steering). *Done:* `Vignette` and
+   `VignetteWhenMoving`, Off/Low/Medium/High.
 3. **In-game VR options:** comfort tier, vignette, movement type (stick / arc / teleport), snap or smooth turn,
-   seated height. Changes apply live and are saved to `vr.ini`.
+   seated height. Changes apply live and are saved to `vr.ini`. *Done:* the VR menu (left menu button, left
+   wrist + trigger, or F9). It isn't in the game's own Options panel yet, and there is no first-run wizard.
 4. **Arc movement** (Sim mode) and **teleport movement** (observer), reusing the build-mode arc and the blink.
-5. **Posture blinks** (sit, lie, stand) and the "step out" for sleeping and bathing.
-6. **Remove head-bone bob:** anchor horizontally on the Sim's position.
-7. **Measure** Sim walk and run speeds in VR and tune them (or blink).
+   *Done:* left trigger.
+5. **Posture blinks** (sit, lie, stand) and the "step out" for sleeping and bathing. *Done*, for every tier.
+6. **Remove head-bob:** anchor horizontally on the Sim's position. *Done*, for every tier.
+7. **Measure** Sim walk and run speeds in VR and tune them (or blink). *Not yet: needs the game running.*
 8. Later: **dollhouse view** (two-hand grab and scale).
+
+### How it was implemented
+
+The design above maps onto the code like this (details in [VR.md](VR.md#how-it-works-for-developers)):
+
+| Design | Implementation |
+|---|---|
+| Signals: steering, busy, moving, posture | **Steering:** direct control on top of the Sim's stack (`VRGameBridge`).<br>**Walked off:** not steering, and moved 0.6 m from where you last had them.<br>**Settled:** position and head height still for 1 s.<br>**Lying:** head below 55% of the standing head height learnt while steering. |
+| Anchored / Detached / Blink states | `VRSimView` in `VRCameraController`: Anchored, Detached (Comfortable, and lying in any tier), Gliding (Moderate). Blinks are a timed fade (40% out, 60% in) with the move made at full black, and the rig held still while fading out. |
+| Vantage points | `PlaceNear`: 1.0 m behind the Sim when stepping out, 1.8 m when following, in the direction you're already looking. If that isn't clear, it tries the nearest clear direction (turning you to face the Sim, during the black). It prefers the Sim's room (`VMContext.GetRoomAt`), a floor, and no walls in the way. |
+| Follow triggers | Comfortable: beyond `LeashDistance` (4 m), another floor, or another room. Moderate: glide at `GlideSpeed` from 2.6 m down to 1.9 m, and blink when stuck on a wall for 0.6 s or further than 1.5 x the leash. |
+| Back into the head | When you can steer again for 0.2 s; or (Comfortable and Moderate) when the Sim has been settled and upright for 1 s and you've been out for at least 1.5 s; or (Intense) when they stop lying down. |
+| Posture and stairs | **Posture:** a head-height change over 0.3 m holds the old height until the new one has been still for 0.25 s, then blinks there.<br>**Stairs and jumps:** a floor change, or a jump of more than 1.5 tiles, blinks. |
+| Vignette | `VRComfortOverlay`, a view-space ring drawn last in each eye. **Driver:** the speed the rig carries your head (excluding your own head motion) and the smooth-turn rate. Snaps and blinks don't count.<br>**Clear area:** from 72 degrees (none) down to 22 degrees (High at full motion). |
 
 ## References
 

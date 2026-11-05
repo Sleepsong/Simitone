@@ -102,6 +102,36 @@ static class Program
             Check("arc: a target above the straight line has no solution", none == null, none?.ToString() ?? "null");
         }
 
+        // ---- movement arc (left trigger): 8 m/s from about waist height, stepped like VRCameraController.TraceArc
+        {
+            float Reach(float pitchDegrees, out bool landed)
+            {
+                var pitch = MathHelper.ToRadians(pitchDegrees);
+                var pos = new Vector3(0, 1.0f * scale, 0);
+                var vel = new Vector3(0, (float)Math.Sin(pitch), -(float)Math.Cos(pitch)) * 8f * scale;
+                landed = false;
+                for (int i = 0; i < 300 && !landed; i++) // TraceArc: 300 steps of 15 ms
+                {
+                    var next = pos + vel * 0.015f;
+                    vel.Y -= gravity * 0.015f;
+                    if (next.Y <= 0) { next = pos + (next - pos) * (pos.Y / (pos.Y - next.Y)); landed = true; }
+                    pos = next;
+                }
+                return new Vector2(pos.X, pos.Z).Length() / scale;
+            }
+            var at45 = Reach(45, out var landed45);
+            Check("movement arc: about 7 m of reach at 45 degrees", landed45 && at45 > 6.5f && at45 < 8f, $"{at45:0.00} m");
+            var allLand = true;
+            var detail = "";
+            for (int pitch = -80; pitch <= 85; pitch += 5)
+            {
+                var r = Reach(pitch, out var landed);
+                allLand &= landed;
+                if (pitch % 30 == 0) detail += $"{pitch}deg {r:0.0} m  ";
+            }
+            Check("movement arc: lands within TraceArc's 300 steps at any pitch", allLand, detail.Trim());
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }

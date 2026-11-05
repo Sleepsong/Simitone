@@ -27,6 +27,9 @@ namespace Simitone.Client.VR
     ///    the controller branch's UILotControlPadHelper drives it. Free will needs no special handling: the direct
     ///    control action is re-queued every tick, so the Sim's queue is never empty and TS1's idle-loop free will
     ///    doesn't fire for them (confirmed on hardware for the gamepad).
+    ///  - <b>Comfort</b>: the camera decides when to step out of the Sim's head and follow (the SimActionView
+    ///    tiers); the bridge tells it whether the player can steer the Sim right now and which room a tile is in.
+    ///  - <b>Movement arc</b> (left trigger): where it lands, the Sim walks to with the floor's "Go Here".
     ///  - <b>Pointing</b>: the right controller picks objects and Sims; the trigger opens their real pie menu (or "Go
     ///    Here" on the floor), which shows on the floating UI panel together with any dialog.
     ///  - <b>Buy and build mode</b> in first person: the catalogue sits on a desk-like panel, the pointer picks objects
@@ -59,10 +62,12 @@ namespace Simitone.Client.VR
         private bool FrontendVisibleBefore = true;
         private int SpeedBeforePause = 1;
         private readonly VRHudData Hud = new VRHudData();
+        private readonly Func<Vector2, sbyte, int> RoomAtFunc;
 
         public VRGameBridge(TS1GameScreen screen)
         {
             Screen = screen;
+            RoomAtFunc = RoomAt;
             SimitoneVR.FocusProvider = FocusTile;
             SimitoneVR.HudProvider = () => Hud;
         }
@@ -139,7 +144,17 @@ namespace Simitone.Client.VR
                 wanted = sim;
             SyncDirectControl(wanted);
             camera.SimAvatar = DirectAvatar?.WorldUI as AvatarComponent;
+            camera.SimSteering = DirectAvatar != null && Steering;
+            camera.SimStandingUp = DirectAvatar != null && Now - StandUpSentAt < 3.0;
+            camera.RoomAt = RoomAtFunc;
             if (DirectAvatar != null) DriveSim(camera, input, vm, lc, state);
+            if (camera.ConsumeMoveArc(out var arcTile, out var arcLevel) && DirectAvatar != null)
+            {
+                // the movement arc: walk there, as clicking the floor and choosing "Go Here" does
+                var tile = LotTilePos.FromBigTile((short)Math.Floor(arcTile.X), (short)Math.Floor(arcTile.Y), arcLevel);
+                if (SendGoHere(vm, lc, DirectAvatar, tile)) HITVM.Get()?.PlaySoundEvent(UISounds.QueueAdd);
+                else SimitoneVR.Runtime?.Haptic(false, 0.6f, 0.08f);
+            }
 
             // ---- pointing at things
             UpdatePointer(world, camera, vm, lc, state, immersive);
@@ -227,26 +242,40 @@ namespace Simitone.Client.VR
             if (StandUpHeldFor < StandUpHold || Now - StandUpSentAt < StandUpRetry) return;
             var queue = avatar.Thread?.Queue;
             if (queue == null || queue.Any(x => x.Callee?.Object?.OBJ?.GUID == GotoGuid)) return; // already on their way
-            var goTo = lc.GotoObject;
-            if (goTo == null) return;
 
             var tile = FreeTileToward(vm, avatar, StickToTiles(move, camera.MoveYaw));
             if (tile == null) return;
-            goTo.SetPosition(tile.Value, Direction.NORTH, vm.Context);
-            if (goTo.Position == LotTilePos.OUT_OF_WORLD) return;
+            if (!SendGoHere(vm, lc, avatar, tile.Value)) return;
+            StandUpSentAt = Now;
+            StandUpHeldFor = 0;
+        }
+
+        /// <summary>Queues the floor's "Go Here" to a tile for the Sim, as clicking the floor does.</summary>
+        private static bool SendGoHere(VM vm, Simitone.Client.UI.Panels.UILotControl lc, VMAvatar avatar, LotTilePos tile)
+        {
+            var goTo = lc.GotoObject;
+            if (goTo == null || avatar == null) return false;
+            goTo.SetPosition(tile, Direction.NORTH, vm.Context);
+            if (goTo.Position == LotTilePos.OUT_OF_WORLD) return false;
             var entry = goTo.GetPieMenu(vm, avatar, false, true).FirstOrDefault();
-            if (entry == null) return;
+            if (entry == null) return false;
             vm.SendCommand(new VMNetGotoCmd
             {
                 Interaction = entry.ID,
                 Param0 = entry.Param0,
                 ActorUID = avatar.PersistID,
-                x = tile.Value.x,
-                y = tile.Value.y,
-                level = tile.Value.Level
+                x = tile.x,
+                y = tile.y,
+                level = tile.Level
             });
-            StandUpSentAt = Now;
-            StandUpHeldFor = 0;
+            return true;
+        }
+
+        private int RoomAt(Vector2 tile, sbyte level)
+        {
+            var context = Screen.vm?.Context;
+            if (context == null) return 0;
+            return context.GetRoomAt(LotTilePos.FromBigTile((short)Math.Floor(tile.X), (short)Math.Floor(tile.Y), level));
         }
 
         private static LotTilePos? FreeTileToward(VM vm, VMAvatar avatar, Vector2 direction)
@@ -309,6 +338,14 @@ namespace Simitone.Client.VR
             if (!immersive || SimitoneVR.Runtime?.Input?.Active != true)
             {
                 camera.PointerVisible = false;
+                return;
+            }
+            if (SimitoneVR.MenuOpen)
+            {
+                // the VR options menu owns the pointer
+                camera.PointerVisible = true;
+                camera.PointerHasTarget = SimitoneVR.MenuPointerDistance > 0;
+                camera.PointerLength = (SimitoneVR.MenuPointerDistance > 0 ? SimitoneVR.MenuPointerDistance : 2f) * SimitoneVR.Settings.WorldScale;
                 return;
             }
             if (SimitoneVR.BuildMode)

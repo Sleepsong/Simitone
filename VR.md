@@ -8,6 +8,11 @@ Simitone can be played in VR through OpenXR. **In a lot you are your Sim**: you 
 them around with the thumbstick, and point at things to use them. The clock is on your right wrist and your
 needs are on your left.
 
+**Comfort comes first.** When your Sim acts on their own (walking to the fridge, sitting down, going to bed), your
+view never slides or bobs about by default: you step out, watch, and follow with quick blinks. Three comfort
+levels, a vignette, stick or arc movement and the other options can all be changed in the headset, from the
+**VR menu**.
+
 In **buy and build mode** you stay where you are and place things remotely. A beam picks objects up from a
 distance, and a teleport-style arc shows where they'll land.
 
@@ -26,17 +31,50 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
 - **Turning:** turn with the right stick. Your Sim turns to face where you look.
 - **Your own head:** you can lean a little away from the Sim's head, and their head is hidden so you don't see the
   inside of it.
+- **Movement arc:** hold the left trigger, aim the arc at the floor and let go: your Sim walks there (it's the
+  floor's "Go Here"). Cyan means you can go there, red means you can't.
 - **Seated Sims:** if your Sim is sitting, holding the stick makes them stand up and step that way.
 - **Interacting:** point with the right controller (the laser turns green on something usable) and pull the trigger.
   That object's (or Sim's) real pie menu floats in front of you; point and pull the trigger again to choose.
-  Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you.
+  Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
+  your view does meanwhile is up to the comfort setting (below).
 - **Dialogs** (phone calls, job offers, carpool...) appear on the same floating panel.
 - **Free will** needs no special handling. Direct control re-queues itself every tick, so the Sim you're playing
   always has something queued and free will (which only runs when a Sim's queue is empty) leaves them alone. The
   gamepad work established this approach and confirmed it on hardware.
 
+**Comfort while your Sim acts on their own** (`SimActionView`, in the VR menu as *Sim actions*):
+- **Comfortable** (default): when your Sim walks off to do something, you blink out of their head (a quick fade
+  to black and back) and stand just behind them. You stay put and watch; when they get more than 4 m away, leave
+  the room or change floor, you blink to a spot near them. When you can steer again, or they settle (sat down,
+  busy in one place), you blink back into their head.
+- **Moderate:** the same step out, but then you glide after them at a steady walking pace, in third person. You
+  never turn by yourself, and you blink instead when they go round a corner or through a door.
+- **Intense:** you ride along in their head the whole time, with a vignette while you're carried.
+- **All levels:**
+  - the view never turns by itself;
+  - your Sim's walk cycle doesn't bob you about (you follow their position, not their head bone);
+  - sitting down, standing up and going up or down stairs are a blink to the new height, not a ride;
+  - when your Sim lies down (bed, bath, sofa nap) you step out and watch rather than lie down with them.
+
+**Vignette.** The edge of your view darkens while it moves without you moving your head. This is the
+best-supported single fix for motion sickness.
+- `Vignette` sets the strength while your Sim carries you or you glide after them (Medium by default).
+- `VignetteWhenMoving` sets it while you walk with the stick or turn smoothly (Low by default).
+
+**VR menu.** Open it with the left controller's menu button (Touch-style controllers). On Index, squeeze the left
+trackpad. On any controller, point at your left wrist (the needs display lights up) and pull the trigger.
+On the desktop keyboard, press F9.
+- **Using it:** point at an option; the trigger steps it forward and the grip steps it back.
+- **Options:** Sim actions comfort, vignette strengths, movement (stick, arc or both), turning (snap 30/45/90 or
+  smooth), walk direction (head or left hand), play as Sim or observer, extra height (for playing seated), wrist
+  displays, buy/build in VR or on the flat screen, and render scale.
+- **Saving:** changes apply immediately and are saved to `vr.ini`.
+- **Closing:** pull the trigger beside the menu, choose *Close*, or press the menu button again.
+
 **Observer** (B to switch). You leave your Sim and roam freely as yourself:
 - smooth locomotion, snap or smooth turning, walls that stop you, and right stick up/down to change floors;
+- **teleport:** hold the left trigger, aim the arc and let go to blink there;
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game.
 
 **Wrist displays.** Turn your wrist to look at it:
@@ -87,6 +125,8 @@ If no runtime or headset is found, Simitone logs why and carries on as the norma
 | Left stick | Walk your Sim | Move | (observer: move) | n/a |
 | Left stick click (hold) | Run | Sprint | (observer: sprint) | n/a |
 | Left grip | Buy mode | Buy mode | Next mode (buy → build → live) | Next mode |
+| Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
+| Left menu button (Touch); left trackpad squeeze (Index); trigger on the left wrist | VR menu | VR menu | VR menu | VR menu |
 | Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
 | Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else (observer) floor | Scroll |
 | Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
@@ -102,7 +142,7 @@ Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_cont
 KHR simple controller. SteamVR lets you rebind everything in its controller binding UI.
 
 Keyboard fallback in first person, for testing without controllers: WASD/arrows to move, Shift to sprint,
-Q/E to turn, PageUp/PageDown to change floors (observer).
+Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 
 ## Settings (`vr.ini`)
 
@@ -113,6 +153,13 @@ Q/E to turn, PageUp/PageDown to change floors (observer).
 | Key | Default | Meaning |
 |---|---|---|
 | `PlayMode` | Sim | `Sim` (first person as your Sim) or `Observer` (roam freely) when a lot loads |
+| `SimActionView` | Comfortable | What your view does while your Sim acts on their own: `Comfortable` (step out, follow by blinks), `Moderate` (step out, glide after them), `Intense` (ride along) |
+| `Vignette` | Medium | Vignette while the view moves without you driving it: `Off`, `Low`, `Medium`, `High` |
+| `VignetteWhenMoving` | Low | Vignette while you move with the stick or turn smoothly |
+| `Movement` | StickAndArc | `StickAndArc`, `Stick` (left stick only) or `Arc` (left trigger arc only: walk your Sim there, or teleport as an observer) |
+| `LeashDistance` | 4 | Comfortable: how far (m) your Sim can get before you blink after them |
+| `GlideSpeed` | 1.4 | Moderate: the steady speed (m/s) you glide after your Sim at |
+| `BlinkDuration` | 0.25 | Length of a blink (fade out, move, fade in), seconds. 0 makes moves instant |
 | `RenderScale` | 1.0 (Frame: 0.75) | Multiplier on the headset's recommended per-eye resolution |
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
 | `MoveSpeed` | 1.6 | Observer walking speed, m/s |
@@ -123,22 +170,25 @@ Q/E to turn, PageUp/PageDown to change floors (observer).
 | `SmoothTurnDegreesPerSecond` | 120 | Smooth turn speed |
 | `WallCollision` | True | Observer: walls stop thumbstick movement (doors don't) |
 | `AutoEnterImmersive` | True | Go straight to first person when a lot loads |
-| `HeightOffset` | 0 | Observer: metres added to your tracked height (e.g. 0.5 to play seated) |
+| `HeightOffset` | 0 | Metres added to your tracked height when you're not in your Sim's head (observer, or stepped out), e.g. 0.5 to play seated |
 | `FallbackEyeHeight` | 1.65 | Eye height if the runtime has no floor-level tracking space |
 | `ScreenDistance` / `ScreenWidth` | 2.0 / 2.4 | Flat screen distance and width, metres |
 | `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating pie menu / dialog panel distance and width, metres (the buy/build catalogue desk is closer, lower and 90% as wide) |
 | `VRBuildMode` | True | Buy and build in first person with remote placement. `False` uses the flat screen instead |
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
-| `SimHeadSmoothing` | 8 | How quickly the view follows your Sim's head (per second). Lower is smoother but laggier |
+| `SimHeadSmoothing` | 8 | How quickly the view follows your Sim's position (per second). Lower is smoother but laggier |
 | `LeanLimit` | 0.3 | How far (m) you can lean away from your Sim's head before the view drags along |
 | `MirrorEye` | Left (Frame: None) | Eye shown in the desktop window: `Left`, `Right`, `None` |
 | `NearClip` | 0.05 | Near clip plane, metres |
 | `DeadZone` | 0.2 | Thumbstick dead zone |
 | `UpdateRate` | 90 | Game update rate in VR (Hz). The headset paces rendering; a `-hzNN` flag overrides this |
 
-A log of the VR startup (runtime, extensions, chosen formats and spaces, errors) and of mode changes is
-written to `vr.log` in the same folder.
+Most of these can also be changed in the headset from the [VR menu](#how-it-plays); it saves them back to
+`vr.ini`.
+
+A log of the VR startup (runtime, extensions, chosen formats and spaces, errors), mode changes and VR menu changes
+is written to `vr.log` in the same folder.
 
 ## Steam Frame
 
@@ -205,6 +255,9 @@ with SteamVR, and connect the Frame to SteamVR on that PC (Steam Link). Nothing 
 | Low frame rate | Lower `RenderScale`; set `MirrorEye=None` |
 | Everything is giant / tiny | Adjust `WorldScale` |
 | The view bobs or lags when playing as your Sim | Adjust `SimHeadSmoothing` (lower = smoother) |
+| Queasy while your Sim walks you around | Use `SimActionView=Comfortable` and a stronger `Vignette` (VR menu) |
+| Too many blinks | `SimActionView=Moderate`, a longer `LeashDistance`, or `BlinkDuration=0` for instant moves |
+| No way to open the VR menu on your controller | Point at your left wrist (needs `WristDisplays` not `Off`) and pull the trigger, or press F9 |
 | Wrist displays in the wrong place | They sit on the controller's grip pose, which varies by controller; set `WristDisplays=Always` to see them |
 | Game runs too fast / slow in VR | Leave `UpdateRate` at the default or pass `-hzNN`; it must not be changed mid-lot |
 
@@ -222,8 +275,12 @@ Client/Simitone/Simitone.VR/          OpenXR layer, no FreeSO dependency
 Client/Simitone/Simitone.Client/VR/
   SimitoneVR.cs                       game-loop glue: frame begin/end, flat screen, UI panel, laser mouse, buttons
   VRLotWorld.cs                       World subclass: renders the lot once per eye + pointer beam; FreeSO picking
-  VRCameraController.cs               eye matrices; Sim mode (head anchor, lean) and observer locomotion
-  VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, buy/build mode, flat screen
+  VRCameraController.cs               eye matrices; Sim mode (comfort tiers, blinks, lean), observer locomotion,
+                                      vignette amount, movement arc
+  VRComfortOverlay.cs                 vignette ring and blink fade, drawn last in each eye
+  VRMenu.cs                           the VR options menu (quad layer; live apply, saved to vr.ini)
+  VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, buy/build mode, flat screen,
+                                      movement arc -> "Go Here"
   VRUILayer.cs                        captures the game UI into its own texture for the floating panel
   VRWristHud.cs, VRPixelFont.cs       watch and needs displays
 ```
@@ -233,12 +290,14 @@ Per frame, all on the game thread inside MonoGame's `Draw`:
 1. `SimitoneVR.BeginDraw`:
    - `xrWaitFrame` (this paces the game to the headset), `xrBeginFrame`, `xrLocateViews`, `xrSyncActions`;
    - controller buttons become requests for the next update;
-   - the wrist displays are redrawn.
+   - the VR menu takes the pointer while it's open;
+   - the wrist displays and the menu are redrawn.
 2. FreeSO draws as usual.
-   - The VR camera's `PreDraw` anchors the view to your Sim's head (or moves the observer) and builds the eye
-     matrices.
-   - `VRLotWorld.InternalDraw` runs FreeSO's 3D draw once per eye into a MonoGame render target, with the
-     pointer beam.
+   - The VR camera's `PreDraw` advances any blink, decides where the view is (in your Sim's head, stepped out,
+     gliding, or the observer), traces the movement arc, measures how fast the rig is carrying you (the
+     vignette), and builds the eye matrices.
+   - `VRLotWorld.InternalDraw` runs FreeSO's 3D draw once per eye into a MonoGame render target, then the
+     pointer beam and arcs, then the vignette and blink fade (`VRComfortOverlay`).
    - The UI is drawn into its own texture (`VRUILayer`) and onto the window.
 3. `SimitoneVR.EndDraw`:
    - each eye is blitted into an OpenXR swapchain image, flipped because MonoGame stores render targets
@@ -246,11 +305,15 @@ Per frame, all on the game thread inside MonoGame's `Draw`:
    - the eyes go out as a projection layer, with the wrist displays and (if a pie menu or dialog is up) the UI
      panel as alpha-blended quad layers;
    - outside first person, the window goes out as one flat quad;
+   - the VR menu, when open, goes on top as one more quad;
    - then `xrEndFrame`.
 
 On the next game update, `VRGameBridge`:
 - turns direct control on or off for the selected Sim (`VMNetDirectControlToggleCommand`) and feeds the stick
   to its `VMDirectControlFrame`;
+- tells the camera whether you can steer the Sim right now (direct control is on top of their stack) and gives it
+  a room lookup, which is all the comfort tiers need;
+- sends a "Go Here" (`VMNetGotoCmd`) where the movement arc was let go;
 - picks what the controller points at (FreeSO's own picker, run through a camera looking down the ray);
 - opens pie menus with `UILotControl.OpenPieMenu`.
 
@@ -278,6 +341,16 @@ Design choices:
   catches up on updates when frames take longer, so simulation speed doesn't depend on the headset's refresh
   rate. A running session also counts as window focus, so a headset user never sees MonoGame's inactive
   slowdown or a deaf UI.
+- **Comfort is decided from what the Sim does, not from which action it is.** The camera watches three signals:
+  - whether direct control is on top;
+  - how far the Sim's position has moved since you last had them;
+  - how high their head is above the floor (relative to their standing height), and whether it has settled.
+
+  This catches routing, sitting, kneeling, lying and stairs without a list of interactions. A blink holds the rig
+  still while it fades out and makes its move at full black.
+- **The vignette is a ring in view space**, sized in degrees from the eye's forward direction. It is therefore
+  round and centred whatever the headset's (asymmetric) field of view, and only motion of the rig counts:
+  physically walking around never darkens the view.
 - **sRGB swapchains with a raw copy.** MonoGame renders gamma-space colours into RGBA8 targets, and copying
   those bits unconverted into an `SRGB8_ALPHA8` swapchain gives the correct result.
 
@@ -288,7 +361,10 @@ Design choices:
 - `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
   - the picking camera reproduces the controller ray;
-  - the arc solver lands on a grabbed object.
+  - the arc solver lands on a grabbed object;
+  - the movement arc reaches about 7.5 m at 45 degrees and lands within its step budget at any pitch.
+- `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay (on a headset-like asymmetric
+  field of view), the VR menu and the wrist displays to PNG files under Xvfb, to look at without a headset.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
@@ -303,10 +379,16 @@ Design choices:
   - The Frame controller's face-button paths are inferred from its Touch-like layout. If SteamVR rejects them,
     it falls back to a reduced binding set and then to the Touch bindings (logged in `vr.log`).
   - The wrist display offsets are estimates and may need tuning per controller.
-- **Riding along.** While your Sim walks to and carries out a queued action, the view goes with them; you can
-  look around but not steer until they finish, which can be uncomfortable for some people.
-  [VR_COMFORT.md](VR_COMFORT.md) has the research and a proposed fix: step out and follow by blinks, or a
-  third-person view during actions, plus a vignette.
+- **Comfort tuning is untested in a headset.** The thresholds below are first guesses from the research in
+  [VR_COMFORT.md](VR_COMFORT.md) and need tuning in play:
+  - when to step out (moved 0.6 m without you steering);
+  - what counts as settled (1 s still) and as lying (head below 55% of standing height);
+  - the 4 m leash, the blink timing and the vignette strengths.
+
+  The movement arc queues a "Go Here" like a floor click, so two arcs in a row queue two walks. The Sim's real walk
+  and run speeds in VR haven't been measured yet.
+- **The VR menu isn't in the game's Options panel yet** (only in the headset, on the wrist, or F9), and there is
+  no first-run comfort wizard.
 - **Pie menus** float in front of you rather than at the object. They are the regular 2D menus.
 - **Observer mode:** stairs aren't walked up (use right stick up/down at the stairs), and objects don't
   collide.

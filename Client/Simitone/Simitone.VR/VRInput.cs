@@ -37,7 +37,9 @@ namespace Simitone.VR
     ///   A (right) ......... first person / flat screen         B (right) .......... play as Sim / observer; recentre screen
     ///   X (left) .......... pause / resume the game            Y (left) ........... next Sim in the family
     ///   Right trigger ..... point and interact / click         Right grip ......... right click / close a pie menu
-    ///   Left grip ......... cycle live / buy / build mode
+    ///   Left grip ......... cycle live / buy / build mode      Left trigger ....... movement arc (hold, aim, let go)
+    ///   Left menu ......... VR options menu (Touch; squeeze the left trackpad on Index; on any controller point at your
+    ///                       left wrist and pull the trigger)
     ///
     /// In buy and build mode the trigger picks up and places, the right stick rotates (X) and changes the arc's reach
     /// (Y) while holding something, the right grip cancels and B sells what you're holding.
@@ -56,12 +58,13 @@ namespace Simitone.VR
         private ulong MoveAction, TurnAction, SprintAction;
         private ulong ToggleViewAction, SwitchModeAction, PauseAction, SpeedAction, NextSimAction, BuildMenuAction;
         private ulong SelectAction, SecondaryAction, AimPoseAction, GripPoseAction, HapticAction;
+        private ulong MoveArcAction, MenuAction;
         private ulong LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace;
 
         public Vector2 Move;
         public Vector2 Turn;
-        public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, BuildMenu, Select, Secondary;
-        public float SelectValue, SecondaryValue;
+        public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, BuildMenu, Select, Secondary, MoveArc, Menu;
+        public float SelectValue, SecondaryValue, MoveArcValue;
         public VRPose LeftAim, RightAim, LeftGrip, RightGrip;
         public bool Active;
         public List<string> BoundProfiles = new List<string>();
@@ -97,6 +100,8 @@ namespace Simitone.VR
             BuildMenuAction = CreateAction("build_menu", "Cycle live / buy / build mode", XrActionType.BooleanInput, false);
             SelectAction = CreateAction("select", "Interact / click", XrActionType.FloatInput, false);
             SecondaryAction = CreateAction("secondary", "Right click / close menu", XrActionType.FloatInput, false);
+            MoveArcAction = CreateAction("move_arc", "Movement arc (walk / teleport there)", XrActionType.FloatInput, false);
+            MenuAction = CreateAction("vr_menu", "VR options menu", XrActionType.BooleanInput, false);
             AimPoseAction = CreateAction("aim", "Pointer", XrActionType.PoseInput, true);
             GripPoseAction = CreateAction("grip", "Hand (wrist displays)", XrActionType.PoseInput, true);
             HapticAction = CreateAction("haptic", "Haptics", XrActionType.VibrationOutput, true);
@@ -164,13 +169,14 @@ namespace Simitone.VR
             const string L = "/user/hand/left/";
             const string R = "/user/hand/right/";
 
-            List<(ulong, string)> Common(bool faceButtons, bool thumbstickClick)
+            List<(ulong, string)> Common(bool faceButtons, bool thumbstickClick, bool menu)
             {
                 var b = new List<(ulong, string)>
                 {
                     (MoveAction, L + "input/thumbstick"),
                     (TurnAction, R + "input/thumbstick"),
                     (SelectAction, R + "input/trigger/value"),
+                    (MoveArcAction, L + "input/trigger/value"),
                     (SecondaryAction, R + "input/squeeze/value"),
                     (BuildMenuAction, L + "input/squeeze/value"),
                     (AimPoseAction, L + "input/aim/pose"),
@@ -192,6 +198,7 @@ namespace Simitone.VR
                     b.Add((PauseAction, L + "input/x/click"));
                     b.Add((NextSimAction, L + "input/y/click"));
                 }
+                if (menu) b.Add((MenuAction, L + "input/menu/click"));
                 return b;
             }
 
@@ -201,14 +208,15 @@ namespace Simitone.VR
                 bool ok = false;
                 foreach (var profile in new[] { "/interaction_profiles/valve/frame_controller_valve", "/interaction_profiles/valve/frame_controller" })
                 {
-                    ok = Suggest(profile, Common(true, true)) || Suggest(profile, Common(false, true)) || Suggest(profile, Common(false, false));
+                    ok = Suggest(profile, Common(true, true, true)) || Suggest(profile, Common(true, true, false))
+                        || Suggest(profile, Common(false, true, false)) || Suggest(profile, Common(false, false, false));
                     if (ok) break;
                 }
                 if (!ok) Log?.Invoke("OpenXR: Steam Frame controller bindings were not accepted; SteamVR will fall back to the Touch bindings.");
             }
 
             // Oculus Touch - also SteamVR's fallback for controllers without their own bindings.
-            var touch = Common(true, true);
+            var touch = Common(true, true, true);
             Suggest("/interaction_profiles/oculus/touch_controller", touch);
 
             // Valve Index: A/B on both hands, no X/Y.
@@ -222,9 +230,11 @@ namespace Simitone.VR
                 (SwitchModeAction, R + "input/b/click"),
                 (PauseAction, L + "input/a/click"),
                 (NextSimAction, L + "input/b/click"),
+                (MenuAction, L + "input/trackpad/force"),
                 (SelectAction, R + "input/trigger/value"),
                 (SecondaryAction, R + "input/squeeze/value"),
                 (BuildMenuAction, L + "input/squeeze/value"),
+                (MoveArcAction, L + "input/trigger/value"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
                 (GripPoseAction, L + "input/grip/pose"),
@@ -244,6 +254,7 @@ namespace Simitone.VR
                 (SwitchModeAction, L + "input/squeeze/click"),
                 (SelectAction, R + "input/trigger/value"),
                 (SecondaryAction, R + "input/squeeze/click"),
+                (MoveArcAction, L + "input/trigger/value"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
                 (GripPoseAction, L + "input/grip/pose"),
@@ -329,11 +340,14 @@ namespace Simitone.VR
             Speed.Set(GetBool(session, SpeedAction));
             NextSim.Set(GetBool(session, NextSimAction));
             BuildMenu.Set(GetBool(session, BuildMenuAction));
+            Menu.Set(GetBool(session, MenuAction));
             SelectValue = GetFloat(session, SelectAction);
             SecondaryValue = GetFloat(session, SecondaryAction);
+            MoveArcValue = GetFloat(session, MoveArcAction);
             // Hysteresis so a resting finger does not chatter the click.
             Select.Set(Select.Down ? SelectValue > 0.35f : SelectValue > 0.75f);
             Secondary.Set(Secondary.Down ? SecondaryValue > 0.35f : SecondaryValue > 0.75f);
+            MoveArc.Set(MoveArc.Down ? MoveArcValue > 0.35f : MoveArcValue > 0.75f);
 
             LeftAim = Locate(LeftAimSpace, baseSpace, displayTime);
             RightAim = Locate(RightAimSpace, baseSpace, displayTime);
@@ -347,7 +361,8 @@ namespace Simitone.VR
             Move = Turn = Vector2.Zero;
             Sprint.Set(false); ToggleView.Set(false); SwitchMode.Set(false); Pause.Set(false); Speed.Set(false);
             NextSim.Set(false); BuildMenu.Set(false); Select.Set(false); Secondary.Set(false);
-            SelectValue = SecondaryValue = 0;
+            MoveArc.Set(false); Menu.Set(false);
+            SelectValue = SecondaryValue = MoveArcValue = 0;
             LeftAim.Valid = RightAim.Valid = LeftGrip.Valid = RightGrip.Valid = false;
         }
 

@@ -11,6 +11,18 @@ namespace Simitone.VR
     /// <summary>Sim: see through your Sim's eyes and walk them. Observer: roam the lot freely as yourself.</summary>
     public enum VRPlayMode { Sim, Observer }
     public enum VRWristMode { Auto, Always, Off }
+    /// <summary>
+    /// What your view does while your Sim acts on their own (walking to an interaction, sitting down, sleeping):
+    /// Comfortable steps out and follows them with blinks, Moderate glides after them in third person at walking
+    /// speed, Intense rides along in their head (with a vignette).
+    /// </summary>
+    public enum VRSimActionView { Comfortable, Moderate, Intense }
+    public enum VRVignetteStrength { Off, Low, Medium, High }
+    /// <summary>
+    /// Stick: the left stick walks. Arc: hold the left trigger, aim the arc and let go (your Sim walks there; as an
+    /// observer you teleport there). StickAndArc: both.
+    /// </summary>
+    public enum VRMovement { StickAndArc, Stick, Arc }
 
     /// <summary>
     /// User tunable VR options, stored as key=value lines in &lt;UserDir&gt;/vr.ini.
@@ -63,6 +75,20 @@ namespace Simitone.VR
         public float SimHeadSmoothing = 8f;
         /// <summary>How far (metres) you can lean away from your Sim's head before the view drags along with you.</summary>
         public float LeanLimit = 0.3f;
+        /// <summary>See <see cref="VRSimActionView"/>.</summary>
+        public VRSimActionView SimActionView = VRSimActionView.Comfortable;
+        /// <summary>Darken the edge of your view while it moves without you driving it (your Sim walking you about).</summary>
+        public VRVignetteStrength Vignette = VRVignetteStrength.Medium;
+        /// <summary>The same while you move with the stick or turn smoothly.</summary>
+        public VRVignetteStrength VignetteWhenMoving = VRVignetteStrength.Low;
+        /// <summary>See <see cref="VRMovement"/>.</summary>
+        public VRMovement Movement = VRMovement.StickAndArc;
+        /// <summary>Comfortable view: how far (metres) your Sim can get from you before you blink after them.</summary>
+        public float LeashDistance = 4f;
+        /// <summary>Moderate view: the speed (m/s) you glide after your Sim at; constant, about walking pace.</summary>
+        public float GlideSpeed = 1.4f;
+        /// <summary>Length of a blink (fade out, move, fade in) in seconds.</summary>
+        public float BlinkDuration = 0.25f;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>
         public string MirrorEye = "Left";
         /// <summary>Near clip plane in metres.</summary>
@@ -139,7 +165,11 @@ namespace Simitone.VR
                 {
                     "# Simitone VR settings. Delete a line to restore its default.",
                     "# Options: PlayMode = Sim|Observer, TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand,",
-                    "#          WristDisplays = Auto|Always|Off, MirrorEye = Left|Right|None",
+                    "#          WristDisplays = Auto|Always|Off, MirrorEye = Left|Right|None,",
+                    "#          SimActionView = Comfortable|Moderate|Intense, Vignette / VignetteWhenMoving = Off|Low|Medium|High,",
+                    "#          Movement = StickAndArc|Stick|Arc",
+                    "# Most of these can also be changed in the headset: open the VR menu (left menu button, or point at your",
+                    "# left wrist and pull the trigger).",
                 };
                 foreach (var field in typeof(VRSettings).GetFields(BindingFlags.Public | BindingFlags.Instance))
                 {

@@ -59,6 +59,17 @@ namespace Simitone.Client.VR
         }
     }
 
+    /// <summary>Where your view is relative to your Sim in Sim mode (see <see cref="VRSimActionView"/>).</summary>
+    public enum VRSimView
+    {
+        /// <summary>In the Sim's head.</summary>
+        Anchored,
+        /// <summary>Stepped out, standing still and following by blinks (Comfortable, and lying down in any tier).</summary>
+        Detached,
+        /// <summary>Stepped out, gliding after the Sim at walking pace (Moderate).</summary>
+        Gliding
+    }
+
     /// <summary>
     /// The immersive VR camera. It takes over FreeSO's first-person camera slot (CameraControllers.CameraFirstPerson),
     /// so the existing first-person toggle (Tab, or A on the right controller) switches between it and the normal camera.
@@ -68,6 +79,11 @@ namespace Simitone.Client.VR
     ///    (smoothed, with a little room to lean) and the left stick walks them through FreeSO's direct control
     ///    (see <see cref="VRGameBridge"/>), so walls, doors and stairs are the game's own.
     ///  - <b>Observer</b>: you roam the lot yourself with smooth locomotion, wall collision and floor changes.
+    ///
+    /// Comfort (see VR_COMFORT.md): whatever the Sim does on their own - walking off to an interaction, sitting down,
+    /// going upstairs, lying in bed - never slides or bobs your view about unless you chose the Intense view. You step
+    /// out and follow by blinks (fade to black, move, fade in), glide after them at walking pace, or ride along with a
+    /// vignette. Posture and floor changes are blinks in every tier, and the view never turns by itself.
     ///
     /// Coordinates: FreeSO's 3D world uses 3 units per tile with +Y up; a TS1 tile is roughly a metre, so
     /// <see cref="VRSettings.WorldScale"/> world units = 1 m. The "rig" is the tracking space origin placed
@@ -128,6 +144,44 @@ namespace Simitone.Client.VR
         public bool CursorValid;
         public readonly Vector3[] ArcPoints = new Vector3[64];
         public int ArcCount;
+
+        // ---- comfort: blinks (fade to black, move, fade in) and the vignette; VRLotWorld draws both in each eye
+        /// <summary>0 = clear, 1 = black.</summary>
+        public float FadeAlpha { get; private set; }
+        /// <summary>How much of the edge of the view the vignette covers: 0 none, 1 the most.</summary>
+        public float VignetteAmount { get; private set; }
+        private float BlinkTime = -1, BlinkLength;
+        private Action BlinkAction;
+        /// <summary>A blink is fading out: the view holds still until it is black and the move is made.</summary>
+        private bool BlinkFadingOut => BlinkAction != null;
+        /// <summary>The view jumped this frame (blink, snap turn, placement): not motion for the vignette.</summary>
+        private bool Teleported;
+
+        // ---- Sim mode comfort (Settings.SimActionView)
+        public VRSimView SimView { get; private set; }
+        /// <summary>Set by the bridge every update: the player can steer the Sim right now (direct control is on top).</summary>
+        public bool SimSteering;
+        /// <summary>Set by the bridge: the room at a tile on a floor, to keep follow spots in the Sim's room.</summary>
+        public Func<Vector2, sbyte, int> RoomAt;
+        /// <summary>Set by the bridge: the Sim is taking the step that pushing the stick sends a seated Sim on.</summary>
+        public bool SimStandingUp;
+        private AvatarComponent LastSimAvatar;
+        private float StandingHeadHeight = 1.6f; // metres; learnt while steering (direct control only runs standing)
+        private sbyte LastSimLevel;
+        private int FramesActive;
+        private float SteeringFor, NotSteeringFor, DetachedFor, SinceFollow, SettledFor, HeightSettledFor, GlideStuckFor;
+        private Vector2 SettleRefBody, AnchorRefBody, LastFollowBody;
+        private float SettleRefHeadY, HeightRefY, HeldHeadY, LastSimHeadY;
+        private bool HoldingPosture, Gliding;
+
+        // ---- movement arc (left trigger): your Sim walks to where it lands, or you teleport there as an observer
+        public readonly Vector3[] MoveArcPoints = new Vector3[64];
+        public int MoveArcCount;
+        public bool MoveArcValid;
+        private bool MoveArcHeld, MoveArcPending;
+        private Vector2 MoveArcTile;
+        private sbyte MoveArcLevel;
+        private const float MoveArcSpeed = 8f; // launch speed in m/s: about 7.5 m of reach at 45 degrees (tools/vr/math-check)
 
         // desktop keyboard fallback (no controllers, e.g. testing with a simulated headset)
         private Vector2 KeyboardMove;
@@ -198,6 +252,12 @@ namespace Simitone.Client.VR
             ResumeOnNextActivate = false;
             SimHeadInitialised = false;
             LeanInitialised = false;
+            SimView = VRSimView.Anchored;
+            LastSimAvatar = null;
+            FramesActive = 0;
+            CancelBlink();
+            VignetteAmount = 0;
+            MoveArcHeld = MoveArcPending = false;
 
             // Only remember the normal view's state once: a second activation without a deactivation in between
             // (two toggles in one update) must not save our own immersive state as "normal".
@@ -222,6 +282,12 @@ namespace Simitone.Client.VR
             SetRenderState(world, false);
             EyeCamera.Eye = VREyeCamera.MonoEye;
             PointerVisible = false;
+            CancelBlink();
+            VignetteAmount = 0;
+            MoveArcCount = 0;
+            MoveArcHeld = MoveArcPending = false;
+            LastSimAvatar = null;
+            SimView = VRSimView.Anchored;
             SimitoneVR.OnImmersiveChanged(this, false);
         }
 
@@ -297,6 +363,7 @@ namespace Simitone.Client.VR
             var headOffset = head.Valid ? RotateYaw(new Vector3(head.Position.X, 0, head.Position.Z) * Scale, RigYaw) : Vector3.Zero;
             RigPosition = new Vector3(tile.X * TileUnits - headOffset.X, RigPosition.Y, tile.Y * TileUnits - headOffset.Z);
             FloorInitialised = false;
+            Teleported = true;
         }
 
         /// <summary>Observer mode: jump next to a Sim (or any tile), e.g. the selected one.</summary>
@@ -305,7 +372,7 @@ namespace Simitone.Client.VR
             PlayerLevel = Math.Max((sbyte)1, level);
             // Stand a little behind the target so it is in front of you, without crossing a wall to get there.
             var forward = new Vector2(-(float)Math.Sin(HeadWorldYaw), -(float)Math.Cos(HeadWorldYaw));
-            var stand = (World != null) ? Collide(World, tile, -forward * 1.25f) : tile - forward * 1.25f;
+            var stand = (World != null) ? CollideStepped(World, tile, -forward * 1.25f) : tile - forward * 1.25f;
             PlaceHead(stand, HeadWorldYaw);
             if (World != null) { FloorsUsedRefresh = 0; KeepAllFloorsVisible(World); }
         }
@@ -353,7 +420,8 @@ namespace Simitone.Client.VR
             get
             {
                 var input = SimitoneVR.Runtime?.Input;
-                var move = (input != null && input.Active ? input.Move : Vector2.Zero) + KeyboardMove;
+                var stick = input != null && input.Active && Settings.Movement != VRMovement.Arc ? input.Move : Vector2.Zero;
+                var move = stick + KeyboardMove;
                 if (move.LengthSquared() > 1) move.Normalize();
                 return move;
             }
@@ -380,16 +448,22 @@ namespace Simitone.Client.VR
             var head = SimitoneVR.HeadPoseTracking();
             var settings = Settings;
             var headTrack = head.Valid ? head.Position : new Vector3(0, settings.FallbackEyeHeight, 0);
+            FramesActive++;
+            var lastRigPosition = RigPosition;
+            var lastRigYaw = RigYaw;
+            UpdateBlink(dt); // at full black this makes the blink's move
 
             // ---- turning (pivot around the head so the world rotates around you, not around the play space centre)
             float turnX = (input != null && input.Active && !SuppressTurn ? input.Turn.X : 0) + KeyboardTurn;
             float yawDelta = 0;
+            bool smoothTurn = false;
             if (settings.TurnMode == VRTurnMode.Snap && KeyboardTurn == 0)
             {
                 if (!SnapLatched && Math.Abs(turnX) > 0.7f)
                 {
                     yawDelta = -Math.Sign(turnX) * MathHelper.ToRadians(settings.SnapTurnDegrees);
                     SnapLatched = true;
+                    Teleported = true;
                     vr?.Haptic(true, 0.3f, 0.02f);
                 }
                 else if (Math.Abs(turnX) < 0.3f) SnapLatched = false;
@@ -397,16 +471,26 @@ namespace Simitone.Client.VR
             else
             {
                 yawDelta = -turnX * MathHelper.ToRadians(settings.SmoothTurnDegreesPerSecond) * dt;
+                smoothTurn = yawDelta != 0;
             }
             if (yawDelta != 0) RotateRigAroundHead(head, yawDelta);
 
-            if (SimAvatar != null && SimAvatar.Avatar != null) UpdateSimRig(world, headTrack, dt);
+            bool driven = smoothTurn; // the player is moving the view (vignette: VignetteWhenMoving rather than Vignette)
+            if (SimAvatar != null && SimAvatar.Avatar != null) driven |= UpdateSim(world, headTrack, dt);
             else
             {
-                SetHiddenHead(null);
+                if (LastSimAvatar != null)
+                {
+                    // left Sim mode (B, or build mode): blink out to your own height rather than drop to it
+                    LastSimAvatar = null;
+                    SimView = VRSimView.Anchored;
+                    if (FramesActive > 2) Blink(() => FloorInitialised = false);
+                }
+                if (!BlinkFadingOut) SetHiddenHead(null); // (not while we're still in their head, fading out)
                 SimHeadInitialised = false;
-                UpdateObserverRig(world, head, headTrack, input, turnX, dt);
+                if (!BlinkFadingOut) driven |= UpdateObserverRig(world, head, headTrack, input, turnX, dt);
             }
+            UpdateMoveArc(world, input);
 
             if (BuildMode)
             {
@@ -420,31 +504,182 @@ namespace Simitone.Client.VR
                 world.State.DrawRoofs = true;
             }
             HeadWorld = TrackingToWorld(headTrack);
+            UpdateVignette(lastRigPosition, lastRigYaw, headTrack, driven, dt);
             UpdateMatrices(world, head);
             UpdatePointer(input);
             UpdateBuildCursor(world, input, dt);
         }
 
-        /// <summary>Sim mode: put the neutral head position inside the Sim's head.</summary>
-        private void UpdateSimRig(World world, Vector3 headTrack, float dt)
+        private float Metres(float tiles) => tiles * TileUnits / Scale;
+        private float Tiles(float metres) => metres * Scale / TileUnits;
+        private Vector2 HeadTile(Vector3 headTrack)
+        {
+            var w = TrackingToWorld(headTrack);
+            return new Vector2(w.X, w.Z) / TileUnits;
+        }
+
+        // ------------------------------------------------------------------ Sim mode
+
+        /// <summary>
+        /// Sim mode: decides whether you're in your Sim's head or stepped out (see <see cref="VRSimView"/>) and places
+        /// the rig. Returns true while the player is driving the view by steering the Sim.
+        /// </summary>
+        private bool UpdateSim(World world, Vector3 headTrack, float dt)
         {
             var settings = Settings;
             var avatar = SimAvatar;
+            var tier = settings.SimActionView;
+            var simLevel = Math.Max((sbyte)1, avatar.Level);
+            var body = new Vector2(avatar.Position.X, avatar.Position.Y);
+            // The HEAD bone's height (z = height in tiles including the floor), as FreeSO's own Sim-eye camera uses it.
+            var headTiles = avatar.GetHeadlinePos() * avatar.Scale + avatar.Position;
+            var headY = headTiles.Z * TileUnits + 0.25f * avatar.Scale;
+            LastSimHeadY = headY;
+            var headAboveFloor = (headY - FloorHeight(world, body, simLevel)) / Scale;
+
+            if (avatar != LastSimAvatar)
+            {
+                // Sim mode just started, or another Sim: into their head (with a blink unless we've only just arrived)
+                var first = LastSimAvatar == null && FramesActive <= 2;
+                LastSimAvatar = avatar;
+                LastSimLevel = simLevel;
+                SettleRefBody = AnchorRefBody = LastFollowBody = body;
+                SettleRefHeadY = HeightRefY = headY;
+                SettledFor = HeightSettledFor = 0;
+                StandingHeadHeight = SimSteering ? Math.Max(0.5f, headAboveFloor) : 1.6f;
+                if (first) Anchor(); else Blink(Anchor);
+            }
+
+            // ---- what the Sim is doing
+            if (SimSteering) { SteeringFor += dt; NotSteeringFor = 0; }
+            else { NotSteeringFor += dt; SteeringFor = 0; }
+            if (SimSteering && SimView == VRSimView.Anchored) AnchorRefBody = body;
+            if (SimSteering && headAboveFloor > 0.4f)
+                StandingHeadHeight += (headAboveFloor - StandingHeadHeight) * (1f - (float)Math.Exp(-dt * 2f));
+            if (Metres(Vector2.Distance(body, SettleRefBody)) > 0.2f || Math.Abs(headY - SettleRefHeadY) / Scale > 0.15f)
+            {
+                SettleRefBody = body;
+                SettleRefHeadY = headY;
+                SettledFor = 0;
+            }
+            else SettledFor += dt;
+            if (Math.Abs(headY - HeightRefY) / Scale > 0.12f)
+            {
+                HeightRefY = headY;
+                HeightSettledFor = 0;
+            }
+            else HeightSettledFor += dt;
+
+            // lying: head under about half its standing height (sitting is about two thirds; children are shorter)
+            var upright = headAboveFloor >= StandingHeadHeight * 0.55f;
+            var lying = !upright && HeightSettledFor > 0.3f;
+            // walking off on their own: not steerable, and moved away from where you last had them (the step a seated
+            // Sim takes when you push the stick to stand them up doesn't count)
+            var walkedOff = !SimSteering && !SimStandingUp && NotSteeringFor > 0.25f
+                && Metres(Vector2.Distance(body, AnchorRefBody)) > 0.6f;
+            var levelChanged = simLevel != LastSimLevel;
+            LastSimLevel = simLevel;
+
+            if (BlinkFadingOut) return false; // hold still until it's black
+
+            if (SimView == VRSimView.Anchored)
+            {
+                if (lying) StepOut(world, VRSimView.Detached); // never lie down with them
+                else if (walkedOff && tier == VRSimActionView.Comfortable) StepOut(world, VRSimView.Detached);
+                else if (walkedOff && tier == VRSimActionView.Moderate) StepOut(world, VRSimView.Gliding);
+                else if (levelChanged || (SimHeadInitialised
+                    && Vector2.Distance(new Vector2(SmoothedSimHead.X, SmoothedSimHead.Z) / TileUnits, body) > 1.5f))
+                    Blink(Anchor); // stairs, or a jump: never slide there
+                if (BlinkFadingOut) return false;
+                UpdateAnchoredRig(world, avatar, body, headY, headTrack, dt);
+                return SimSteering && MoveIntent != Vector2.Zero;
+            }
+
+            // ---- stepped out
+            SetHiddenHead(null);
+            DetachedFor += dt;
+            SinceFollow += dt;
+            var back = (SimSteering && SteeringFor > 0.2f)
+                || (upright && (tier == VRSimActionView.Intense
+                    ? HeightSettledFor > 0.4f                       // Intense only steps out while they lie down
+                    : SettledFor > 1.0f && DetachedFor > 1.5f));    // settled: sat down, or busy in one spot
+            if (back)
+            {
+                Blink(Anchor);
+                return false;
+            }
+
+            var headTile = HeadTile(headTrack);
+            var distance = Metres(Vector2.Distance(headTile, body));
+            var otherLevel = simLevel != PlayerLevel;
+            var otherRoom = RoomAt != null && Vector2.Distance(body, LastFollowBody) > 1f
+                && RoomAt(headTile, PlayerLevel) != RoomAt(body, simLevel);
+            var leash = Math.Max(1.5f, settings.LeashDistance);
+
+            if (SimView == VRSimView.Gliding && tier == VRSimActionView.Moderate && !otherLevel)
+            {
+                // Moderate: glide after them at a constant walking pace (no easing, no turning) when they get away
+                if (distance > 2.6f) Gliding = true;
+                else if (distance < 1.9f) Gliding = false;
+                if (Gliding && distance > 1e-3f)
+                {
+                    var toward = (body - headTile) / Vector2.Distance(body, headTile);
+                    var step = toward * Tiles(Math.Max(0.2f, settings.GlideSpeed) * dt);
+                    var next = ClampToLot(world, Collide(world, headTile, step));
+                    var moved = next - headTile;
+                    RigPosition.X += moved.X * TileUnits;
+                    RigPosition.Z += moved.Y * TileUnits;
+                    GlideStuckFor = moved.Length() < step.Length() * 0.3f ? GlideStuckFor + dt : 0;
+                }
+                else GlideStuckFor = 0;
+                // round a corner, through a doorway or too far behind: blink after them instead
+                if (SinceFollow > 1f && (GlideStuckFor > 0.6f || distance > leash * 1.5f || (otherRoom && GlideStuckFor > 0.2f)))
+                    FollowSim(world);
+            }
+            else if (SinceFollow > 1f && (distance > leash || otherLevel || otherRoom))
+            {
+                FollowSim(world);
+            }
+
+            if (!BlinkFadingOut) ApplyStandingHeight(world, HeadTile(headTrack), dt);
+            return false;
+        }
+
+        /// <summary>In the Sim's head: the neutral head position sits inside it.</summary>
+        private void UpdateAnchoredRig(World world, AvatarComponent avatar, Vector2 body, float headY, Vector3 headTrack, float dt)
+        {
+            var settings = Settings;
             SetHiddenHead(avatar);
             PlayerLevel = Math.Max((sbyte)1, avatar.Level);
 
-            // The HEAD bone, in tiles (z = height including the floor), as FreeSO's own Sim-eye camera uses it.
-            var headTiles = avatar.GetHeadlinePos() * avatar.Scale + avatar.Position;
-            var target = new Vector3(headTiles.X * TileUnits, headTiles.Z * TileUnits + 0.25f * avatar.Scale, headTiles.Y * TileUnits);
-            if (!SimHeadInitialised || Vector3.Distance(SmoothedSimHead, target) > 1.5f * TileUnits)
+            var target = new Vector3(body.X * TileUnits, headY, body.Y * TileUnits);
+            if (!SimHeadInitialised)
             {
-                SmoothedSimHead = target; // first frame, stairs teleport, another Sim
+                SmoothedSimHead = target; // first frame, after a blink
+                HeldHeadY = headY;
+                HoldingPosture = false;
                 SimHeadInitialised = true;
+                Teleported = true;
             }
-            else
+            // Horizontally the Sim's position rather than the head bone, so walk cycles and idle animations don't sway you.
+            var follow = 1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing));
+            SmoothedSimHead.X += (target.X - SmoothedSimHead.X) * follow;
+            SmoothedSimHead.Z += (target.Z - SmoothedSimHead.Z) * follow;
+
+            // Vertically the head's height, low-passed. A posture change (sitting down, standing up, kneeling) holds
+            // the old height until the new one settles, then blinks there instead of riding the animation.
+            var heightChange = Math.Abs(headY - HeldHeadY) / Scale;
+            if (HoldingPosture || heightChange > 0.3f)
             {
-                SmoothedSimHead += (target - SmoothedSimHead) * (1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing)));
+                HoldingPosture = true;
+                if (HeightSettledFor > 0.25f)
+                {
+                    HoldingPosture = false;
+                    if (heightChange > 0.08f) Blink(() => { HeldHeadY = LastSimHeadY; SmoothedSimHead.Y = HeldHeadY; });
+                }
             }
+            else HeldHeadY += (headY - HeldHeadY) * (1f - (float)Math.Exp(-dt * 3f));
+            SmoothedSimHead.Y = HeldHeadY;
 
             // Lean: you can move your head a little away from the Sim's; walking further drags the anchor along.
             if (!LeanInitialised) { LeanNeutral = headTrack; LeanInitialised = true; }
@@ -466,8 +701,285 @@ namespace Simitone.Client.VR
             FloorY = RigPosition.Y;
         }
 
-        /// <summary>Observer mode: smooth locomotion, wall collision, floors.</summary>
-        private void UpdateObserverRig(World world, VRPose head, Vector3 headTrack, VRInput input, float turnX, float dt)
+        /// <summary>Back into the Sim's head (runs at full black).</summary>
+        private void Anchor()
+        {
+            SimView = VRSimView.Anchored;
+            SimHeadInitialised = false;
+            LeanInitialised = false;
+            HoldingPosture = Gliding = false;
+            var avatar = LastSimAvatar;
+            if (avatar != null) AnchorRefBody = new Vector2(avatar.Position.X, avatar.Position.Y);
+            Teleported = true;
+        }
+
+        /// <summary>Blinks out of the Sim's head to a spot just behind them.</summary>
+        private void StepOut(World world, VRSimView view)
+        {
+            Blink(() =>
+            {
+                var avatar = LastSimAvatar;
+                if (avatar == null) return;
+                SimView = view;
+                DetachedFor = SinceFollow = GlideStuckFor = 0;
+                Gliding = false;
+                SetHiddenHead(null);
+                var body = new Vector2(avatar.Position.X, avatar.Position.Y);
+                LastFollowBody = body;
+                PlaceNear(world, body, Math.Max((sbyte)1, avatar.Level), view == VRSimView.Gliding ? 1.8f : 1.0f);
+            });
+        }
+
+        /// <summary>Blinks to a spot near the Sim, facing them.</summary>
+        private void FollowSim(World world)
+        {
+            SinceFollow = 0;
+            Blink(() =>
+            {
+                var avatar = LastSimAvatar;
+                if (avatar == null) return;
+                var body = new Vector2(avatar.Position.X, avatar.Position.Y);
+                LastFollowBody = body;
+                SinceFollow = GlideStuckFor = 0;
+                Gliding = false;
+                PlaceNear(world, body, Math.Max((sbyte)1, avatar.Level), 1.8f);
+            });
+        }
+
+        /// <summary>
+        /// Puts your head <paramref name="metres"/> from a tile (the Sim), with it in front of you: straight back along
+        /// the way you're looking if that's clear, otherwise the nearest direction that is (turning you to face it).
+        /// Spots in the same room, with a floor and clear of walls are preferred.
+        /// </summary>
+        private void PlaceNear(World world, Vector2 tile, sbyte level, float metres)
+        {
+            PlayerLevel = level;
+            var distance = Tiles(metres);
+            var room = RoomAt?.Invoke(tile, level) ?? 0;
+            var bestSpot = tile;
+            var bestYaw = HeadWorldYaw;
+            var bestScore = float.MinValue;
+            foreach (var degrees in new[] { 0f, 40f, -40f, 80f, -80f, 120f, -120f, 180f })
+            {
+                var yaw = HeadWorldYaw + MathHelper.ToRadians(degrees);
+                var forward = new Vector2(-(float)Math.Sin(yaw), -(float)Math.Cos(yaw));
+                var spot = ClampToLot(world, CollideStepped(world, tile, -forward * distance));
+                var reached = Math.Min(1f, Vector2.Distance(spot, tile) / distance);
+                var sameRoom = RoomAt == null || RoomAt(spot, level) == room;
+                var floor = HasFloor(world, spot, level);
+                var score = reached + (sameRoom ? 1f : 0f) + (floor ? 2f : 0f) - Math.Abs(degrees) / 720f;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestSpot = spot;
+                    bestYaw = yaw;
+                }
+                if (sameRoom && floor && reached > 0.9f) break;
+            }
+            PlaceHead(bestSpot, MathHelper.WrapAngle(bestYaw));
+        }
+
+        /// <summary>Your own standing eye height over the floor where you are (observer, or stepped out of the Sim).</summary>
+        private void ApplyStandingHeight(World world, Vector2 headTile, float dt)
+        {
+            var settings = Settings;
+            // gravity: drop to the floor below if there is nothing under you on this level
+            while (PlayerLevel > 1 && !HasFloor(world, headTile, PlayerLevel)) PlayerLevel--;
+            var targetFloor = FloorHeight(world, headTile, PlayerLevel);
+            if (!FloorInitialised) { FloorY = targetFloor; FloorInitialised = true; Teleported = true; }
+            else FloorY += (targetFloor - FloorY) * (1f - (float)Math.Exp(-dt * 14f));
+            var eyeBase = SimitoneVR.Runtime != null && SimitoneVR.Runtime.FloorRelative ? 0f : settings.FallbackEyeHeight;
+            RigPosition.Y = FloorY + (eyeBase + settings.HeightOffset) * Scale;
+        }
+
+        // ------------------------------------------------------------------ comfort: blinks and the vignette
+
+        /// <summary>
+        /// Fades to black, runs <paramref name="atBlack"/> (which moves you) and fades back in. The view holds still
+        /// while it fades out; a blink asked for during another one joins it.
+        /// </summary>
+        public void Blink(Action atBlack)
+        {
+            atBlack ??= () => { };
+            var length = Settings.BlinkDuration;
+            if (length < 0.03f || !Active)
+            {
+                atBlack();
+                Teleported = true;
+                return;
+            }
+            if (BlinkAction != null)
+            {
+                var first = BlinkAction;
+                BlinkAction = () => { first(); atBlack(); };
+                return;
+            }
+            BlinkAction = atBlack;
+            BlinkLength = length;
+            // fading back in from another blink: go dark again from where it is
+            BlinkTime = BlinkTime >= 0 ? FadeAlpha * length * 0.4f : 0;
+        }
+
+        private void CancelBlink()
+        {
+            BlinkAction = null;
+            BlinkTime = -1;
+            FadeAlpha = 0;
+        }
+
+        private void UpdateBlink(float dt)
+        {
+            if (BlinkTime < 0) { FadeAlpha = 0; return; }
+            BlinkTime += dt;
+            var fadeOut = BlinkLength * 0.4f; // ~100 ms out, ~150 ms in
+            if (BlinkAction != null)
+            {
+                if (BlinkTime < fadeOut)
+                {
+                    FadeAlpha = BlinkTime / fadeOut;
+                    return;
+                }
+                var action = BlinkAction;
+                BlinkAction = null;
+                BlinkTime = fadeOut;
+                FadeAlpha = 1; // this frame is black
+                action();
+                Teleported = true;
+                return;
+            }
+            var t = (BlinkTime - fadeOut) / Math.Max(1e-3f, BlinkLength - fadeOut);
+            FadeAlpha = 1 - MathHelper.Clamp(t, 0, 1);
+            if (t >= 1)
+            {
+                BlinkTime = -1;
+                FadeAlpha = 0;
+            }
+        }
+
+        public static float VignetteStrength(VRVignetteStrength strength) => strength switch
+        {
+            VRVignetteStrength.Low => 0.5f,
+            VRVignetteStrength.Medium => 0.7f,
+            VRVignetteStrength.High => 1f,
+            _ => 0f
+        };
+
+        /// <summary>
+        /// The vignette follows how fast the rig carries you (moving or turning, not counting your own head motion),
+        /// at <see cref="VRSettings.Vignette"/> strength, or <see cref="VRSettings.VignetteWhenMoving"/> while you drive.
+        /// </summary>
+        private void UpdateVignette(Vector3 lastRigPosition, float lastRigYaw, Vector3 headTrack, bool driven, float dt)
+        {
+            if (Teleported || dt <= 0)
+            {
+                Teleported = false;
+                return;
+            }
+            var settings = Settings;
+            var h = headTrack * Scale;
+            var before = lastRigPosition + RotateYaw(h, lastRigYaw);
+            var after = RigPosition + RotateYaw(h, RigYaw);
+            var speed = Vector3.Distance(before, after) / Scale / dt;        // m/s
+            var turn = Math.Abs(MathHelper.WrapAngle(RigYaw - lastRigYaw)) / dt; // rad/s
+            float target = 0;
+            if (speed < 20f)
+            {
+                var motion = Math.Max(MathHelper.Clamp((speed - 0.25f) / 1.25f, 0, 1), MathHelper.Clamp((turn - 0.3f) / 1.2f, 0, 1));
+                target = motion * VignetteStrength(driven ? settings.VignetteWhenMoving : settings.Vignette);
+            }
+            var rate = target > VignetteAmount ? 8f : 3f;
+            VignetteAmount += (target - VignetteAmount) * (1f - (float)Math.Exp(-dt * rate));
+            if (VignetteAmount < 0.003f) VignetteAmount = 0;
+        }
+
+        // ------------------------------------------------------------------ movement arc
+
+        /// <summary>
+        /// Left trigger: an arc from the left controller lands on your floor; letting go walks your Sim there (the
+        /// bridge sends a "Go Here") or, as an observer, blinks you there.
+        /// </summary>
+        private void UpdateMoveArc(World world, VRInput input)
+        {
+            MoveArcCount = 0;
+            var enabled = Settings.Movement != VRMovement.Stick && input != null && input.Active && input.LeftAim.Valid
+                && !SimitoneVR.MenuOpen;
+            if (!enabled)
+            {
+                MoveArcHeld = false;
+                return;
+            }
+            if (input.MoveArc.Down)
+            {
+                MoveArcHeld = true;
+                var start = TrackingToWorld(input.LeftAim.Position);
+                var dir = Vector3.Normalize(RotateYaw(input.LeftAim.Forward, RigYaw));
+                var end = TraceArc(world, start, dir * MoveArcSpeed * Scale, PlayerLevel, MoveArcPoints, out MoveArcCount, out var landed);
+                var tile = new Vector2(end.X, end.Z) / TileUnits;
+                var bp = Lot(world);
+                MoveArcValid = landed && bp != null && tile.X >= 0 && tile.Y >= 0 && tile.X < bp.Width && tile.Y < bp.Height
+                    && HasFloor(world, tile, PlayerLevel);
+                MoveArcTile = tile;
+                MoveArcLevel = PlayerLevel;
+                return;
+            }
+            if (!MoveArcHeld) return;
+            MoveArcHeld = false;
+            if (!MoveArcValid) return;
+            SimitoneVR.Runtime?.Haptic(false, 0.35f, 0.03f);
+            if (SimAvatar != null)
+            {
+                MoveArcPending = true;
+                return;
+            }
+            var target = MoveArcTile;
+            var level = MoveArcLevel;
+            Blink(() =>
+            {
+                PlayerLevel = level;
+                PlaceHead(target, HeadWorldYaw);
+                FloorsUsedRefresh = 0;
+            });
+        }
+
+        /// <summary>Sim mode: where the movement arc was let go (once), for the bridge to walk the Sim to.</summary>
+        public bool ConsumeMoveArc(out Vector2 tile, out sbyte level)
+        {
+            tile = MoveArcTile;
+            level = MoveArcLevel;
+            var pending = MoveArcPending;
+            MoveArcPending = false;
+            return pending;
+        }
+
+        /// <summary>A ballistic arc (as a teleport arc) until it reaches the floor of <paramref name="level"/>.</summary>
+        private Vector3 TraceArc(World world, Vector3 pos, Vector3 velocity, sbyte level, Vector3[] points, out int count, out bool landed)
+        {
+            var gravity = 9.8f * Scale;
+            const float step = 0.015f;
+            count = 0;
+            points[count++] = pos;
+            landed = false;
+            for (int i = 0; i < 300 && !landed; i++)
+            {
+                var next = pos + velocity * step;
+                velocity.Y -= gravity * step;
+                var floor = FloorHeight(world, new Vector2(next.X, next.Z) / TileUnits, level);
+                if (next.Y <= floor)
+                {
+                    var drop = pos.Y - next.Y;
+                    var f = drop > 1e-5f ? MathHelper.Clamp((pos.Y - floor) / drop, 0, 1) : 1;
+                    next = pos + (next - pos) * f;
+                    next.Y = floor;
+                    landed = true;
+                }
+                pos = next;
+                if ((i % 5 == 4 || landed) && count < points.Length) points[count++] = pos;
+            }
+            return pos;
+        }
+
+        /// <summary>Observer mode: smooth locomotion, wall collision, floors. Returns true while the stick moves you.</summary>
+        private bool UpdateObserverRig(World world, VRPose head, Vector3 headTrack, VRInput input, float turnX, float dt)
         {
             var settings = Settings;
 
@@ -504,14 +1016,8 @@ namespace Simitone.Client.VR
                 headTile = newTile;
             }
 
-            // ---- gravity: drop to the floor below if there is nothing under you on this level
-            while (PlayerLevel > 1 && !HasFloor(world, headTile, PlayerLevel)) PlayerLevel--;
-            var targetFloor = FloorHeight(world, headTile, PlayerLevel);
-            if (!FloorInitialised) { FloorY = targetFloor; FloorInitialised = true; }
-            else FloorY += (targetFloor - FloorY) * (1f - (float)Math.Exp(-dt * 14f));
-
-            var eyeBase = SimitoneVR.Runtime != null && SimitoneVR.Runtime.FloorRelative ? 0f : settings.FallbackEyeHeight;
-            RigPosition.Y = FloorY + (eyeBase + settings.HeightOffset) * Scale;
+            ApplyStandingHeight(world, headTile, dt);
+            return move != Vector2.Zero;
         }
 
         private static bool IsShiftDown()
@@ -586,6 +1092,15 @@ namespace Simitone.Client.VR
         {
             // TopRight wall of tile (x, y) runs along y = tile.Y from x to x+1.
             return InBounds(bp, column, lineY) && bp.GetWall((short)column, (short)lineY, PlayerLevel).TopRightSolid;
+        }
+
+        /// <summary><see cref="Collide"/> in short steps, for moves longer than a tile.</summary>
+        private Vector2 CollideStepped(World world, Vector2 pos, Vector2 delta)
+        {
+            var steps = Math.Max(1, (int)Math.Ceiling(delta.Length() / 0.4f));
+            var step = delta / steps;
+            for (int i = 0; i < steps; i++) pos = Collide(world, pos, step);
+            return pos;
         }
 
         /// <summary>
@@ -734,28 +1249,7 @@ namespace Simitone.Client.VR
                 var stickY = input != null && input.Active && !SimitoneVR.PanelPointerOnPanel ? input.Turn.Y : 0;
                 Reach = MathHelper.Clamp(Reach * (float)Math.Exp(stickY * 1.2f * dt), 1.5f, 18f);
 
-                var pos = PointerStart;
-                var velocity = PointerDirection * Reach * scale;
-                var gravity = 9.8f * scale;
-                const float step = 0.015f;
-                ArcPoints[ArcCount++] = pos;
-                bool landed = false;
-                for (int i = 0; i < 300 && !landed; i++)
-                {
-                    var next = pos + velocity * step;
-                    velocity.Y -= gravity * step;
-                    var floor = FloorHeight(world, new Vector2(next.X, next.Z) / TileUnits, PlayerLevel);
-                    if (next.Y <= floor)
-                    {
-                        var drop = pos.Y - next.Y;
-                        var f = drop > 1e-5f ? MathHelper.Clamp((pos.Y - floor) / drop, 0, 1) : 1;
-                        next = pos + (next - pos) * f;
-                        next.Y = floor;
-                        landed = true;
-                    }
-                    pos = next;
-                    if ((i % 5 == 4 || landed) && ArcCount < ArcPoints.Length) ArcPoints[ArcCount++] = pos;
-                }
+                var pos = TraceArc(world, PointerStart, PointerDirection * Reach * scale, PlayerLevel, ArcPoints, out ArcCount, out var landed);
                 if (!landed)
                 {
                     // out of range: drop straight down from where the arc gave up

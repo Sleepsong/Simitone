@@ -26,7 +26,8 @@ namespace Simitone.Client.VR
 
         private SpriteBatch MirrorBatch;
         private BasicEffect BeamEffect;
-        private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[64 * 6 + 6];
+        private VRComfortOverlay ComfortOverlay;
+        private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[1024];
         private ICameraController LastActiveCamera;
         private int FramesSinceInit;
         private bool AutoEntered;
@@ -48,6 +49,7 @@ namespace Simitone.Client.VR
             cameras.CameraFirstPerson = VRCamera;
             MirrorBatch = new SpriteBatch(layer.Device);
             BeamEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
+            ComfortOverlay = new VRComfortOverlay(layer.Device);
         }
 
         public bool Immersive => VRCamera != null && State?.Cameras?.ActiveCamera == VRCamera;
@@ -170,6 +172,7 @@ namespace Simitone.Client.VR
                 PPXDepthEngine.SetPPXTarget(targets[eye], null, true, State.OutsideColor);
                 base.InternalDraw(device);
                 DrawPointerBeam(device, cam);
+                ComfortOverlay?.Draw(device, cam.Projection, cam.NearPlane, VRCamera.VignetteAmount, VRCamera.FadeAlpha);
             }
             cam.Eye = VREyeCamera.MonoEye;
             cameras.DisableTransitions = oldTransitions;
@@ -194,6 +197,7 @@ namespace Simitone.Client.VR
         /// <summary>
         /// The laser from the controller: a thin strip facing the eye with a dot where it ends. While placing
         /// something in buy/build mode it is the placement arc instead, green where the object fits and red where not.
+        /// The movement arc (left trigger) is cyan, or red where you can't go, with a ring where it lands.
         /// </summary>
         private void DrawPointerBeam(GraphicsDevice device, VREyeCamera cam)
         {
@@ -203,40 +207,43 @@ namespace Simitone.Client.VR
             var scale = SimitoneVR.Settings.WorldScale;
             var w = 0.002f * scale;
             int count = 0;
-            Color colour;
-            Vector3 end;
+            Color colour = Color.White;
+            Vector3 end = Vector3.Zero;
+            bool dot = false;
 
             if (vr.BuildMode && vr.PlacementMode && vr.ArcCount > 1)
             {
                 colour = vr.PlacementValid ? new Color(120, 255, 140) : new Color(255, 90, 80);
-                for (int i = 0; i + 1 < vr.ArcCount; i++)
-                {
-                    var alpha = 0.25f + 0.75f * (i + 1) / (vr.ArcCount - 1);
-                    count = AddSegment(count, vr.ArcPoints[i], vr.ArcPoints[i + 1], eyePos, w, colour * alpha, colour * alpha);
-                }
+                count = AddArc(count, vr.ArcPoints, vr.ArcCount, eyePos, w, colour);
                 end = vr.ArcPoints[vr.ArcCount - 1];
+                dot = true;
             }
-            else
+            else if (vr.PointerVisible)
             {
-                if (!vr.PointerVisible) return;
                 var start = vr.PointerStart;
                 end = start + vr.PointerDirection * vr.PointerLength;
                 colour = vr.PointerHasTarget ? new Color(120, 255, 140) : new Color(230, 230, 255);
                 count = AddSegment(count, start, end, eyePos, w, colour * 0.1f, colour);
+                dot = count > 0;
+            }
+
+            if (dot)
+            {
+                // the dot: a small square facing the eye
+                var forward = Vector3.Normalize(eyePos - end);
+                var up = Math.Abs(forward.Y) > 0.95f ? Vector3.Forward : Vector3.Up;
+                var right = Vector3.Normalize(Vector3.Cross(up, forward)) * 0.012f * scale;
+                up = Vector3.Normalize(Vector3.Cross(forward, right)) * 0.012f * scale;
+                count = AddQuad(count, end - right - up, end + right - up, end - right + up, end + right + up, colour);
+            }
+
+            if (vr.MoveArcCount > 1)
+            {
+                var arcColour = vr.MoveArcValid ? new Color(90, 210, 255) : new Color(255, 90, 80);
+                count = AddArc(count, vr.MoveArcPoints, vr.MoveArcCount, eyePos, w * 1.4f, arcColour);
+                count = AddFloorRing(count, vr.MoveArcPoints[vr.MoveArcCount - 1], 0.22f * scale, 0.025f * scale, arcColour);
             }
             if (count == 0) return;
-
-            // the dot: a small square facing the eye
-            var forward = Vector3.Normalize(eyePos - end);
-            var up = Math.Abs(forward.Y) > 0.95f ? Vector3.Forward : Vector3.Up;
-            var right = Vector3.Normalize(Vector3.Cross(up, forward)) * 0.012f * scale;
-            up = Vector3.Normalize(Vector3.Cross(forward, right)) * 0.012f * scale;
-            BeamVerts[count++] = new VertexPositionColor(end - right - up, colour);
-            BeamVerts[count++] = new VertexPositionColor(end + right - up, colour);
-            BeamVerts[count++] = new VertexPositionColor(end - right + up, colour);
-            BeamVerts[count++] = new VertexPositionColor(end - right + up, colour);
-            BeamVerts[count++] = new VertexPositionColor(end + right - up, colour);
-            BeamVerts[count++] = new VertexPositionColor(end + right + up, colour);
 
             BeamEffect.World = Matrix.Identity;
             BeamEffect.View = cam.View;
@@ -252,10 +259,51 @@ namespace Simitone.Client.VR
             device.DepthStencilState = DepthStencilState.Default;
         }
 
+        /// <summary>An arc as strips, fading in from the controller.</summary>
+        private int AddArc(int index, Vector3[] points, int pointCount, Vector3 eyePos, float halfWidth, Color colour)
+        {
+            for (int i = 0; i + 1 < pointCount; i++)
+            {
+                var alpha = 0.25f + 0.75f * (i + 1) / (pointCount - 1);
+                index = AddSegment(index, points[i], points[i + 1], eyePos, halfWidth, colour * alpha, colour * alpha);
+            }
+            return index;
+        }
+
+        /// <summary>A flat ring lying on the floor (raised a hair so it isn't lost in it).</summary>
+        private int AddFloorRing(int index, Vector3 centre, float radius, float width, Color colour)
+        {
+            const int segments = 20;
+            centre.Y += 0.01f * SimitoneVR.Settings.WorldScale;
+            for (int i = 0; i < segments; i++)
+            {
+                var a0 = MathHelper.TwoPi * i / segments;
+                var a1 = MathHelper.TwoPi * (i + 1) / segments;
+                var d0 = new Vector3((float)Math.Cos(a0), 0, (float)Math.Sin(a0));
+                var d1 = new Vector3((float)Math.Cos(a1), 0, (float)Math.Sin(a1));
+                index = AddQuad(index, centre + d0 * (radius - width), centre + d0 * radius,
+                    centre + d1 * (radius - width), centre + d1 * radius, colour);
+            }
+            return index;
+        }
+
+        /// <summary>A quad (a, b, c, d: two corners along each edge) as two triangles.</summary>
+        private int AddQuad(int index, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color colour)
+        {
+            if (index + 6 > BeamVerts.Length) return index;
+            BeamVerts[index++] = new VertexPositionColor(a, colour);
+            BeamVerts[index++] = new VertexPositionColor(b, colour);
+            BeamVerts[index++] = new VertexPositionColor(c, colour);
+            BeamVerts[index++] = new VertexPositionColor(c, colour);
+            BeamVerts[index++] = new VertexPositionColor(b, colour);
+            BeamVerts[index++] = new VertexPositionColor(d, colour);
+            return index;
+        }
+
         /// <summary>Adds a strip from a to b, turned to face the eye, as two triangles.</summary>
         private int AddSegment(int index, Vector3 a, Vector3 b, Vector3 eyePos, float halfWidth, Color colourA, Color colourB)
         {
-            if (index + 6 > BeamVerts.Length - 6) return index;
+            if (index + 6 > BeamVerts.Length - 6 * 24) return index; // leave room for the dot and the landing ring
             var side = Vector3.Cross(b - a, eyePos - (a + b) / 2);
             if (side.LengthSquared() < 1e-10f) return index;
             side = Vector3.Normalize(side) * halfWidth;
@@ -274,6 +322,7 @@ namespace Simitone.Client.VR
             if (SimitoneVR.CurrentWorld == this) SimitoneVR.CurrentWorld = null;
             MirrorBatch?.Dispose();
             BeamEffect?.Dispose();
+            ComfortOverlay?.Dispose();
             base.Dispose();
         }
     }

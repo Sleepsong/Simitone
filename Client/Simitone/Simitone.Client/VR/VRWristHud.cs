@@ -23,11 +23,12 @@ namespace Simitone.Client.VR
     /// The HUD on your wrists while in first person: a watch on the right wrist (time, game speed, money) and the
     /// Sim's needs on the left. Each is drawn into a small render target and shown as a transparent quad attached to
     /// the controller's grip pose, on the back of the wrist; by default only while you turn that wrist to look at it.
+    /// Pointing the right controller at the needs display and pulling the trigger opens the VR options menu.
     /// </summary>
     public class VRWristHud : IDisposable
     {
         private const int WatchWidth = 256, WatchHeight = 128;
-        private const int NeedsWidth = 256, NeedsHeight = 256;
+        private const int NeedsWidth = 256, NeedsHeight = 276;
         private const float WatchMetres = 0.075f;  // physical width of the watch face
         private const float NeedsMetres = 0.085f;
 
@@ -41,6 +42,19 @@ namespace Simitone.Client.VR
         public bool WatchVisible { get; private set; }
         public bool NeedsVisible { get; private set; }
         private XrPoseCache WatchPose, NeedsPose;
+        private bool _NeedsHighlight;
+
+        /// <summary>The right controller points at the needs display (it lights up: the trigger opens the VR menu).</summary>
+        public bool NeedsHighlight
+        {
+            get => _NeedsHighlight;
+            set
+            {
+                if (value == _NeedsHighlight) return;
+                _NeedsHighlight = value;
+                RenderCountdown = 0;
+            }
+        }
 
         private struct XrPoseCache
         {
@@ -57,6 +71,21 @@ namespace Simitone.Client.VR
             // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
             WatchVisible = Place(input.RightGrip, head, new Vector3(-0.035f, 0.005f, 0.085f), -MathHelper.PiOver2, mode, out WatchPose);
             NeedsVisible = Place(input.LeftGrip, head, new Vector3(0.035f, 0.005f, 0.085f), MathHelper.PiOver2, mode, out NeedsPose);
+        }
+
+        /// <summary>Whether a controller ray hits the (visible) needs display, with a little margin.</summary>
+        public bool PointsAtNeeds(VRPose aim)
+        {
+            if (!NeedsVisible || !aim.Valid) return false;
+            var normal = Vector3.Transform(Vector3.UnitZ, NeedsPose.Orientation);
+            var denom = Vector3.Dot(aim.Forward, normal);
+            if (Math.Abs(denom) < 1e-4f) return false;
+            var t = Vector3.Dot(NeedsPose.Position - aim.Position, normal) / denom;
+            if (t <= 0 || t > 1.5f) return false;
+            var local = Vector3.Transform(aim.Position + aim.Forward * t - NeedsPose.Position, Quaternion.Inverse(NeedsPose.Orientation));
+            const float margin = 0.02f;
+            return Math.Abs(local.X) <= NeedsMetres / 2 + margin
+                && Math.Abs(local.Y) <= NeedsMetres * NeedsHeight / NeedsWidth / 2 + margin;
         }
 
         private static bool Place(VRPose grip, VRPose head, Vector3 offset, float yaw, VRWristMode mode, out XrPoseCache pose)
@@ -113,7 +142,7 @@ namespace Simitone.Client.VR
             gd.SetRenderTarget(Needs);
             gd.Clear(Color.Transparent);
             Batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
-            Panel(new Rectangle(0, 0, NeedsWidth, NeedsHeight), bg, frame);
+            Panel(new Rectangle(0, 0, NeedsWidth, NeedsHeight), bg, NeedsHighlight ? Color.White : frame);
             var name = (data.SimName ?? "").ToUpperInvariant();
             if (name.Length > 18) name = name.Substring(0, 18);
             VRPixelFont.Draw(Batch, White, name, new Vector2(12, 10), 2, frame);
@@ -127,6 +156,8 @@ namespace Simitone.Client.VR
                 var fill = new Rectangle(bar.X + 2, bar.Y + 2, (int)((bar.Width - 4) * fraction), bar.Height - 4);
                 Batch.Draw(White, fill, MotiveColour(fraction));
             }
+            VRPixelFont.Draw(Batch, White, "TRIGGER: VR MENU", new Vector2(12, NeedsHeight - 22), 2,
+                NeedsHighlight ? Color.White : frame * 0.6f);
             Batch.End();
             gd.SetRenderTarget(null);
         }

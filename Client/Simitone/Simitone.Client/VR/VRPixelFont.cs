@@ -6,7 +6,7 @@ namespace Simitone.Client.VR
 {
     /// <summary>
     /// A tiny 5x7 dot-matrix font (the classic character-LCD shapes) drawn with solid rectangles. Used for the wrist
-    /// displays, which want a crisp digital-watch look at small sizes and shouldn't depend on the UI font pipeline.
+    /// displays and the VR menu, which want a crisp digital-watch look at small sizes and shouldn't depend on the UI font pipeline.
     /// </summary>
     public static class VRPixelFont
     {
@@ -60,6 +60,10 @@ namespace Simitone.Client.VR
             ['>'] = new byte[] { 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08 },
             ['|'] = new byte[] { 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
             ['%'] = new byte[] { 0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03 },
+            ['+'] = new byte[] { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 },
+            ['<'] = new byte[] { 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02 },
+            ['('] = new byte[] { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 },
+            [')'] = new byte[] { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 },
             [' '] = new byte[] { 0, 0, 0, 0, 0, 0, 0 },
         };
 

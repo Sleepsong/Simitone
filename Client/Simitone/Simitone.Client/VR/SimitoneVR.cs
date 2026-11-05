@@ -23,7 +23,8 @@ namespace Simitone.Client.VR
     ///                displays. Otherwise: the whole window on a flat virtual screen (loading, CAS, neighbourhood,
     ///                build/buy). Then xrEndFrame.
     ///
-    /// Wherever a flat surface is shown, the right controller is a laser pointer driving the mouse.
+    /// Wherever a flat surface is shown, the right controller is a laser pointer driving the mouse. The VR options menu
+    /// (<see cref="VRMenu"/>) floats on top of either view when open.
     /// </summary>
     public static class SimitoneVR
     {
@@ -59,6 +60,9 @@ namespace Simitone.Client.VR
         private static VRSwapchain PanelSwapchain;
         private static RenderTarget2D UITarget;
         private static VRWristHud Wrists;
+        private static VRMenu Menu;
+        private static bool PendingEyeResize;
+        private static bool KeyboardMenuToggle;
         private static VRPose LastHead;
         private static Stopwatch FrameTimer;
 
@@ -139,18 +143,9 @@ namespace Simitone.Client.VR
 
             try
             {
-                var gd = game.GraphicsDevice;
-                float scale = MathHelper.Clamp(Settings.RenderScale, 0.25f, 2f);
-                int w = Math.Min(Runtime.MaxWidth, Math.Max(64, (int)(Runtime.RecommendedWidth * scale)));
-                int h = Math.Min(Runtime.MaxHeight, Math.Max(64, (int)(Runtime.RecommendedHeight * scale)));
-                EyeSwapchains = new[] { Runtime.CreateSwapchain(w, h), Runtime.CreateSwapchain(w, h) };
-                EyeTargets = new[]
-                {
-                    new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents),
-                    new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents)
-                };
+                CreateEyeBuffers(game.GraphicsDevice);
                 Wrists = new VRWristHud();
-                Log($"eye targets {w}x{h} (render scale {scale:0.##})");
+                Menu = new VRMenu();
             }
             catch (Exception e)
             {
@@ -179,6 +174,36 @@ namespace Simitone.Client.VR
             Log(Status);
         }
 
+        /// <summary>(Re)creates the per-eye render targets and swapchains at the current render scale.</summary>
+        private static void CreateEyeBuffers(GraphicsDevice gd)
+        {
+            if (EyeSwapchains != null) foreach (var s in EyeSwapchains) s.Dispose();
+            if (EyeTargets != null) foreach (var t in EyeTargets) t.Dispose();
+            EyeSwapchains = null;
+            EyeTargets = null;
+            float scale = MathHelper.Clamp(Settings.RenderScale, 0.25f, 2f);
+            int w = Math.Min(Runtime.MaxWidth, Math.Max(64, (int)(Runtime.RecommendedWidth * scale)));
+            int h = Math.Min(Runtime.MaxHeight, Math.Max(64, (int)(Runtime.RecommendedHeight * scale)));
+            EyeSwapchains = new[] { Runtime.CreateSwapchain(w, h), Runtime.CreateSwapchain(w, h) };
+            EyeTargets = new[]
+            {
+                new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents),
+                new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents)
+            };
+            Log($"eye targets {w}x{h} (render scale {scale:0.##})");
+        }
+
+        /// <summary>Changes the render scale while running (from the VR menu); the eye buffers are rebuilt next frame.</summary>
+        public static void SetRenderScale(float scale)
+        {
+            Settings.RenderScale = scale;
+            PendingEyeResize = true;
+        }
+
+        public static bool MenuOpen => Menu?.Open == true;
+        /// <summary>How far (metres) the controller is from where it points on the open VR menu; 0 when not on it.</summary>
+        public static float MenuPointerDistance => Menu?.PointerDistance ?? 0;
+
         public static void Shutdown()
         {
             if (Runtime == null) return;
@@ -188,6 +213,7 @@ namespace Simitone.Client.VR
                 ScreenSwapchain?.Dispose();
                 PanelSwapchain?.Dispose();
                 Wrists?.Dispose();
+                Menu?.Dispose();
                 Runtime.Dispose();
             }
             catch { }
@@ -224,6 +250,16 @@ namespace Simitone.Client.VR
             }
             EyesRendered = false;
             if (!Available) { FrameActive = false; return; }
+            if (PendingEyeResize)
+            {
+                PendingEyeResize = false;
+                try { CreateEyeBuffers(gd); }
+                catch (Exception e)
+                {
+                    Fail("could not resize the eye buffers", e);
+                    return;
+                }
+            }
 
             try
             {
@@ -281,12 +317,28 @@ namespace Simitone.Client.VR
                 if (input.BuildMenu.Pressed) BuildMenuRequested = true;
             }
 
-            // ---- laser pointer
+            // ---- VR options menu: the left menu button, the trigger on the left wrist's needs display, or F9
+            if (immersive && Wrists != null) Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
+            var menuWasOpen = MenuOpen;
+            if (Menu != null)
+            {
+                var wristAimed = immersive && inputActive && !Menu.Open && Wrists != null && Wrists.PointsAtNeeds(input.RightAim);
+                if (Wrists != null) Wrists.NeedsHighlight = wristAimed;
+                if ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || (wristAimed && input.Select.Pressed))
+                {
+                    if (Menu.Open) Menu.Close();
+                    else Menu.Show(LastHead, inputActive ? input : null);
+                }
+                KeyboardMenuToggle = false;
+                if (Menu.Open) Menu.Update(input, Runtime);
+            }
+
+            // ---- laser pointer (the menu has it while it's open, including the frame a press closes it)
             PointerActive = false;
             CursorOnSurface = false;
             PanelPointerOnPanel = false;
             PanelPointerDistance = 0;
-            if (inputActive)
+            if (inputActive && !menuWasOpen && !MenuOpen)
             {
                 if (!immersive)
                 {
@@ -332,13 +384,14 @@ namespace Simitone.Client.VR
             var vrCamera = world?.VRCamera;
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
 
-            // ---- wrist displays (drawn now: switching render targets later would disturb the frame)
+            // ---- wrist displays and the menu (drawn now: switching render targets later would disturb the frame)
             if (immersive && Wrists != null)
             {
-                Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
                 try { Wrists.Render(gd, HudProvider?.Invoke()); }
                 catch (Exception e) { Log("wrist display error: " + e.Message); }
             }
+            try { Menu?.Render(gd); }
+            catch (Exception e) { Log("VR menu error: " + e.Message); }
         }
 
         public static void EndDraw(GraphicsDevice gd)
@@ -367,6 +420,7 @@ namespace Simitone.Client.VR
                     {
                         SubmitScreen(gd, ref submission);
                     }
+                    Menu?.Submit(Runtime, ref submission);
                 }
                 Runtime.EndFrame(submission);
             }
@@ -557,6 +611,7 @@ namespace Simitone.Client.VR
         /// </summary>
         private static void InjectPointer(UpdateState state)
         {
+            if (state.NewKeys.Contains(Keys.F9) && SessionRunning) KeyboardMenuToggle = true;
             var real = state.MouseState;
             if (!PointerActive)
             {
