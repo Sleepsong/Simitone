@@ -32,6 +32,11 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
         public sbyte Category;
         public bool ChoosingSub;
         public int ItemID = -1;
+        /// <summary>The subcategories shown for <see cref="Category"/> (the VR catalogue lists them), whether each is
+        /// empty, and which one was chosen (-1 while choosing).</summary>
+        public List<UICatalogSubcat> Subcategories = new List<UICatalogSubcat>();
+        public List<bool> SubcategoryEmpty = new List<bool>();
+        public int ActiveSubcategory = -1;
 
         private string ActiveSearchTerm;
         private IEnumerable<UICatalogElement> PreSearchFilterCategory;
@@ -902,6 +907,10 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                 cats = Categories[category];
             }
 
+            Subcategories = cats;
+            SubcategoryEmpty = cats.Select(SubcatIsEmpty).ToList();
+            ActiveSubcategory = -1;
+
             var boff = CatContainer.Size.X/(cats.Count + 0.5f) / 2f;
 
             for (int i=0; i<cats.Count; i++)
@@ -1255,6 +1264,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
             var index = cat.MaskBit;
             if (!ChoosingSub) return;
             ChoosingSub = false;
+            ActiveSubcategory = Subcategories.IndexOf(cat);
             ((UIMainPanel)Parent).Switcher.Close();
             ((UIMainPanel)Parent).Switcher.MainButton.ReplaceImage(Content.Get().CustomUI.Get("cat_" + cat.IconName + ".png").Get(GameFacade.GraphicsDevice));
 

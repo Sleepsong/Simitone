@@ -319,6 +319,22 @@ namespace Simitone.Client.UI.Panels
 
         void BackButtonPress(UIElement button)
         {
+            Back();
+        }
+
+        /// <summary>The level of the menu being shown (the root, or a category).</summary>
+        public UIPieMenuItem CurrentItem => m_CurrentItem;
+        public bool AtTop => m_CurrentItem == m_PieTree;
+        /// <summary>The Sim's head, as drawn in the middle of the menu (rendered each frame while the menu is open).</summary>
+        public Microsoft.Xna.Framework.Graphics.Texture2D HeadTexture => HeadScene?.Target;
+        /// <summary>The object or Sim the menu is for.</summary>
+        public VMEntity Target => m_Obj;
+        /// <summary>Where the Sim's head looks (menu units from its middle), e.g. at the VR pie menu's pointed-at button.</summary>
+        public Vector2 HeadLook { set => currentTarget = value; }
+
+        /// <summary>Goes up a level (from a category back to where it was).</summary>
+        public void Back()
+        {
             if (m_CurrentItem.Parent == null) return; //shouldn't ever be...
             m_CurrentItem = m_CurrentItem.Parent;
             HITVM.Get().PlaySoundEvent(UISounds.PieMenuSelect);
@@ -329,7 +345,16 @@ namespace Simitone.Client.UI.Panels
         {
             int index = m_PieButtons.IndexOf((UIButton)button);
             if (index == -1) return; //bail! this isn't meant to happen!
-            var action = m_CurrentItem.Children.ElementAt(index);
+            Choose(m_CurrentItem.Children.ElementAt(index));
+        }
+
+        /// <summary>
+        /// Chooses an item of the current level: a category opens it; an interaction is queued (or the Sim goes there)
+        /// and the menu closes. Used by the buttons here and by the VR pie menu.
+        /// </summary>
+        public void Choose(UIPieMenuItem action)
+        {
+            if (action == null || !m_CurrentItem.Children.Contains(action)) return;
             HITVM.Get().PlaySoundEvent(UISounds.PieMenuSelect);
 
             if (action.Category)

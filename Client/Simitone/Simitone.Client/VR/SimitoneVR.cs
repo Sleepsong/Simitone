@@ -65,6 +65,10 @@ namespace Simitone.Client.VR
         private static VRKeyboard Keyboard;
         private static VRSetup Setup;
         private static VRTipPanel Tip;
+        private static VRCatalogTablet Tablet;
+        private static VRPieMenuPanel PiePanel;
+        /// <summary>3D pictures for the catalogue tablet (drawn by the lot world each frame, see <see cref="RenderThumbnails"/>).</summary>
+        private static VRCatalogThumbnails Thumbnails;
         private static bool SetupRequested, SetupShownThisSession, MenuRequested;
         private static bool PanelPressArmed;
         private static bool PendingEyeResize;
@@ -101,6 +105,14 @@ namespace Simitone.Client.VR
         public static FSO.Client.UI.Framework.UIElement OpenPie;
         /// <summary>Set every update by the bridge: the vacation / downtown picker is open (shown on the panel).</summary>
         public static bool PickerOpen;
+        /// <summary>Set every update by the bridge: the game's buy/build catalogue, for the tablet in your hand.</summary>
+        public static IVRCatalogSource CatalogSource;
+        /// <summary>Set every update by the bridge: the open pie menu, for the VR pie menu (null when none is open).</summary>
+        public static IVRPieSource PieSource;
+        /// <summary>The buy/build catalogue is the tablet in your hand (rather than the game's, on a desk panel).</summary>
+        public static bool CatalogInHand => Settings.Catalogue == VRCatalogStyle.Hand;
+        /// <summary>The catalogue tablet is in your hand now.</summary>
+        public static bool TabletShown => Tablet?.Shown == true;
         private static Vector3 PieAnchor;
         private static bool PieAnchorChanged;
         private static FSO.Client.UI.Framework.UIElement PieRegionOwner;
@@ -266,6 +278,10 @@ namespace Simitone.Client.VR
                 Keyboard = new VRKeyboard();
                 Setup = new VRSetup();
                 Tip = new VRTipPanel();
+                Tablet = new VRCatalogTablet();
+                PiePanel = new VRPieMenuPanel();
+                Thumbnails = new VRCatalogThumbnails(FSO.Client.GameFacade.GraphicsDevice);
+                Tablet.Thumbnail = Thumbnails.Get;
             }
             catch (Exception e)
             {
@@ -281,12 +297,14 @@ namespace Simitone.Client.VR
             if (SetupOpen) { into.Add(Setup); return; }
             if (MenuOpen) { into.Add(Menu); return; }
             if (Keyboard?.Shown == true) into.Add(Keyboard);
+            if (immersive && PiePanel?.Shown == true) into.Add(PiePanel);
+            if (immersive && Tablet?.Shown == true) into.Add(Tablet);
             if (immersive && Wrists?.Needs.Shown == true) into.Add(Wrists.Needs);
         }
 
         // (kept, not made every frame)
         private static readonly System.Collections.Generic.List<VRUIPanel> Pointable = new System.Collections.Generic.List<VRUIPanel>();
-        private static readonly VRUIPanel[] MousePanels = new VRUIPanel[5];
+        private static readonly VRUIPanel[] MousePanels = new VRUIPanel[7];
 
         public static void Shutdown()
         {
@@ -301,6 +319,9 @@ namespace Simitone.Client.VR
                 Keyboard?.Destroy();
                 Setup?.Destroy();
                 Tip?.Destroy();
+                Tablet?.Destroy();
+                PiePanel?.Destroy();
+                Thumbnails?.Dispose();
                 Runtime.Dispose();
             }
             catch { }
@@ -326,6 +347,8 @@ namespace Simitone.Client.VR
             Keyboard?.Hide();
             Setup?.Hide();
             Tip?.Hide();
+            Tablet?.Hide();
+            PiePanel?.Hide();
             // Without a headset, first person would leave you with no UI and keyboard-only movement.
             var world = CurrentWorld;
             if (world?.Immersive == true) GameThread.NextUpdate(_ => world.ExitImmersive());
@@ -409,12 +432,15 @@ namespace Simitone.Client.VR
 
             // ---- floating UI panel (first person only): a dialog on its own at eye level, pie menus with the rest of
             // the UI straight ahead, the buy/build catalogue lower down and tilted up like a desk
-            var kind = BuildMode ? PanelKind.Desk
+            // (pie menus are drawn for VR instead, unless that's turned off; and the catalogue may be in your hand)
+            var vrPie = immersive && Settings.VRPieMenus && PieMenuOpen && PieSource != null && dialog == null && PiePanel != null;
+            var deskBuild = BuildMode && !CatalogInHand;
+            var kind = deskBuild ? PanelKind.Desk
                 : PickerOpen && dialog == null ? PanelKind.Picker
                 : (dialog is UIMobileDialog && !PieMenuOpen) ? PanelKind.Dialog
-                : (PieMenuOpen && OpenPie != null && dialog == null) ? PanelKind.Pie
+                : (PieMenuOpen && OpenPie != null && dialog == null && !vrPie) ? PanelKind.Pie
                 : PanelKind.Full;
-            var showPanel = immersive && (UIPanelWanted || BuildMode);
+            var showPanel = immersive && (UIPanelWanted || deskBuild);
             if (showPanel && !PanelShown && vrCamera?.Blinking == true) showPanel = false; // wait for a blink to end
             var replace = showPanel && (!PanelShown || PanelKindShown != kind || (kind == PanelKind.Pie && PieAnchorChanged));
             if (replace) { PlacePanel(kind); PanelArmed = false; }
@@ -445,8 +471,30 @@ namespace Simitone.Client.VR
 
             // ---- the VR panels (Simitone UI): wrist displays, comfort setup, VR menu, keyboard
             EnsurePanels();
-            if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays);
+            // the catalogue tablet in your walking hand (its wrist's needs display makes way for it)
+            var tabletWanted = immersive && BuildMode && CatalogInHand && Tablet != null && CatalogSource != null
+                && inputActive && input.WalkGrip.Valid && LastHead.Valid;
+            if (tabletWanted)
+            {
+                Tablet.Source = CatalogSource;
+                Tablet.PlaceInHand(input.WalkGrip, input.LeftHanded);
+                if (!Tablet.Shown) Tablet.Show();
+            }
+            else if (Tablet?.Shown == true) Tablet.Hide();
+            if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays, needsAllowed: !tabletWanted);
             else Wrists?.HideAll();
+            // the VR pie menu, over what you pointed at
+            if (vrPie && LastHead.Valid)
+            {
+                if (!PiePanel.Shown || PiePanel.Source != PieSource || PieAnchorChanged)
+                {
+                    PiePanel.Source = PieSource;
+                    PiePanel.PlaceAt(PieAnchor, LastHead);
+                    PieAnchorChanged = false;
+                }
+                if (!PiePanel.Shown) PiePanel.Show();
+            }
+            else if (PiePanel?.Shown == true) PiePanel.Hide();
             var overlayWasOpen = OverlayOpen;
 
             // the comfort setup: the first time VR runs, or when asked for
@@ -501,14 +549,23 @@ namespace Simitone.Client.VR
             if (!buttonsDown) PanelPressArmed = true;
             else if (pointed == null) PanelPressArmed = false;
             MousePanels[0] = Setup; MousePanels[1] = Menu; MousePanels[2] = Keyboard; MousePanels[3] = Wrists?.Needs; MousePanels[4] = Wrists?.Watch;
+            MousePanels[5] = Tablet; MousePanels[6] = PiePanel;
             foreach (var panel in MousePanels)
             {
                 if (panel == null) continue;
                 if (panel == pointed) panel.SetMouse(pointedPixel, PanelPressArmed && input.Select.Down, PanelPressArmed && input.Secondary.Down);
                 else panel.SetMouse(null, false, false);
             }
+            // the grip goes back a level of the VR pie menu (closing it at the top), wherever you point
+            var gripFree = inputActive && input.Secondary.Pressed && !NeedsRelease && PanelPressArmed;
             var overlayUsedPress = pointed != null && buttonsDown;
             if (overlayUsedPress) NeedsRelease = true;
+            if (gripFree && PiePanel?.Shown == true && !OverlayOpen)
+            {
+                GameThread.NextUpdate(_ => PieSource?.Back());
+                Runtime.Haptic(true, 0.2f, 0.012f);
+                overlayUsedPress = NeedsRelease = true;
+            }
 
             var triggerFree = inputActive && input.Select.Pressed && !NeedsRelease;
             if (triggerFree && pointed == null)
@@ -516,6 +573,11 @@ namespace Simitone.Client.VR
                 if (MenuOpen)
                 {
                     Menu.Close(); // pulled beside the menu
+                    overlayUsedPress = NeedsRelease = true;
+                }
+                else if (PiePanel?.Shown == true && !OverlayOpen)
+                {
+                    GameThread.NextUpdate(_ => PieSource?.Cancel()); // pulled beside the pie menu
                     overlayUsedPress = NeedsRelease = true;
                 }
                 else if (immersive && Wrists?.WatchFacing == true && Messages.Count > 0 && !OverlayOpen)
@@ -573,6 +635,19 @@ namespace Simitone.Client.VR
                     if (input.Secondary.Pressed && !PanelPointerOnPanel && !NeedsRelease) CancelRequested = true;
                     LastOnPanel = PanelPointerOnPanel;
                 }
+                else if (BuildMode)
+                {
+                    // The catalogue is in your hand: the pointer is the game's mouse, parked where the cursor camera
+                    // maps it onto your aim (a trigger still held from choosing on the tablet doesn't click).
+                    if (!input.Select.Down) WorldArmed = true;
+                    if (NeedsRelease) WorldArmed = false;
+                    PointerPixel = WorldCursorPixel(gd);
+                    PointerLeft = WorldArmed && input.Select.Down;
+                    PointerRight = false;
+                    PointerActive = true;
+                    if (WorldArmed && input.Select.Pressed) Runtime.Haptic(true, 0.2f, 0.015f);
+                    if (input.Secondary.Pressed && !NeedsRelease) CancelRequested = true;
+                }
                 else if (!NeedsRelease)
                 {
                     if (input.Select.Pressed) WorldSelectRequested = true;
@@ -580,6 +655,13 @@ namespace Simitone.Client.VR
                 }
             }
 
+            if (immersive && BuildMode && !PanelShown && !PointerActive && inputActive)
+            {
+                // pointing at the tablet (or another VR panel): the game's mouse stays parked at the world cursor, still
+                PointerPixel = WorldCursorPixel(gd);
+                PointerLeft = PointerRight = false;
+                PointerActive = true;
+            }
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
             UpdateTip(immersive ? vrCamera : null);
 
@@ -607,6 +689,8 @@ namespace Simitone.Client.VR
                         submission.ProjectionSwapchains = EyeSwapchains;
                         Wrists?.Submit(Runtime, ref submission);
                         if (PanelShown) SubmitPanel(ref submission);
+                        Tablet?.Submit(Runtime, ref submission);
+                        PiePanel?.Submit(Runtime, ref submission);
                         Tip?.Submit(Runtime, ref submission);
                     }
                     else
@@ -659,6 +743,12 @@ namespace Simitone.Client.VR
         }
 
         public static RenderTarget2D[] GetEyeTargets(GraphicsDevice gd) => EyeTargets;
+
+        /// <summary>Draws the catalogue tablet's 3D pictures that are waiting (the lot world calls this once per frame).</summary>
+        public static void RenderThumbnails()
+        {
+            if (Tablet?.Shown == true) Thumbnails?.Render();
+        }
 
         /// <summary>The render target the UI is captured into (window sized), for <see cref="VRUILayer"/>.</summary>
         public static RenderTarget2D GetUITarget(GraphicsDevice gd, int width, int height)

@@ -42,6 +42,7 @@ class UIGame : FSO.Common.Rendering.Framework.Game
     private readonly List<(string name, VRUIPanel panel, Action before)> Shots = new List<(string, VRUIPanel, Action)>();
     private int Shot;
     private int ShotFrame;
+    private VRCatalogThumbnails CatalogThumbs;
 
     public UIGame(string outDir)
     {
@@ -140,6 +141,29 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             keyboard.Show();
             keyboard.SetMouse(new Vector2(200, 230), false, false); // pointing at a key
         }));
+
+        // the catalogue tablet: buy mode with a subcategory open (the first two items have made-up 3D meshes; the
+        // chair is held, the sofa pointed at, the throne too dear), and build mode choosing a subcategory
+        CatalogCheck.LoadEffect(Content);
+        CatalogCheck.MakeMeshes(GraphicsDevice);
+        CatalogThumbs = new VRCatalogThumbnails(GraphicsDevice) { Meshes = CatalogCheck.Meshes };
+        var buy = new VRCatalogTablet { Source = new SampleCatalog(false, Dot), Thumbnail = CatalogThumbs.Get };
+        var build = new VRCatalogTablet { Source = new SampleCatalog(true, Dot) };
+        Shots.Add(("catalogue-buy", buy, () =>
+        {
+            buy.Show();
+            buy.SetMouse(new Vector2(30 + 14 + 184 + 86, 336 + 70), false, false); // over the second tile
+        }));
+        Shots.Add(("catalogue-build", build, () => build.Show()));
+        // the pie menu: the top level (a stand-in for the Sim's head), and a category of eleven
+        var pieTop = new VRPieMenuPanel { Source = new SamplePie(false, CatalogCheck.HeadStandIn(GraphicsDevice)) };
+        var pieSub = new VRPieMenuPanel { Source = new SamplePie(true, null) };
+        Shots.Add(("pie-top", pieTop, () =>
+        {
+            pieTop.Show();
+            pieTop.SetMouse(new Vector2(500 + 2 * 70, 550 - 2 * 42), false, false); // pointing at a choice
+        }));
+        Shots.Add(("pie-category", pieSub, () => pieSub.Show()));
     }
 
     // the controller model drawn in your hands when you're not in your Sim's body: from the side and from your eyes
@@ -172,12 +196,14 @@ class UIGame : FSO.Common.Rendering.Framework.Game
         if (ExitCode != 2) return;
         try
         {
+            CatalogThumbs?.Render(); // (the lot world does this in the game)
             if (Shot >= Shots.Count)
             {
                 RenderController();
                 if (GltfCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("glTF checks failed");
                 if (MultiviewCheck.Run(GraphicsDevice, Content, OutDir) > 0) throw new Exception("multiview checks failed");
                 if (StereoCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("stereo rendering checks failed");
+                if (CatalogCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("catalogue picture checks failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();

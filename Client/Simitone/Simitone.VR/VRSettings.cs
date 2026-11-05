@@ -30,6 +30,12 @@ namespace Simitone.VR
     public enum VRFoveation { Off, Light, Strong }
 
     /// <summary>
+    /// Where the buy/build catalogue is in first person. Hand: a tablet in your walking hand, with 3D pictures of the
+    /// objects. Desk: the game's own catalogue on a panel in front of you, below eye level.
+    /// </summary>
+    public enum VRCatalogStyle { Hand, Desk }
+
+    /// <summary>
     /// User tunable VR options, stored as key=value lines in &lt;UserDir&gt;/vr.ini.
     /// The file is (re)written with every key and its default on first run, so it doubles as documentation.
     /// </summary>
@@ -69,6 +75,13 @@ namespace Simitone.VR
         /// an arc lands, like a teleport arc. False switches buy/build to the flat screen instead.
         /// </summary>
         public bool VRBuildMode = true;
+        /// <summary>Where the buy/build catalogue is (see <see cref="VRCatalogStyle"/>).</summary>
+        public VRCatalogStyle Catalogue = VRCatalogStyle.Hand;
+        /// <summary>
+        /// Pie menus drawn for VR: the choices as buttons around your Sim's head, over what you pointed at, sized for a
+        /// headset. False shows the game's own pie menu on a panel instead.
+        /// </summary>
+        public bool VRPieMenus = true;
         /// <summary>Starting launch speed of the placement arc (m/s); the right stick changes it while placing.</summary>
         public float ArcReach = 7f;
         /// <summary>Pie menus and dialogs float this far in front of you (metres), this wide.</summary>

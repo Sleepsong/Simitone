@@ -1442,10 +1442,10 @@ namespace Simitone.Client.VR
         /// </summary>
         private void UpdateBuildCursor(World world, VRInput input, float dt)
         {
-            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.OverlayOpen))
+            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.OverlayOpen || SimitoneVR.OverlayHasPointer))
             {
-                // Choosing from the catalogue (or using the VR menu): keep the cursor where it was in the world and hide
-                // the arc, so what you hold doesn't fly about while the pointer is elsewhere.
+                // Choosing from the catalogue (the desk panel or the tablet, or using the VR menu): keep the cursor where it
+                // was in the world and hide the arc, so what you hold doesn't fly about while the pointer is elsewhere.
                 ArcCount = 0;
                 return;
             }

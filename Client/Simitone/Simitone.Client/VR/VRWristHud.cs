@@ -65,7 +65,8 @@ namespace Simitone.Client.VR
         public bool WatchFacing { get; private set; }
 
         /// <summary>Places and shows (or hides) the displays from the hand and head poses (tracking space). Once per frame.</summary>
-        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode)
+        /// <param name="needsAllowed">False hides the needs display (the catalogue tablet is in that hand).</param>
+        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true)
         {
             WatchFacing = false;
             bool watch = false, needs = false;
@@ -80,7 +81,7 @@ namespace Simitone.Client.VR
                 var watchSide = input.LeftHanded ? leftWrist : rightWrist;
                 var needsSide = input.LeftHanded ? rightWrist : leftWrist;
                 watch = Place(Watch, input.PointerGrip, head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);
-                needs = Place(Needs, input.WalkGrip, head, needsSide.offset, needsSide.yaw, mode, out _);
+                needs = needsAllowed && Place(Needs, input.WalkGrip, head, needsSide.offset, needsSide.yaw, mode, out _);
                 WatchFacing = watchFacing;
             }
             SetShown(Watch, watch);

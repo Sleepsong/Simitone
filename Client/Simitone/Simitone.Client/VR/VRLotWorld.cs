@@ -210,6 +210,7 @@ namespace Simitone.Client.VR
                 cameras.DisableTransitions = oldTransitions;
             }
             SimitoneVR.EyesRendered = true;
+            SimitoneVR.RenderThumbnails(); // (the catalogue tablet's 3D pictures, between the lot and the UI)
 
             // Desktop mirror: crop one eye to the window (World.Draw then presents the PPX backbuffer).
             PPXDepthEngine.SetPPXTarget(null, null, true);

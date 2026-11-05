@@ -76,6 +76,9 @@ namespace Simitone.Client.VR
 
         private bool LeftForFlatScreen;
         private bool WasBuyBuild;
+        /// <summary>The game's catalogue and open pie menu, for the VR tablet and pie menu.</summary>
+        private VRGameCatalog Catalog;
+        private VRGamePie Pie;
         private UIObjectSelection LastHolding;
         private bool RotateLatched;
         private bool WasImmersive;
@@ -110,6 +113,7 @@ namespace Simitone.Client.VR
         public void Reset()
         {
             DirectAvatar = null;
+            Pie = null;
             LastMeasured = null;
             SegmentKind = MoveKind.None;
             SpeedBeforeSteering = 0;
@@ -137,6 +141,8 @@ namespace Simitone.Client.VR
                 SimitoneVR.UIPanelWanted = false;
                 SimitoneVR.PieMenuOpen = false;
                 SimitoneVR.OpenPie = null;
+                SimitoneVR.PieSource = null;
+                SimitoneVR.CatalogSource = null;
                 return;
             }
             var camera = world.VRCamera;
@@ -215,7 +221,14 @@ namespace Simitone.Client.VR
             SimitoneVR.PickerOpen = immersive && picker;
             SimitoneVR.PieMenuOpen = lc.PieMenuOpen;
             SimitoneVR.OpenPie = lc.OpenPie;
-            SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen() || SimitoneVR.BuildMode || picker);
+            if (lc.OpenPie == null) Pie = null;
+            else if (Pie?.Menu != lc.OpenPie) Pie = new VRGamePie(lc.OpenPie, lc);
+            SimitoneVR.PieSource = Pie;
+            Catalog ??= new VRGameCatalog(Screen);
+            SimitoneVR.CatalogSource = Catalog;
+            // (the panel shows the game's UI: pie menus only when they aren't drawn for VR, the catalogue only on the desk)
+            SimitoneVR.UIPanelWanted = immersive && ((lc.PieMenuOpen && !SimitoneVR.Settings.VRPieMenus) || SimitoneVR.DialogOpen()
+                || (SimitoneVR.BuildMode && !SimitoneVR.CatalogInHand) || picker);
         }
 
         // ------------------------------------------------------------------ direct control
@@ -809,8 +822,10 @@ namespace Simitone.Client.VR
                     lc.CancelPie();
                 }
             }
-            // In first person the bottom panel is only shown in buy/build mode, where it's the catalogue.
-            if (immersive && frontend != null && frontend.Visible != vrBuild) frontend.Visible = vrBuild;
+            // In first person the bottom panel is only shown in buy/build mode, where it's the catalogue on the desk panel
+            // (the tablet in your hand drives it unseen).
+            var showFrontend = vrBuild && !SimitoneVR.CatalogInHand;
+            if (immersive && frontend != null && frontend.Visible != showFrontend) frontend.Visible = showFrontend;
         }
 
         /// <summary>Buy/build mode in first person: what the camera's cursor does, rotating, and grabbing.</summary>

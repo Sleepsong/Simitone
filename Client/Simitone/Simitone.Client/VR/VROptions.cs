@@ -63,6 +63,9 @@ namespace Simitone.Client.VR
             Add("Sim's hands", () => Settings.SimHands ? "Follow yours" : "Animated", d => Settings.SimHands = !Settings.SimHands);
             Add("Controllers", () => Settings.ControllerModels ? "Shown" : "Hidden", d => Settings.ControllerModels = !Settings.ControllerModels);
             Add("Buy and build", () => Settings.VRBuildMode ? "In VR" : "Flat screen", d => Settings.VRBuildMode = !Settings.VRBuildMode);
+            Add("Catalogue", () => Settings.Catalogue == VRCatalogStyle.Hand ? "In your hand" : "On a desk",
+                d => Settings.Catalogue = Cycle(Settings.Catalogue, d));
+            Add("Pie menus", () => Settings.VRPieMenus ? "VR" : "Game's", d => Settings.VRPieMenus = !Settings.VRPieMenus);
             Add("Single-pass stereo", () => !Settings.SinglePassStereo ? "Off" : SimitoneVR.StereoStatus,
                 d => Settings.SinglePassStereo = !Settings.SinglePassStereo);
             Add("Foveation", () => Settings.Foveation == VRFoveation.Off ? "Off"

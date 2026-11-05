@@ -13,8 +13,8 @@ view never slides or bobs about by default: you step out, watch, and follow with
 levels, a vignette, stick or arc movement and the other options can all be changed in the headset, from the
 **VR menu**.
 
-In **buy and build mode** you stay where you are and place things remotely. A beam picks objects up from a
-distance, and a teleport-style arc shows where they'll land.
+In **buy and build mode** you stay where you are and place things remotely. The catalogue is a tablet in your hand
+with the objects in 3D; a beam picks objects up from a distance, and a teleport-style arc shows where they'll land.
 
 Everything that isn't the 3D lot (loading screens, the neighbourhood, CAS, options) appears on a flat virtual
 screen floating in front of you.
@@ -46,8 +46,11 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
   look down you see their hands where yours are, pointing the way you point. During an action their hands do the
   action, and the arms blend back to it in a fifth of a second. `SimHands=False` keeps the game's animation.
 - **Interacting:** point with the right controller (the laser turns green on something usable) and pull the trigger.
-  That object's (or Sim's) real pie menu floats over it, turned to face you, at a readable distance and size;
-  point and pull the trigger again to choose. Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
+  That object's (or Sim's) pie menu floats over it, turned to face you, at a readable distance and size: the game's
+  own buttons and layout, with your Sim's head in the middle turning to look at the choice you point at. Point and
+  pull the trigger again to choose; the grip (or the button in the middle) goes back a level, or closes the menu at
+  the top; the trigger anywhere else closes it. `VRPieMenus=False` shows the game's 2D pie menu on a panel instead.
+  Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
   your view does meanwhile is up to the comfort setting (below).
 - **Questions** (phone calls, job offers, Yes/No) appear on their own on the floating panel at eye level, with a
   buzz in both hands and a sound. If you're mid-blink they wait until it's over.
@@ -140,7 +143,16 @@ game's queue icon. Point at it and pull the trigger to cancel it. `ActionBubble=
 
 **Buy and build mode** (left grip cycles live → buy → build → live, or pick the mode on the flat screen). You
 stay in first person, where you were standing. The game pauses, as usual, and you build on the floor you're on.
-- **The catalogue** is on a desk-like panel below you; point at it and pull the trigger to choose something.
+- **The catalogue** is a tablet in your walking hand (the left, or the right when left-handed), in Simitone's look:
+  - at the top, Live / Buy / Build tabs and your money; then the categories, and the subcategories with their names;
+  - then the items, eight to a page, each with its price (red if you can't afford it). Objects are shown in 3D,
+    and the one you point at turns, so you can see it from all sides. Build tools keep the catalogue's pictures,
+    as do objects whose 3D model isn't ready yet;
+  - below them, the name and price of what you're pointing at or holding, and the page buttons.
+
+  Point at it with the other hand and pull the trigger. Choosing an item picks it up (choosing it again puts it
+  back); then aim the arc as below. Your needs display makes way for the tablet while it's there.
+  `Catalogue=Desk` puts the game's own catalogue on a desk-like panel below you instead.
 - **Placing:** what you're holding hangs at the end of an arc from your controller, like a teleport arc. Green
   means it fits, red means it doesn't. Aim and pull the trigger to place it.
   - Right stick up/down throws the arc further or nearer.
@@ -149,8 +161,8 @@ stay in first person, where you were standing. The game pauses, as usual, and yo
   trigger to pick it up, gravity-gun style; it stays where it is until you aim the arc somewhere else.
 - **Cancel and sell:** the right grip puts it back or cancels (as Escape does), and B sells or deletes what you're
   holding.
-- **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool on the
-  panel, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
+- **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool in the
+  catalogue, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
   arc.
 - **Other floors:** right stick up/down changes the floor you build on (while you're not holding anything or using a
   tool). You can go up to floors that aren't built yet: there's no gravity in buy and build, so you float there.
@@ -218,7 +230,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 |---|---|---|---|---|
 | Left stick | Walk your Sim | Move | (observer: move) | n/a |
 | Left stick click | Run (until you let go of the stick) | Sprint (hold) | (observer: sprint) | n/a |
-| Left grip | Buy mode | Buy mode | Next mode (buy → build → live) | Next mode |
+| Left grip | Buy mode | Buy mode | Next mode (buy → build → live); the catalogue tablet's tabs do the same | Next mode |
 | Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
 | Left menu button (Touch); left trackpad squeeze (Index); VR Options on the left wrist | VR menu | VR menu | VR menu | VR menu |
 | Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
@@ -228,7 +240,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Right trigger on the left wrist | Cancel the queue icon pointed at, or press VR Options | Same | Same | n/a |
 | Right trigger while looking at the watch | Read the oldest waiting message | Same | Same | n/a |
 | Left stick held while your Sim is busy | Cancel their actions and take over | n/a | n/a | n/a |
-| Right grip | Close a pie menu; right click on menus | Close a pie menu; right click on menus | Cancel (put back) | Right click |
+| Right grip | Back a level of a pie menu (closes it at the top); right click on menus | Same | Cancel (put back) | Right click |
 | A | Flat screen | Flat screen | Flat screen | First person |
 | B | Switch to observer | Switch to playing as your Sim | Sell / delete what you hold; else switch Sim / observer | Recentre the screen |
 | X | Pause / resume | Pause / resume | n/a | Pause / resume |
@@ -290,8 +302,10 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `HeightOffset` | 0 | Metres added to your tracked height when you're not in your Sim's head (observer, or stepped out), e.g. 0.5 to play seated |
 | `FallbackEyeHeight` | 1.65 | Eye height if the runtime has no floor-level tracking space |
 | `ScreenDistance` / `ScreenWidth` | 2.0 / 2.4 | Flat screen distance and width, metres |
-| `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating pie menu / dialog panel distance and width, metres (the buy/build catalogue desk is closer, lower and 90% as wide) |
+| `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating dialog panel distance and width, metres (the buy/build catalogue desk, with `Catalogue=Desk`, is closer, lower and 90% as wide) |
 | `VRBuildMode` | True | Buy and build in first person with remote placement. `False` uses the flat screen instead |
+| `Catalogue` | Hand | Buy/build catalogue: `Hand` (a tablet in your walking hand, with 3D objects) or `Desk` (the game's catalogue on a panel below you) |
+| `VRPieMenus` | True | Pie menus drawn for VR (the game's buttons and your Sim's head, sized for a headset). `False` shows the game's 2D pie menu on a panel |
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
 | `SimHeadSmoothing` | 8 | How quickly the view follows your Sim's position (per second). Lower is smoother but laggier |
@@ -414,6 +428,10 @@ Client/Simitone/Simitone.Client/VR/
                                       movement arc -> "Go Here"
   VRUILayer.cs                        captures the game UI into its own texture for the floating panel
   VRWristHud.cs                       watch (and waiting messages), needs and action queue displays
+  VRCatalogTablet.cs                  the buy/build catalogue tablet in your walking hand (IVRCatalogSource)
+  VRGameCatalog.cs                    the game's catalogue (UIMainPanel, UIBuyBrowsePanel) as the tablet's source
+  VRCatalogThumbnails.cs              3D pictures of catalogue objects (their lot meshes, FreeSO's RCObject shader)
+  VRPieMenuPanel.cs                   the pie menu drawn for VR (IVRPieSource), and the game's UIPieMenu as its source
 ```
 
 Per frame, all on the game thread inside MonoGame's `Draw`:
@@ -460,7 +478,22 @@ build tools (`UICustomLotControl`s).
   - while picking: a camera looking down the controller's ray.
 - **Result:** `World.EstTileAtPosWithScroll` and `GetObjectIDAtScreenPos` see the mouse "at" the arc or beam.
 - **On the catalogue:** because the field of view is tiny, a mouse sitting there still maps to practically the
-  same spot, so a held object doesn't fly about while you choose.
+  same spot, so a held object doesn't fly about while you choose. On the tablet, the cursor camera stops following
+  your aim and the mouse stays parked, with its buttons up.
+- **The catalogue tablet** drives the game's own catalogue rather than copying it (`VRGameCatalog`): the tabs call
+  `UISimitoneFrontend.SwitchMode`, categories `UICategorySwitcher.Select`, subcategories
+  `UIBuyBrowsePanel.InitSubcategory` and items `Selected` / `Deselect`, exactly as its buttons do, so the hidden 2D
+  catalogue stays in step (`UIBuyBrowsePanel` now says which subcategories it shows and which one is chosen).
+- **3D pictures** (`VRCatalogThumbnails`) are each object's mesh from FreeSO's 3D mode (`RCMeshes`, with every tile
+  of a multi-tile object), drawn with the lot's own object shader in even white light, from the angle FreeSO's
+  object thumbnails use, at twice the size and halved. The shader is shared with the lot, so its lighting and
+  matrices are put back afterwards. They're asked for as the tablet updates and drawn between the lot and the UI,
+  two a frame; a mesh FreeSO is still reconstructing waits until it's done. The pointed-at one is redrawn each
+  frame, turning.
+- **VR pie menus** (`VRPieMenuPanel`) lay out the game's open `UIPieMenu` level the way `UIPieMenu.RenderMenu`
+  does, with its button texture, colours and fonts, scaled up, and show its Sim head (`UIPieMenu.HeadTexture`),
+  whose gaze follows the pointed-at button (`HeadLook`). Choosing goes through `UIPieMenu.Choose`, the same path as
+  a click. The 2D menu stays open underneath (on the desktop window) and closes with it.
 
 Design choices:
 
@@ -561,8 +594,8 @@ Design choices:
 - **Hands.** Two action sets carry the same actions with mirrored bindings, both attached; the one for your
   handedness is the one synced and read. A third set has the hands' poses, haptics and eye gaze. Haptics are
   addressed by role (pointing hand, walking hand), so they follow.
-- **Panels on the headset.** Projection layer plus up to eight quads: the two wrist displays, the floating panel,
-  the tip, the keyboard, the menu and the setup.
+- **Panels on the headset.** Projection layer plus up to ten quads: the two wrist displays, the floating panel,
+  the catalogue tablet, the pie menu, the tip, the keyboard, the menu and the setup.
 
 ### Tests
 
@@ -586,6 +619,9 @@ Design choices:
   - the VR menu;
   - three comfort setup pages;
   - the keyboard and the placement tip;
+  - the catalogue tablet in buy mode (two items with made-up 3D meshes, one held and one pointed at, one too dear)
+    and in build mode choosing a subcategory;
+  - the VR pie menu's top level (with a stand-in for the Sim's head) and a category of eleven choices;
   - the built-in controller model, from the side and from above.
 
   It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (18 checks): the wrist reaches a
@@ -604,6 +640,12 @@ Design choices:
   works afterwards. Then the real renderer on a scene of boxes with a headset-like field of view: single pass matches
   two passes (under 0.01% of pixels differ), and foveated rendering matches full resolution where you look and
   stays within about 1/255 on average elsewhere (images: `stereo-*.png`).
+
+  The catalogue's 3D pictures, drawn through FreeSO's real object shader with made-up meshes (12 checks): pictures
+  are drawn the frame after they're asked for; the render target, viewport and the lot's lighting and matrices are
+  put back; the object is drawn whole and framed, with transparent corners; textures use only their unpadded part
+  (`UVScale`); a mesh still being made waits and is drawn when done; no mesh means no picture; and the pointed-at
+  one turns (images: `thumb-*.png`).
 
   It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
@@ -631,7 +673,13 @@ Design choices:
   The speeds in [Speeds](#speeds) are worked out from the engine; `vr.log` records the real ones while you play.
 - **Popups, actions and typing:** only Simitone's full-width dialogs, pie menus and the travel pickers are
   cropped on the panel; anything else shows with the whole UI.
-- **Pie menus** float at the object, but they are the regular 2D menus on a panel.
+- **The catalogue tablet and VR pie menus** are tested with sample data, not the game's (that needs The Sims):
+  - where the tablet sits in your hand and its tilt are first guesses;
+  - the 3D pictures are taken from the angle of FreeSO's own object thumbnails, unchecked against real objects
+    (some may show their side or back; the pointed-at one turns anyway);
+  - the tablet has no search box and no item descriptions (the game's catalogue on the desk has both:
+    `Catalogue=Desk`);
+  - the pie menu's Sim head is the game's own render, so it is tested only with a stand-in.
 - **Your Sim's hands** are untested with the game's own skeletons (they need The Sims). They rely on the hand
   bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
   The hand points the way yours does but doesn't copy its roll, the fingers keep their animation, and the arms
@@ -655,8 +703,8 @@ Design choices:
 - Windows VR is implemented (WGL binding; loader or registry runtime lookup) but untested.
 
 **Buy/build mode: next steps.**
-- **Catalogue:** it is the 2D catalogue on a panel; a VR-native catalogue would be a wrist tablet with 3D
-  thumbnails.
+- **Catalogue:** the tablet pages through a subcategory eight at a time; scrolling with the stick and a search
+  (with the VR keyboard) would help in big categories.
 - **Feedback:** there is no "pull" animation; the held object snaps from tile to tile at the end of the arc, as it
   does under the mouse.
 - **Changing floors** needs empty hands: put down what you hold, or leave the tool, before right stick up/down.
