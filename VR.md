@@ -42,9 +42,12 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
   a moment. Everything they're doing or have queued is cancelled; they wind down gracefully, as when you click
   their actions, and then walk where you push. Turn this off with `StickCancelsActions=False`; then holding the
   stick only stands up a seated Sim.
+- **Your hands are your Sim's hands:** while you walk your Sim, their arms reach for your controllers, so when you
+  look down you see their hands where yours are, pointing the way you point. During an action their hands do the
+  action, and the arms blend back to it in a fifth of a second. `SimHands=False` keeps the game's animation.
 - **Interacting:** point with the right controller (the laser turns green on something usable) and pull the trigger.
-  That object's (or Sim's) real pie menu floats in front of you; point and pull the trigger again to choose.
-  Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
+  That object's (or Sim's) real pie menu floats over it, turned to face you, at a readable distance and size;
+  point and pull the trigger again to choose. Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
   your view does meanwhile is up to the comfort setting (below).
 - **Questions** (phone calls, job offers, Yes/No) appear on their own on the floating panel at eye level, with a
   buzz in both hands and a sound. If you're mid-blink they wait until it's over.
@@ -111,9 +114,13 @@ goes back), and START at the end saves it (`ComfortSetupDone=True`). Run it agai
 panel's VR button.
 
 **Observer** (B to switch). You leave your Sim and roam freely as yourself:
-- smooth locomotion, snap or smooth turning, walls that stop you, and right stick up/down to change floors;
+- smooth locomotion, snap or smooth turning, and right stick up/down to change floors;
+- walls and furniture stop you as they stop Sims (you slide along them); doors don't;
+- **stairs:** walk onto them and you blink to the other end, on the other floor;
 - **teleport:** hold the left trigger, aim the arc and let go to blink there;
-- the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game.
+- the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game;
+- simple controllers in your hands, with Simitone's green band (also when you've stepped out of your Sim).
+  `ControllerModels=False` hides them.
 
 **Wrist displays.** Turn your wrist to look at it:
 - **right wrist:** a watch made of the game's clock (time and speed) and money display, plus any messages
@@ -143,11 +150,26 @@ stay in first person, where you were standing. The game pauses, as usual, and yo
 - **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool on the
   panel, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
   arc.
-- **Other floors:** in observer mode (B) right stick up/down changes the floor you're standing and building on.
+- **Other floors:** right stick up/down changes the floor you build on (while you're not holding anything or using a
+  tool). You can go up to floors that aren't built yet: there's no gravity in buy and build, so you float there.
+- **Cutaway:** the walls within a couple of tiles of where you're placing are cut away, as the game does around the
+  mouse, except the ones right next to you.
+- **Why not:** when something can't go where you're aiming, the game's reason ("not enough room", "can't afford
+  it") floats above it in orange. Build tools' tips (a wall's cost, for example) float there too, in white.
+
+**Travel.** The vacation, downtown and neighbourhood pickers float in front of you on the panel; point and pull the
+trigger to choose.
+
+**Sound.** The game's sounds come from where things are, heard from your head: louder as you get closer, panned by
+which way you face, and quieter from other floors than yours (the game's own sound model, with you as the
+listener instead of the camera).
+
+**Tips.** Whatever the game shows as a tooltip beside the mouse floats over what you're pointing at instead: a
+Sim's name, an object's sale price, why something can't be placed.
 
 **Flat screen.** A (or Tab) switches between first person and the normal game on a floating screen, where the
-laser pointer is your mouse. Options mode and the travel map switch to the flat screen automatically and come
-back to first person when you're done. With `VRBuildMode=False`, buy and build use the flat screen too.
+laser pointer is your mouse. Options mode switches to the flat screen automatically and comes back to first
+person when you're done. With `VRBuildMode=False`, buy and build use the flat screen too.
 
 ## Running on a PC
 
@@ -198,7 +220,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
 | Left menu button (Touch); left trackpad squeeze (Index); VR Options on the left wrist | VR menu | VR menu | VR menu | VR menu |
 | Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
-| Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else (observer) floor | Scroll |
+| Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else floor (any, built or not) | Scroll |
 | Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
 | Right trigger | Point and interact; click on menus | Point and interact; click on menus | Pick up / place / drag a tool; choose in the catalogue | Left click |
 | Right trigger on the left wrist | Cancel the queue icon pointed at, or press VR Options | Same | Same | n/a |
@@ -238,6 +260,8 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 | `WatchMessages` | True | In first person, messages that need no answer wait on your watch instead of popping up |
 | `RunAtFullTilt` | False | Playing as your Sim, a fully pushed stick runs. `False`: walk, and run after clicking the stick |
 | `NormalSpeedWhenSteering` | True | Walking your Sim at game speed 2 or 3 drops the game to speed 1 until you've let go for 2 s |
+| `SimHands` | True | While you walk your Sim, their arms reach for your controllers. `False`: their arms always animate as usual |
+| `ControllerModels` | True | Show simple controllers in your hands when you're not in your Sim's body |
 | `ComfortSetupDone` | False | The first-run comfort setup has been done; set `False` to see it again |
 | `RenderScale` | 1.0 (Frame: 0.75) | Multiplier on the headset's recommended per-eye resolution |
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
@@ -247,7 +271,7 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 | `TurnMode` | Snap | `Snap` or `Smooth` |
 | `SnapTurnDegrees` | 30 | Snap turn angle |
 | `SmoothTurnDegreesPerSecond` | 120 | Smooth turn speed |
-| `WallCollision` | True | Observer: walls stop thumbstick movement (doors don't) |
+| `WallCollision` | True | Observer: walls and furniture stop thumbstick movement (doors don't; stairs take you to the other floor) |
 | `AutoEnterImmersive` | True | Go straight to first person when a lot loads |
 | `HeightOffset` | 0 | Metres added to your tracked height when you're not in your Sim's head (observer, or stepped out), e.g. 0.5 to play seated |
 | `FallbackEyeHeight` | 1.65 | Eye height if the runtime has no floor-level tracking space |
@@ -457,6 +481,26 @@ Design choices:
   physically walking around never darkens the view.
 - **sRGB swapchains with a raw copy.** MonoGame renders gamma-space colours into RGBA8 targets, and copying
   those bits unconverted into an `SRGB8_ALPHA8` swapchain gives the correct result.
+- **Your Sim's arms (`VRSimArms`).** Each frame the game animates the skeleton (`VM.PreDraw` → `ReloadSkeleton`,
+  which makes a new matrix array), then, before the eyes are drawn, each arm is posed with two-bone IK:
+  - The hand bone (`L_HAND` / `R_HAND`) is the wrist. The elbow and shoulder are the first two bones above it that
+    are some way apart, so an extra bone in the chain doesn't break it. The elbow bends down and out.
+  - The rotations are applied to the skinning matrices and to the bones' absolute positions, so what the Sim holds
+    (slot `R_FINGER0`) stays in their hand. If the game hasn't re-animated the skeleton (paused), the animated pose
+    is restored first rather than bent twice.
+  - The skinning matrices are a protected field of FreeSO's `Avatar`; FreeSO is a submodule, so they're reached by
+    reflection rather than by changing it.
+  - The wrist target is 8 cm behind the grip pose along the aim pose's forward direction (the way your hand
+    points), and the hand points that way too.
+- **Sound.** FreeSO's 3D sound volume is distance from the camera's target (and zoom), pan is from the camera's
+  look direction, and sounds are quieter on floors other than the visible one. The VR camera puts its target just
+  in front of your eyes with a fixed close zoom, and while sounds update (`VM.PreDraw`) the visible floor is set
+  to yours without redrawing anything (`WorldState.SilentLevel`), then put back for drawing.
+- **Observer collision.** Furniture is the game's own footprints for objects that don't let people through, as
+  FreeSO's direct control decides it, except doors and stairs. Stairs are a multitile object with portal parts on
+  two floors.
+- **Panels on the headset.** Projection layer plus up to eight quads: the two wrist displays, the floating panel,
+  the tip, the keyboard, the menu and the setup.
 
 ### Tests
 
@@ -474,9 +518,14 @@ Design choices:
   - the watch and the left wrist display;
   - the VR menu;
   - two comfort setup pages;
-  - the keyboard.
+  - the keyboard and the placement tip;
+  - the controller model, from the side and from above.
 
-  It needs only Simitone's own `Content` folder from a published build, not The Sims.
+  It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (18 checks): the wrist reaches a
+  target in reach and points at one out of reach, bones keep their lengths, the hand points the way the controller
+  does, the elbow bends down and out, folding and blending behave, and a skeleton without arms is left alone
+  (`--arms-only` runs just these). It needs only Simitone's own `Content` folder from a published build, not
+  The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
@@ -500,12 +549,16 @@ Design choices:
 
   The speeds in [Speeds](#speeds) are worked out from the engine; `vr.log` records the real ones while you play.
 - **No left-handed mode yet:** the right controller always points and the left one walks.
-- **Popups, actions and typing:**
-  - Only Simitone's full-width dialogs are cropped on the panel; anything else shows with the whole UI.
-  - The vacation, downtown and neighbourhood pickers still switch to the flat screen.
-- **Pie menus** float in front of you rather than at the object. They are the regular 2D menus.
-- **Observer mode:** stairs aren't walked up (use right stick up/down at the stairs), and objects don't
-  collide.
+- **Popups, actions and typing:** only Simitone's full-width dialogs, pie menus and the travel pickers are
+  cropped on the panel; anything else shows with the whole UI.
+- **Pie menus** float at the object, but they are the regular 2D menus on a panel.
+- **Your Sim's hands** are untested with the game's own skeletons (they need The Sims). They rely on the hand
+  bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
+  The hand points the way yours does but doesn't copy its roll, the fingers keep their animation, and the arms
+  only follow you while you walk your Sim (during an action they do the action).
+- **Controllers** are one simple model for every headset, not each maker's own.
+- **Sound** is the game's stereo panning by direction and distance, not 3D (HRTF) audio.
+- **Observer stairs** take you from end to end in a blink; you don't climb them.
 - **Performance:**
   - the lot is drawn twice (no multiview);
   - no foveated rendering (`XR_FB_foveation` / eye-tracked foveation on the Frame);
@@ -518,8 +571,6 @@ Design choices:
 - **Catalogue:** it is the 2D catalogue on a panel; a VR-native catalogue would be a wrist tablet with 3D
   thumbnails.
 - **Feedback:** there is no "pull" animation; the held object snaps from tile to tile at the end of the arc, as it
-  does under the mouse. Placement errors play the game's error sound, but the reason only shows as a tooltip on the
-  panel.
-- **Your Sim's floor only:** in Sim mode you can only build on the floor your Sim is on; switch to observer (B) to
-  build elsewhere.
-- **Cutaway:** walls stay up while you build, with no cutaway.
+  does under the mouse.
+- **Changing floors** needs empty hands: put down what you hold, or leave the tool, before right stick up/down.
+- **Cutaway** follows where you place; the game's wall modes (walls up, down, cutaway) aren't offered in VR.

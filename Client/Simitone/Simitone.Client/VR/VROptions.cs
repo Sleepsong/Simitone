@@ -59,6 +59,8 @@ namespace Simitone.Client.VR
             Add("Messages", () => Settings.WatchMessages ? "On the watch" : "Pop up", d => Settings.WatchMessages = !Settings.WatchMessages);
             Add("Stick when busy", () => Settings.StickCancelsActions ? "Takes over" : "Waits", d => Settings.StickCancelsActions = !Settings.StickCancelsActions);
             Add("Action bubble", () => Settings.ActionBubble ? "On" : "Off", d => Settings.ActionBubble = !Settings.ActionBubble);
+            Add("Sim's hands", () => Settings.SimHands ? "Follow yours" : "Animated", d => Settings.SimHands = !Settings.SimHands);
+            Add("Controllers", () => Settings.ControllerModels ? "Shown" : "Hidden", d => Settings.ControllerModels = !Settings.ControllerModels);
             Add("Buy and build", () => Settings.VRBuildMode ? "In VR" : "Flat screen", d => Settings.VRBuildMode = !Settings.VRBuildMode);
             Add("Render scale", () => (int)Math.Round(Settings.RenderScale * 100) + "%",
                 d => SimitoneVR.SetRenderScale(RenderScales[Wrap(Nearest(RenderScales, Settings.RenderScale) + d, RenderScales.Length)]));

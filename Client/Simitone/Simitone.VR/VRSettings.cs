@@ -45,7 +45,10 @@ namespace Simitone.VR
         public VRTurnMode TurnMode = VRTurnMode.Snap;
         public float SnapTurnDegrees = 30f;
         public float SmoothTurnDegreesPerSecond = 120f;
-        /// <summary>Stop artificial locomotion at walls (doors stay passable). Physical room-scale movement is never blocked.</summary>
+        /// <summary>
+        /// Observer: walls and furniture stop the stick (doors don't, and stairs take you up or down). Physical
+        /// room-scale movement is never blocked.
+        /// </summary>
         public bool WallCollision = true;
         /// <summary>Automatically switch to the immersive first-person view when a lot finishes loading.</summary>
         public bool AutoEnterImmersive = true;
@@ -114,6 +117,13 @@ namespace Simitone.VR
         /// times as fast), the game drops to normal speed, and goes back to yours 2 s after you let go.
         /// </summary>
         public bool NormalSpeedWhenSteering = true;
+        /// <summary>
+        /// Playing as your Sim, while you steer them their arms reach for your controllers, so you see their hands where
+        /// yours are. (During actions their hands do the action.) Off: their arms always animate as usual.
+        /// </summary>
+        public bool SimHands = true;
+        /// <summary>Show simple controller models in your hands when you're not in your Sim's body (observer, stepped out).</summary>
+        public bool ControllerModels = true;
         /// <summary>The first-run comfort setup has been done (set it to False to see it again, or use the VR menu).</summary>
         public bool ComfortSetupDone = false;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>

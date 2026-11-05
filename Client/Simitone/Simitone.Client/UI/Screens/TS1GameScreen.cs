@@ -581,7 +581,14 @@ namespace Simitone.Client.UI.Screens
         public override void PreDraw(UISpriteBatch batch)
         {
             base.PreDraw(batch);
-            vm?.PreDraw();
+            // In VR first person every floor in use is drawn (upper ones as ceilings), so the visible floor is the top
+            // one; sounds are quieter on other floors than the visible one, so they update with yours as the visible
+            // floor (set silently, without redrawing) and it's put back for drawing.
+            var vrCamera = VRWorld?.Immersive == true ? VRWorld.VRCamera : null;
+            var drawLevel = vrCamera != null ? VRWorld.State.Level : (sbyte)0;
+            if (vrCamera != null) VRWorld.State.SilentLevel = vrCamera.PlayerLevel;
+            try { vm?.PreDraw(); }
+            finally { if (vrCamera != null) VRWorld.State.SilentLevel = drawLevel; }
         }
 
         public void CleanupLastWorld()

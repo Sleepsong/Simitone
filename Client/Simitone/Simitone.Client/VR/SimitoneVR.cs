@@ -64,6 +64,7 @@ namespace Simitone.Client.VR
         private static VRMenu Menu;
         private static VRKeyboard Keyboard;
         private static VRSetup Setup;
+        private static VRTipPanel Tip;
         private static bool SetupRequested, SetupShownThisSession, MenuRequested;
         private static bool PanelPressArmed;
         private static bool PendingEyeResize;
@@ -88,12 +89,27 @@ namespace Simitone.Client.VR
         private static Vector3 PanelPosition;
         private static Quaternion PanelOrientation = Quaternion.Identity;
         private static float PanelWidth = 1.7f;
-        private enum PanelKind { Full, Desk, Dialog }
+        private enum PanelKind { Full, Desk, Dialog, Pie, Picker }
         private static PanelKind PanelKindShown;
         /// <summary>The part of the UI the panel shows, in window pixels (all of it, or just the open dialog).</summary>
         private static Rectangle PanelRegion;
         /// <summary>Set every update by <see cref="VRGameBridge"/>: a pie menu is open.</summary>
         public static bool PieMenuOpen;
+        /// <summary>Set every update by the bridge: the open pie menu (the panel is cropped to it), or null.</summary>
+        public static FSO.Client.UI.Framework.UIElement OpenPie;
+        /// <summary>Set every update by the bridge: the vacation / downtown picker is open (shown on the panel).</summary>
+        public static bool PickerOpen;
+        private static Vector3 PieAnchor;
+        private static bool PieAnchorChanged;
+        private static FSO.Client.UI.Framework.UIElement PieRegionOwner;
+        private static Rectangle PieRegion;
+
+        /// <summary>Where the next pie menu belongs (tracking space): over the object or floor you pointed at.</summary>
+        public static void SetPieAnchor(Vector3 tracking)
+        {
+            PieAnchor = tracking;
+            PieAnchorChanged = true;
+        }
         private static FSO.Client.UI.Framework.UIElement LastTopDialog;
         private static bool NeedsRelease;
         /// <summary>The VR menu or keyboard has the pointer: the bridge draws the beam to it and picks nothing.</summary>
@@ -247,6 +263,7 @@ namespace Simitone.Client.VR
                 Menu = new VRMenu();
                 Keyboard = new VRKeyboard();
                 Setup = new VRSetup();
+                Tip = new VRTipPanel();
             }
             catch (Exception e)
             {
@@ -276,6 +293,7 @@ namespace Simitone.Client.VR
                 Menu?.Destroy();
                 Keyboard?.Destroy();
                 Setup?.Destroy();
+                Tip?.Destroy();
                 Runtime.Dispose();
             }
             catch { }
@@ -300,6 +318,7 @@ namespace Simitone.Client.VR
             Menu?.Hide();
             Keyboard?.Hide();
             Setup?.Hide();
+            Tip?.Hide();
             // Without a headset, first person would leave you with no UI and keyboard-only movement.
             var world = CurrentWorld;
             if (world?.Immersive == true) GameThread.NextUpdate(_ => world.ExitImmersive());
@@ -382,12 +401,24 @@ namespace Simitone.Client.VR
 
             // ---- floating UI panel (first person only): a dialog on its own at eye level, pie menus with the rest of
             // the UI straight ahead, the buy/build catalogue lower down and tilted up like a desk
-            var kind = BuildMode ? PanelKind.Desk : (dialog is UIMobileDialog && !PieMenuOpen) ? PanelKind.Dialog : PanelKind.Full;
+            var kind = BuildMode ? PanelKind.Desk
+                : PickerOpen && dialog == null ? PanelKind.Picker
+                : (dialog is UIMobileDialog && !PieMenuOpen) ? PanelKind.Dialog
+                : (PieMenuOpen && OpenPie != null && dialog == null) ? PanelKind.Pie
+                : PanelKind.Full;
             var showPanel = immersive && (UIPanelWanted || BuildMode);
             if (showPanel && !PanelShown && vrCamera?.Blinking == true) showPanel = false; // wait for a blink to end
-            if (showPanel && (!PanelShown || PanelKindShown != kind)) { PlacePanel(kind); PanelArmed = false; }
+            var replace = showPanel && (!PanelShown || PanelKindShown != kind || (kind == PanelKind.Pie && PieAnchorChanged));
+            if (replace) { PlacePanel(kind); PanelArmed = false; }
+            if (kind == PanelKind.Pie) PieAnchorChanged = false;
             PanelShown = showPanel && LastHead.Valid;
-            PanelRegion = kind == PanelKind.Dialog ? DialogRegion(gd, dialog) : FullRegion(gd);
+            PanelRegion = kind switch
+            {
+                PanelKind.Dialog => DialogRegion(gd, dialog),
+                PanelKind.Pie => PieMenuRegion(gd, OpenPie),
+                PanelKind.Picker => PickerRegion(gd),
+                _ => FullRegion(gd)
+            };
 
             if (inputActive)
             {
@@ -540,6 +571,7 @@ namespace Simitone.Client.VR
             }
 
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
+            UpdateTip(immersive ? vrCamera : null);
 
             // (the panels themselves are drawn by the UI layer, into their own textures, during the frame)
         }
@@ -565,6 +597,7 @@ namespace Simitone.Client.VR
                         submission.ProjectionSwapchains = EyeSwapchains;
                         Wrists?.Submit(Runtime, ref submission);
                         if (PanelShown) SubmitPanel(ref submission);
+                        Tip?.Submit(Runtime, ref submission);
                     }
                     else
                     {
@@ -580,6 +613,39 @@ namespace Simitone.Client.VR
             {
                 Fail("xrEndFrame failed", e);
             }
+        }
+
+        /// <summary>
+        /// The game's tooltip (placement errors, build tool costs, a Sim's name) floats over what you point at in the
+        /// world: the game draws it beside the mouse, which isn't visible in first person.
+        /// </summary>
+        private static void UpdateTip(VRCameraController camera)
+        {
+            if (Tip == null) return;
+            var layer = FSO.Client.GameFacade.Screens;
+            var props = layer?.TooltipProperties;
+            var text = props != null && props.Show && props.Opacity > 0 ? layer.Tooltip : null;
+            if (camera == null || text == null || !LastHead.Valid || OverlayOpen || OverlayHasPointer || PanelPointerOnPanel
+                || camera.Blinking)
+            {
+                Tip.Hide();
+                return;
+            }
+            Vector3 anchor;
+            var scale = Settings.WorldScale;
+            if (BuildMode)
+            {
+                if (!camera.CursorValid) { Tip.Hide(); return; }
+                // above what you're holding, or just above what you point at
+                anchor = camera.CursorTarget + Vector3.Up * (camera.PlacementMode ? 1.2f : 0.3f) * scale;
+            }
+            else
+            {
+                if (PanelShown || !camera.PointerVisible || !camera.PointerHasTarget) { Tip.Hide(); return; }
+                anchor = camera.PointerStart + camera.PointerDirection * camera.PointerLength + Vector3.Up * 0.3f * scale;
+            }
+            var error = BuildMode && camera.PlacementMode && !camera.PlacementValid;
+            Tip.ShowAt(text, error, camera.WorldToTracking(anchor), LastHead);
         }
 
         public static RenderTarget2D[] GetEyeTargets(GraphicsDevice gd) => EyeTargets;
@@ -692,6 +758,27 @@ namespace Simitone.Client.VR
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.Up, VRMath.Yaw(head.Orientation));
             var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
             PanelKindShown = kind;
+            if (kind == PanelKind.Pie)
+            {
+                // over what you pointed at: along the line to it, at a readable distance, the same apparent size
+                // however far away it is, and turned to face you
+                var toAnchor = PieAnchor - head.Position;
+                var distance = toAnchor.Length();
+                var direction = distance > 0.05f ? toAnchor / distance : forward;
+                var d = MathHelper.Clamp(distance - 0.25f, 0.7f, 1.5f);
+                PanelPosition = head.Position + direction * d;
+                PanelOrientation = Quaternion.CreateFromRotationMatrix(Matrix.CreateWorld(Vector3.Zero, direction,
+                    Math.Abs(direction.Y) > 0.95f ? forward : Vector3.Up));
+                PanelWidth = d * 0.8f;
+                return;
+            }
+            if (kind == PanelKind.Picker)
+            {
+                PanelWidth = Settings.PanelWidth * 1.1f;
+                PanelOrientation = yaw;
+                PanelPosition = head.Position + forward * (Settings.PanelDistance * 1.1f) - new Vector3(0, 0.1f, 0);
+                return;
+            }
             if (kind == PanelKind.Dialog)
             {
                 PanelWidth = Settings.PanelWidth;
@@ -820,6 +907,53 @@ namespace Simitone.Client.VR
             int y0 = Math.Max(0, (int)Math.Floor(topLeft.Y * scale) - 8);
             int y1 = Math.Min(full.Height, (int)Math.Ceiling(bottomRight.Y * scale) + 8);
             return y1 - y0 < 32 ? full : new Rectangle(0, y0, full.Width, y1 - y0);
+        }
+
+        /// <summary>
+        /// The pie menu's part of the window: the union of its buttons and the Sim's head in the middle, grown (never
+        /// shrunk) while the same menu is open, so the panel stays still while the menu animates open.
+        /// </summary>
+        private static Rectangle PieMenuRegion(GraphicsDevice gd, FSO.Client.UI.Framework.UIElement pie)
+        {
+            var full = FullRegion(gd);
+            if (pie == null) return full;
+            float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+            void Include(Vector2 p)
+            {
+                minX = Math.Min(minX, p.X); minY = Math.Min(minY, p.Y);
+                maxX = Math.Max(maxX, p.X); maxY = Math.Max(maxY, p.Y);
+            }
+            void Visit(FSO.Client.UI.Framework.UIElement e)
+            {
+                if (!e.Visible) return;
+                var b = e.GetBounds();
+                if (b.Width > 0 && b.Height > 0)
+                {
+                    Include(e.LocalPoint(new Vector2(b.Left, b.Top)));
+                    Include(e.LocalPoint(new Vector2(b.Right, b.Bottom)));
+                }
+                if (e is FSO.Client.UI.Framework.UIContainer c) foreach (var child in c.GetChildren()) Visit(child);
+            }
+            Visit(pie);
+            Include(pie.LocalPoint(new Vector2(-130, -130))); // the Sim's head picture in the middle
+            Include(pie.LocalPoint(new Vector2(130, 130)));
+            var dpi = FSOEnvironment.DPIScaleFactor;
+            const int pad = 24;
+            var region = new Rectangle((int)(minX * dpi) - pad, (int)(minY * dpi) - pad,
+                (int)((maxX - minX) * dpi) + pad * 2, (int)((maxY - minY) * dpi) + pad * 2);
+            if (pie == PieRegionOwner) region = Rectangle.Union(region, PieRegion);
+            PieRegionOwner = pie;
+            PieRegion = region;
+            region = Rectangle.Intersect(region, full);
+            return region.Width < 32 || region.Height < 32 ? full : region;
+        }
+
+        /// <summary>The vacation / downtown picker: its map, a 4:3 area as tall as the window, in the middle.</summary>
+        private static Rectangle PickerRegion(GraphicsDevice gd)
+        {
+            var full = FullRegion(gd);
+            var width = Math.Min(full.Width, full.Height * 4 / 3);
+            return new Rectangle((full.Width - width) / 2, 0, width, full.Height);
         }
 
         /// <summary>The top-most modal dialog in the game UI, or null.</summary>

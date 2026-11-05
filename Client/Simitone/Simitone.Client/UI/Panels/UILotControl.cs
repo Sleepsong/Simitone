@@ -497,6 +497,10 @@ namespace Simitone.Client.UI.Panels
         }
 
         public bool PieMenuOpen => PieMenu != null;
+        /// <summary>The open pie menu, or null (VR crops its floating panel to it).</summary>
+        public UIPieMenu OpenPie => PieMenu;
+        /// <summary>The vacation / downtown / neighbourhood picker is open (VR shows it on a floating panel).</summary>
+        public bool NeighbourhoodPickerOpen => TS1NeighSelector != null;
 
         /// <summary>Closes the pie menu, if one is open.</summary>
         public void CancelPie()

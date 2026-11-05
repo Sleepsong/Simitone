@@ -27,6 +27,8 @@ namespace Simitone.Client.VR
         private SpriteBatch MirrorBatch;
         private BasicEffect BeamEffect;
         private VRComfortOverlay ComfortOverlay;
+        private VRControllerModel ControllerModel;
+        private readonly VRSimArms Arms = new VRSimArms();
         private BasicEffect IconEffect;
         private Texture2D BubbleBg, BubbleRim, BubbleCancel;
         private readonly VertexPositionColorTexture[] IconVerts = new VertexPositionColorTexture[6];
@@ -53,6 +55,7 @@ namespace Simitone.Client.VR
             MirrorBatch = new SpriteBatch(layer.Device);
             BeamEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
             ComfortOverlay = new VRComfortOverlay(layer.Device);
+            ControllerModel = new VRControllerModel(layer.Device);
             IconEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = true };
         }
 
@@ -169,12 +172,15 @@ namespace Simitone.Client.VR
             var cameras = State.Cameras;
             var oldTransitions = cameras.DisableTransitions;
             cameras.DisableTransitions = true; // never blend another camera into an eye matrix
+            // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
+            if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
 
             for (int eye = 0; eye < 2; eye++)
             {
                 cam.Eye = eye;
                 PPXDepthEngine.SetPPXTarget(targets[eye], null, true, State.OutsideColor);
                 base.InternalDraw(device);
+                DrawControllers(device, cam);
                 DrawPointerBeam(device, cam);
                 DrawActionBubble(device, cam);
                 ComfortOverlay?.Draw(device, cam.Projection, cam.NearPlane, VRCamera.VignetteAmount, VRCamera.FadeAlpha);
@@ -197,6 +203,15 @@ namespace Simitone.Client.VR
                 MirrorBatch.Draw(src, new Rectangle(pos.ToPoint(), size.ToPoint()), Color.White);
                 MirrorBatch.End();
             }
+        }
+
+        /// <summary>The controllers in your hands, when you're not in your Sim's body (where their hands are yours).</summary>
+        private void DrawControllers(GraphicsDevice device, VREyeCamera cam)
+        {
+            var vr = VRCamera;
+            if (ControllerModel == null || !vr.ShowControllers) return;
+            if (vr.LeftHandValid) ControllerModel.Draw(device, vr.LeftGripWorld, cam.View, cam.Projection);
+            if (vr.RightHandValid) ControllerModel.Draw(device, vr.RightGripWorld, cam.View, cam.Projection);
         }
 
         /// <summary>
@@ -387,6 +402,7 @@ namespace Simitone.Client.VR
             MirrorBatch?.Dispose();
             BeamEffect?.Dispose();
             ComfortOverlay?.Dispose();
+            ControllerModel?.Dispose();
             IconEffect?.Dispose();
             base.Dispose();
         }

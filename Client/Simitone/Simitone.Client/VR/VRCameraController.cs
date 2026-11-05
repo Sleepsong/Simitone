@@ -198,6 +198,31 @@ namespace Simitone.Client.VR
         private float SettleRefHeadY, HeightRefY, HeldHeadY, LastSimHeadY;
         private bool HoldingPosture, Gliding;
 
+        // ---- observer: stairs and furniture (set by the bridge, which has the game)
+        /// <summary>
+        /// Where stairs at a tile on a floor lead: the centre of the end you're at, the centre of the other end, and
+        /// the other end's floor. Null if there are no stairs there.
+        /// </summary>
+        public Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level)?> StairsAt;
+        /// <summary>Whether furniture blocks a body this wide (radius, tiles) at a tile on a floor, as it blocks Sims.</summary>
+        public Func<Vector2, sbyte, float, bool> ObjectBlocks;
+        private bool StairsArmed = true;
+
+        // ---- buy/build: walls cut away around where you're placing
+        private Point CutawayCentre = new Point(int.MinValue, int.MinValue);
+        private sbyte CutawayLevel;
+
+        // ---- your Sim's arms reach for the controllers while you steer them (see VRSimArms); controller models otherwise
+        public bool LeftHandValid, RightHandValid;
+        /// <summary>World units: where the Sim's wrists should be, and which way their hands point.</summary>
+        public Vector3 LeftWrist, RightWrist, LeftPoint, RightPoint;
+        /// <summary>World transforms of the controllers (grip pose, scaled to world units), for controller models.</summary>
+        public Matrix LeftGripWorld, RightGripWorld;
+        /// <summary>0 = the Sim's arms animate as usual, 1 = they follow the controllers (blended in and out).</summary>
+        public float ArmWeight { get; private set; }
+        /// <summary>Show controller models: when you're not in a Sim's body.</summary>
+        public bool ShowControllers => Settings.ControllerModels && (SimAvatar == null || SimView != VRSimView.Anchored);
+
         // ---- movement arc (left trigger): your Sim walks to where it lands, or you teleport there as an observer
         public readonly Vector3[] MoveArcPoints = new Vector3[64];
         public int MoveArcCount;
@@ -307,6 +332,9 @@ namespace Simitone.Client.VR
             EyeCamera.Eye = VREyeCamera.MonoEye;
             PointerVisible = false;
             CancelBlink();
+            ArmWeight = 0;
+            // the lot control puts its own walls back; work the build cutaway out afresh next time
+            CutawayCentre = new Point(int.MinValue, int.MinValue);
             VignetteAmount = 0;
             MoveArcCount = 0;
             MoveArcHeld = MoveArcPending = false;
@@ -410,6 +438,9 @@ namespace Simitone.Client.VR
 
         /// <summary>Tracking space (metres) to world units.</summary>
         public Vector3 TrackingToWorld(Vector3 tracking) => RigPosition + RotateYaw(tracking * Scale, RigYaw);
+
+        /// <summary>World units to tracking space (metres).</summary>
+        public Vector3 WorldToTracking(Vector3 world) => RotateYaw(world - RigPosition, -RigYaw) / Scale;
 
         /// <summary>World yaw of something tracked (a controller, the head).</summary>
         public float WorldYaw(Quaternion trackingOrientation) => MathHelper.WrapAngle(RigYaw + VRMath.Yaw(trackingOrientation));
@@ -532,6 +563,71 @@ namespace Simitone.Client.VR
             UpdateMatrices(world, head);
             UpdatePointer(input);
             UpdateBuildCursor(world, input, dt);
+            UpdateBuildCutaway(world);
+            UpdateHands(input, dt);
+        }
+
+        /// <summary>The controllers in the world: where your Sim's hands should go, and the controller models.</summary>
+        private void UpdateHands(VRInput input, float dt)
+        {
+            var active = input != null && input.Active;
+            LeftHandValid = active && input.LeftGrip.Valid;
+            RightHandValid = active && input.RightGrip.Valid;
+            var rig = Quaternion.CreateFromAxisAngle(Vector3.Up, RigYaw);
+            void Hand(VRPose grip, VRPose aim, bool valid, ref Vector3 wrist, ref Vector3 point, ref Matrix model)
+            {
+                if (!valid) return;
+                // The grip pose is the middle of your fist. The aim pose points the way your hand does (wrist to
+                // knuckles) when you hold a controller; the grip's own axis runs through your fist, across your hand.
+                var forward = Vector3.Transform(-Vector3.UnitZ, (aim.Valid ? aim : grip).Orientation);
+                wrist = TrackingToWorld(grip.Position - forward * 0.08f);
+                point = Vector3.Normalize(RotateYaw(forward, RigYaw));
+                model = Matrix.CreateScale(Scale) * Matrix.CreateFromQuaternion(rig * grip.Orientation) * Matrix.CreateTranslation(TrackingToWorld(grip.Position));
+            }
+            if (active)
+            {
+                Hand(input.LeftGrip, input.LeftAim, LeftHandValid, ref LeftWrist, ref LeftPoint, ref LeftGripWorld);
+                Hand(input.RightGrip, input.RightAim, RightHandValid, ref RightWrist, ref RightPoint, ref RightGripWorld);
+            }
+            // While you steer your Sim from their head, their arms follow your hands; during an action, or when you're
+            // not in their head, they animate as usual (blended over a fifth of a second).
+            var want = Settings.SimHands && SimAvatar != null && SimView == VRSimView.Anchored && !BlinkFadingOut
+                && (SimSteering || SimInPortal) && (LeftHandValid || RightHandValid);
+            ArmWeight = MathHelper.Clamp(ArmWeight + (want ? 5f : -5f) * dt, 0, 1);
+        }
+
+        /// <summary>
+        /// Buy/build: the walls within a couple of tiles of where you're placing are cut away (as the game's cutaway
+        /// does around the mouse), except right next to you, so you can see what you're doing behind them.
+        /// </summary>
+        private void UpdateBuildCutaway(World world)
+        {
+            var bp = Lot(world);
+            if (bp == null || bp.Cutaway == null || bp.Cutaway.Length != bp.Width * bp.Height) return;
+            var want = BuildMode && CursorValid;
+            var centre = want ? new Point((int)Math.Floor(CursorTarget.X / TileUnits), (int)Math.Floor(CursorTarget.Z / TileUnits))
+                : new Point(int.MinValue, int.MinValue);
+            if (centre == CutawayCentre && PlayerLevel == CutawayLevel) return;
+            CutawayCentre = centre;
+            CutawayLevel = PlayerLevel;
+            var cut = new bool[bp.Width * bp.Height];
+            if (want)
+            {
+                var headTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
+                for (int y = centre.Y - 3; y <= centre.Y + 3; y++)
+                {
+                    for (int x = centre.X - 3; x <= centre.X + 3; x++)
+                    {
+                        if (!InBounds(bp, x, y)) continue;
+                        var tileCentre = new Vector2(x + 0.5f, y + 0.5f);
+                        if (Vector2.Distance(tileCentre, new Vector2(centre.X + 0.5f, centre.Y + 0.5f)) > 2.6f) continue;
+                        if (Vector2.Distance(tileCentre, headTile) < 1.6f) continue;
+                        cut[y * bp.Width + x] = true;
+                    }
+                }
+            }
+            bp.Cutaway = cut;
+            bp.Changes.SetFlag(BlueprintGlobalChanges.WALL_CUT_CHANGED);
         }
 
         private float Metres(float tiles) => tiles * TileUnits / Scale;
@@ -824,8 +920,9 @@ namespace Simitone.Client.VR
         private void ApplyStandingHeight(World world, Vector2 headTile, float dt)
         {
             var settings = Settings;
-            // gravity: drop to the floor below if there is nothing under you on this level
-            while (PlayerLevel > 1 && !HasFloor(world, headTile, PlayerLevel)) PlayerLevel--;
+            // gravity: drop to the floor below if there is nothing under you on this level (in buy/build mode you float,
+            // so you can build where there's no floor yet)
+            while (!BuildMode && PlayerLevel > 1 && !HasFloor(world, headTile, PlayerLevel)) PlayerLevel--;
             var targetFloor = FloorHeight(world, headTile, PlayerLevel);
             if (!FloorInitialised) { FloorY = targetFloor; FloorInitialised = true; Teleported = true; }
             else FloorY += (targetFloor - FloorY) * (1f - (float)Math.Exp(-dt * 14f));
@@ -964,7 +1061,7 @@ namespace Simitone.Client.VR
                 var tile = new Vector2(end.X, end.Z) / TileUnits;
                 var bp = Lot(world);
                 MoveArcValid = landed && bp != null && tile.X >= 0 && tile.Y >= 0 && tile.X < bp.Width && tile.Y < bp.Height
-                    && HasFloor(world, tile, PlayerLevel);
+                    && (BuildMode || HasFloor(world, tile, PlayerLevel));
                 MoveArcTile = tile;
                 MoveArcLevel = PlayerLevel;
                 return;
@@ -1056,6 +1153,7 @@ namespace Simitone.Client.VR
                 var deltaTiles = (forward * move.Y + right * move.X) * speed * dt * (Scale / TileUnits);
 
                 var newTile = settings.WallCollision ? Collide(world, headTile, deltaTiles) : headTile + deltaTiles;
+                if (settings.WallCollision && !BuildMode) newTile = AvoidObjects(headTile, newTile);
                 newTile = ClampToLot(world, newTile);
                 var moved = (newTile - headTile) * TileUnits;
                 RigPosition.X += moved.X;
@@ -1063,8 +1161,44 @@ namespace Simitone.Client.VR
                 headTile = newTile;
             }
 
+            // ---- stairs: walking onto them takes you to their other end, with a blink (Meta's "teleport at stairs")
+            var stairs = StairsAt?.Invoke(headTile, PlayerLevel);
+            if (stairs == null) StairsArmed = true;
+            else if (StairsArmed && move != Vector2.Zero && !BuildMode)
+            {
+                StairsArmed = false; // until you've stepped off them
+                var (from, to, level) = stairs.Value;
+                // step off past the far end, onto a floor, in the direction the stairs go
+                var along = to - from;
+                var step = along.LengthSquared() > 1e-4f ? Vector2.Normalize(along) * 0.9f : Vector2.Zero;
+                var destination = HasFloor(world, to + step, level) ? to + step : to;
+                Blink(() =>
+                {
+                    PlayerLevel = level;
+                    PlaceHead(destination, HeadWorldYaw);
+                    FloorsUsedRefresh = 0;
+                });
+                SimitoneVR.Runtime?.Haptic(false, 0.3f, 0.03f);
+            }
+
             ApplyStandingHeight(world, headTile, dt);
             return move != Vector2.Zero;
+        }
+
+        /// <summary>
+        /// Furniture stops you as it stops Sims; you slide along it. If you're already inside something (after a
+        /// teleport), you can walk out.
+        /// </summary>
+        private Vector2 AvoidObjects(Vector2 from, Vector2 to)
+        {
+            if (ObjectBlocks == null) return to;
+            const float r = BodyRadiusTiles;
+            if (!ObjectBlocks(to, PlayerLevel, r) || ObjectBlocks(from, PlayerLevel, r)) return to;
+            var slideX = new Vector2(to.X, from.Y);
+            if (!ObjectBlocks(slideX, PlayerLevel, r)) return slideX;
+            var slideY = new Vector2(from.X, to.Y);
+            if (!ObjectBlocks(slideY, PlayerLevel, r)) return slideY;
+            return from;
         }
 
         private static bool IsShiftDown()
@@ -1087,7 +1221,16 @@ namespace Simitone.Client.VR
         {
             var bp = Lot(world);
             if (bp == null) return;
-            if (direction > 0)
+            if (direction > 0 && BuildMode)
+            {
+                // buy/build: any floor, built or not (you float there)
+                if (PlayerLevel < bp.Stories)
+                {
+                    PlayerLevel++;
+                    vr?.Haptic(true, 0.5f, 0.05f);
+                }
+            }
+            else if (direction > 0)
             {
                 for (sbyte level = (sbyte)(PlayerLevel + 1); level <= bp.Stories; level++)
                 {
@@ -1231,7 +1374,8 @@ namespace Simitone.Client.VR
             var forward = Vector3.Transform(-Vector3.UnitZ, headRot);
             HeadWorldYaw = VRMath.Yaw(forward);
             cam.Position = HeadWorld;
-            cam.Target = HeadWorld + forward * 10;
+            // FreeSO measures sound distance from the camera's target: keep it at your head
+            cam.Target = HeadWorld + forward * 0.1f;
             cam.NearPlane = near;
             cam.FarPlane = far;
 
@@ -1241,7 +1385,7 @@ namespace Simitone.Client.VR
             state.CenterTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
             _RotationX = HeadWorldYaw - MathHelper.PiOver2; // also drives CutRotation
             SavedYRot = 0.6f;
-            _Zoom3D = 4f;
+            _Zoom3D = 1.5f; // sounds are scaled by 10 / (zoom^2 + 10): close to full volume with your head in the scene
             FPCamHeight = 0;
             CamHeight = HeadWorld.Y - 3;
         }

@@ -101,7 +101,7 @@ namespace Simitone.VR
     /// <summary>What to show in the headset this frame.</summary>
     public struct VRFrameSubmission
     {
-        public const int MaxQuads = 6;
+        public const int MaxQuads = 8;
 
         /// <summary>Stereo world view (one swapchain per eye, rendered with <see cref="VRRuntime.Views"/>).</summary>
         public VRSwapchain[] ProjectionSwapchains;

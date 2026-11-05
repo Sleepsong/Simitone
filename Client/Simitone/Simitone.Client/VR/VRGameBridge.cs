@@ -84,11 +84,15 @@ namespace Simitone.Client.VR
         private int SpeedBeforePause = 1;
         private readonly VRHudData Hud = new VRHudData();
         private readonly Func<Vector2, sbyte, int> RoomAtFunc;
+        private readonly Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level)?> StairsAtFunc;
+        private readonly Func<Vector2, sbyte, float, bool> ObjectBlocksFunc;
 
         public VRGameBridge(TS1GameScreen screen)
         {
             Screen = screen;
             RoomAtFunc = RoomAt;
+            StairsAtFunc = StairsAt;
+            ObjectBlocksFunc = ObjectBlocks;
             SimitoneVR.FocusProvider = FocusTile;
             SimitoneVR.HudProvider = () => Hud;
         }
@@ -146,7 +150,9 @@ namespace Simitone.Client.VR
             var mainMode = Screen.Frontend?.MainPanel?.Mode ?? UIMainPanelMode.LIVE;
             var buyBuild = !lc.LiveMode && (mainMode == UIMainPanelMode.BUY || mainMode == UIMainPanelMode.BUILD);
             var vrBuild = buyBuild && SimitoneVR.Settings.VRBuildMode;
-            var wantFlat = !lc.Visible || (!lc.LiveMode && !vrBuild);
+            // the vacation / downtown picker hides the lot control, but it floats on the panel in first person
+            var picker = lc.NeighbourhoodPickerOpen;
+            var wantFlat = (!lc.Visible && !picker) || (!lc.LiveMode && !vrBuild);
             if (vrBuild && !WasBuyBuild && !immersive && world.Visible && SimitoneVR.SessionRunning)
             {
                 // switched to buy/build from the flat screen: build in first person
@@ -186,6 +192,8 @@ namespace Simitone.Client.VR
             camera.BubbleCancelled = running?.Cancelled ?? false;
             camera.BubbleUID = running?.UID ?? 0;
             camera.RoomAt = RoomAtFunc;
+            camera.StairsAt = StairsAtFunc;
+            camera.ObjectBlocks = ObjectBlocksFunc;
             if (DirectAvatar != null) DriveSim(camera, input, vm, lc, state);
             RestoreSpeed(vm);
             MeasureSpeed(DirectAvatar);
@@ -200,7 +208,9 @@ namespace Simitone.Client.VR
 
             // ---- pointing at things
             UpdatePointer(world, camera, vm, lc, state, immersive);
-            SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen() || SimitoneVR.BuildMode);
+            SimitoneVR.PickerOpen = immersive && picker;
+            SimitoneVR.OpenPie = lc.OpenPie;
+            SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen() || SimitoneVR.BuildMode || picker);
         }
 
         // ------------------------------------------------------------------ direct control
@@ -497,6 +507,80 @@ namespace Simitone.Client.VR
             return context.GetRoomAt(LotTilePos.FromBigTile((short)Math.Floor(tile.X), (short)Math.Floor(tile.Y), level));
         }
 
+        /// <summary>
+        /// Stairs under a tile on a floor (for the observer, who has no Sim to climb them): a multitile object with
+        /// portal parts on two floors, one part of it on this tile. Returns the centres of the portal part on this floor
+        /// and the one on the other floor. Doors are portals too, but both their parts are on one floor.
+        /// </summary>
+        private (Vector2 from, Vector2 to, sbyte level)? StairsAt(Vector2 tile, sbyte level)
+        {
+            var vm = Screen.vm;
+            var context = vm?.Context;
+            if (context?.RoomInfo == null) return null;
+            int room = RoomAt(tile, level);
+            if (room <= 0 || room >= context.RoomInfo.Length || context.RoomInfo[room].Portals == null) return null;
+            int tx = (int)Math.Floor(tile.X), ty = (int)Math.Floor(tile.Y);
+            foreach (var portal in context.RoomInfo[room].Portals)
+            {
+                var here = vm.GetObjectById(portal.ObjectID);
+                var group = here?.MultitileGroup;
+                if (group == null || here.Position.Level != level) continue;
+                VMEntity there = null;
+                var onTile = false;
+                foreach (var part in group.Objects)
+                {
+                    var pos = part.Position;
+                    if (pos == LotTilePos.OUT_OF_WORLD) continue;
+                    if (pos.Level != level)
+                    {
+                        if (part.Portal && there == null) there = part;
+                    }
+                    else if (pos.TileX == tx && pos.TileY == ty) onTile = true;
+                }
+                if (there == null || !onTile) continue;
+                return (TileCentre(here.Position), TileCentre(there.Position), there.Position.Level);
+            }
+            return null;
+        }
+
+        private static Vector2 TileCentre(LotTilePos pos) => new Vector2(pos.TileX + 0.5f, pos.TileY + 0.5f);
+
+        /// <summary>
+        /// Whether furniture blocks a body of this radius (tiles) at a tile on a floor, as the game's direct control
+        /// decides it for Sims: objects that don't let people through, except doors and stairs (portals).
+        /// </summary>
+        private bool ObjectBlocks(Vector2 tile, sbyte level, float radius)
+        {
+            var context = Screen.vm?.Context;
+            if (context?.RoomInfo == null) return false;
+            int room = RoomAt(tile, level);
+            if (room <= 0 || room >= context.RoomInfo.Length) return false;
+            var entities = context.RoomInfo[room].Entities;
+            if (entities == null) return false;
+            int cx = (int)(tile.X * 16), cy = (int)(tile.Y * 16), r = (int)Math.Ceiling(radius * 16);
+            var body = new FSO.SimAntics.Model.Routing.VMObstacle(cx - r, cy - r, cx + r, cy + r);
+            foreach (var obj in entities)
+            {
+                if (!(obj is VMGameObject) || obj.Position.Level != level) continue;
+                var ft = obj.Footprint;
+                if (ft == null || !ft.Intersects(body)) continue;
+                var flags = (VMEntityFlags)obj.GetValue(VMStackObjectVariable.Flags);
+                if ((flags & VMEntityFlags.DisallowPersonIntersection) == 0 && (flags & VMEntityFlags.AllowPersonIntersection) != 0) continue;
+                if (IsPortalGroup(obj)) continue;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IsPortalGroup(VMEntity obj)
+        {
+            if (obj.Portal) return true;
+            var group = obj.MultitileGroup;
+            if (group == null) return false;
+            foreach (var part in group.Objects) if (part.Portal) return true;
+            return false;
+        }
+
         private static LotTilePos? FreeTileToward(VM vm, VMAvatar avatar, Vector2 direction)
         {
             if (direction == Vector2.Zero) return null;
@@ -661,6 +745,14 @@ namespace Simitone.Client.VR
             if (!select || lc.PieMenuOpen) return;
             var pp = GameFacade.GraphicsDevice.PresentationParameters;
             var centre = new Vector2(pp.BackBufferWidth, pp.BackBufferHeight) / 2 / FSOEnvironment.DPIScaleFactor;
+            // the pie menu floats over what you pointed at
+            var anchor = start + dir * length;
+            if (target != null)
+            {
+                var vp = target.VisualPosition;
+                anchor = new Vector3(vp.X * VRCameraController.TileUnits, vp.Z * VRCameraController.TileUnits + 0.5f * scale, vp.Y * VRCameraController.TileUnits);
+            }
+            SimitoneVR.SetPieAnchor(camera.WorldToTracking(anchor));
             if (target != null)
             {
                 var p = target.Position;
