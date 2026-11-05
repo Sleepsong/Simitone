@@ -162,6 +162,8 @@ namespace Simitone.Client
                 FSO.SimAntics.Engine.VMExceptionLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "simantics-errors.log");
                 //replacement meshes (remesh packs) that couldn't be used, and why: e.g. which textures are missing
                 FSO.Content.RCMeshProvider.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Mesh replacement", message);
+                //sounds that couldn't play, and why: unknown events, missing or undecodable files, TV stations with no files
+                FSO.Content.TS1.TS1Audio.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Sound", message);
             }
             //-travellog: travel between lots, town maps, pie menus and why their interactions were left out, and the
             //scripts of interactions picked away from home, step by step (see TRAVEL_FIXES.md)
