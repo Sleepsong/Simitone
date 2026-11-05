@@ -99,6 +99,7 @@ namespace Simitone.VR.Graphics
         private static delegate* unmanaged<uint> glGetError;
         private static delegate* unmanaged<uint, byte*> glGetString;
         private static delegate* unmanaged<void> glFlush;
+        private static delegate* unmanaged<void> glFinish;
         private static delegate* unmanaged<int, int, int, int, uint, uint, void*, void> glReadPixels;
 
         private static uint ReadFbo, DrawFbo;
@@ -135,6 +136,7 @@ namespace Simitone.VR.Graphics
             glGetError = (delegate* unmanaged<uint>)GL("glGetError");
             glGetString = (delegate* unmanaged<uint, byte*>)GL("glGetString");
             glFlush = (delegate* unmanaged<void>)GL("glFlush");
+            glFinish = (delegate* unmanaged<void>)GL("glFinish");
             glReadPixels = (delegate* unmanaged<int, int, int, int, uint, uint, void*, void>)GL("glReadPixels");
 
             GLVersion = Str(glGetString(GL_VERSION));
@@ -374,6 +376,15 @@ namespace Simitone.VR.Graphics
         /// </summary>
         public static void BlitTexture(uint srcTexture, int srcWidth, int srcHeight,
             uint dstTexture, int dstX, int dstY, int dstWidth, int dstHeight, bool flipY, bool linear = true)
+            => BlitTextureRegion(srcTexture, 0, 0, srcWidth, srcHeight, dstTexture, dstX, dstY, dstWidth, dstHeight, flipY, linear);
+
+        /// <summary>
+        /// Copies a region of a texture into another. The source region is in the texture's memory rows (for a MonoGame
+        /// render target, which is stored top-down, row 0 is the top of the image); with <paramref name="flipY"/> the
+        /// region's first row lands at the top (GL: highest row) of the destination.
+        /// </summary>
+        public static void BlitTextureRegion(uint srcTexture, int srcX, int srcY, int srcWidth, int srcHeight,
+            uint dstTexture, int dstX, int dstY, int dstWidth, int dstHeight, bool flipY, bool linear = true)
         {
             EnsureFbos();
             var saved = Save();
@@ -382,15 +393,24 @@ namespace Simitone.VR.Graphics
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, DrawFbo);
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dstTexture, 0);
 
-            int sy0 = flipY ? srcHeight : 0;
-            int sy1 = flipY ? 0 : srcHeight;
-            glBlitFramebuffer(0, sy0, srcWidth, sy1, dstX, dstY, dstX + dstWidth, dstY + dstHeight,
+            int sy0 = flipY ? srcY + srcHeight : srcY;
+            int sy1 = flipY ? srcY : srcY + srcHeight;
+            glBlitFramebuffer(srcX, sy0, srcX + srcWidth, sy1, dstX, dstY, dstX + dstWidth, dstY + dstHeight,
                 GL_COLOR_BUFFER_BIT, linear ? GL_LINEAR : GL_NEAREST);
 
             // Detach so the swapchain image is not referenced by our FBO when the runtime takes it back.
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
             Restore(saved);
+        }
+
+        /// <summary>
+        /// Waits for all GL work to finish: before destroying swapchains whose images were just written (OpenXR requires
+        /// the application to be done with an image before it is destroyed).
+        /// </summary>
+        public static void Finish()
+        {
+            if (glFinish != null) glFinish();
         }
 
         /// <summary>Copies the window's back buffer (what MonoGame is about to present) into a texture.</summary>

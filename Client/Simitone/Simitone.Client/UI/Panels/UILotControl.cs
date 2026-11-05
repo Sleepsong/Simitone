@@ -38,6 +38,8 @@ using FSO.UI.Panels.LotControls;
 using Simitone.Client.UI.Controls;
 using Simitone.Client.Utils;
 
+using Simitone.Client.VR;
+
 namespace Simitone.Client.UI.Panels
 {
     /// <summary>
@@ -301,8 +303,13 @@ namespace Simitone.Client.UI.Panels
             }
 
             var alert = new UIMobileAlert(options);
+            // VR: a name box starts with the current name (OK on its own keeps it), as typing in a headset is slow
+            if (options.TextEntry && SimitoneVR.SessionRunning)
+                alert.ResponseText = info.Caller?.Thread?.Stack.LastOrDefault()?.StackObject?.Name ?? "";
+            // VR first person: a message that needs no answer goes to the watch instead of popping up in front of you
+            var toWatch = !info.Block && SimitoneVR.WatchTakesMessages;
 
-            UIScreen.GlobalShowDialog(alert, true);
+            if (!toWatch) UIScreen.GlobalShowDialog(alert, true);
 
             if (info.Block)
             {
@@ -310,6 +317,12 @@ namespace Simitone.Client.UI.Panels
                 LastDialogID = info.DialogID;
             }
 
+            SetAlertIcon(alert, info);
+            if (toWatch) SimitoneVR.PostMessage(alert, info.Title);
+        }
+
+        private void SetAlertIcon(UIMobileAlert alert, FSO.SimAntics.Model.VMDialogInfo info)
+        {
             var entity = info.Icon;
             //the dialog's icon type: 0 auto, 1 none, 2 neighbor, 3 indexed (the object's BMP_ 5000 + index), 4 named
             var iconType = ((int)(info.Operand?.Flags ?? 0) >> 1) & 7;

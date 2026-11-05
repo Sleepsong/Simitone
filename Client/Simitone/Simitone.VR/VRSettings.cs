@@ -89,6 +89,18 @@ namespace Simitone.VR
         public float GlideSpeed = 1.4f;
         /// <summary>Length of a blink (fade out, move, fade in) in seconds.</summary>
         public float BlinkDuration = 0.25f;
+        /// <summary>
+        /// Holding the left stick while your Sim is busy cancels what they're doing (they finish gracefully, as when
+        /// you click their action) so you can walk them again. Off: only a seated Sim stands up for the stick.
+        /// </summary>
+        public bool StickCancelsActions = true;
+        /// <summary>While you're stepped out of your Sim, show what they're doing in a bubble over their head.</summary>
+        public bool ActionBubble = true;
+        /// <summary>
+        /// In first person, messages that don't need an answer go to your watch (a buzz and a "!") instead of popping
+        /// up in front of you. Look at the watch and pull that hand's trigger to read one.
+        /// </summary>
+        public bool WatchMessages = true;
         /// <summary>Which eye is mirrored to the desktop window: Left, Right or None.</summary>
         public string MirrorEye = "Left";
         /// <summary>Near clip plane in metres.</summary>

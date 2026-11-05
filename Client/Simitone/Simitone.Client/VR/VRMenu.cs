@@ -85,6 +85,9 @@ namespace Simitone.Client.VR
             Add("EXTRA HEIGHT", () => Settings.HeightOffset < 0.01f ? "OFF" : "+" + Settings.HeightOffset.ToString("0.00") + " M",
                 d => Settings.HeightOffset = Heights[Wrap(Nearest(Heights, Settings.HeightOffset) + d, Heights.Length)]);
             Add("WRIST DISPLAYS", () => Name(Settings.WristDisplays), d => Settings.WristDisplays = Cycle(Settings.WristDisplays, d));
+            Add("MESSAGES", () => Settings.WatchMessages ? "ON WATCH" : "POP UP", d => Settings.WatchMessages = !Settings.WatchMessages);
+            Add("STICK WHEN BUSY", () => Settings.StickCancelsActions ? "TAKES OVER" : "WAITS", d => Settings.StickCancelsActions = !Settings.StickCancelsActions);
+            Add("ACTION BUBBLE", () => Settings.ActionBubble ? "ON" : "OFF", d => Settings.ActionBubble = !Settings.ActionBubble);
             Add("BUY AND BUILD", () => Settings.VRBuildMode ? "IN VR" : "FLAT SCREEN", d => Settings.VRBuildMode = !Settings.VRBuildMode);
             Add("RENDER SCALE", () => (int)Math.Round(Settings.RenderScale * 100) + "%",
                 d => SimitoneVR.SetRenderScale(RenderScales[Wrap(Nearest(RenderScales, Settings.RenderScale) + d, RenderScales.Length)]));
@@ -135,7 +138,7 @@ namespace Simitone.Client.VR
             var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
             // a little below eye level, tilted back to face you
             Orientation = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-12));
-            Position = head.Position + forward * 0.7f - new Vector3(0, 0.12f, 0);
+            Position = head.Position + forward * 0.8f - new Vector3(0, 0.12f, 0);
             Open = true;
             Armed = input == null || (!input.Select.Down && !input.Secondary.Down);
             Hover = -1;

@@ -33,12 +33,25 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
   inside of it.
 - **Movement arc:** hold the left trigger, aim the arc at the floor and let go: your Sim walks there (it's the
   floor's "Go Here"). Cyan means you can go there, red means you can't.
-- **Seated Sims:** if your Sim is sitting, holding the stick makes them stand up and step that way.
+- **Taking over:** if your Sim is busy (walking off to do something, sitting, using an object), hold the stick for
+  a moment. Everything they're doing or have queued is cancelled; they wind down gracefully, as when you click
+  their actions, and then walk where you push. Turn this off with `StickCancelsActions=False`; then holding the
+  stick only stands up a seated Sim.
 - **Interacting:** point with the right controller (the laser turns green on something usable) and pull the trigger.
   That object's (or Sim's) real pie menu floats in front of you; point and pull the trigger again to choose.
   Pointing at the floor gives "Go Here". The Sim walks over and does it, then hands control back to you. What
   your view does meanwhile is up to the comfort setting (below).
-- **Dialogs** (phone calls, job offers, carpool...) appear on the same floating panel.
+- **Questions** (phone calls, job offers, Yes/No) appear on their own on the floating panel at eye level, with a
+  buzz in both hands and a sound. If you're mid-blink they wait until it's over.
+- **Messages that need no answer** don't pop up in front of you: your right wrist buzzes and the watch shows a
+  "!" with the title. Look at the watch and pull that hand's trigger to read the oldest one. Unread messages clear
+  after two minutes, and all of them are shown as normal dialogs if you leave first person. `WatchMessages=False`
+  pops them up instead.
+- **Typing:** whenever a text box is waiting for you (naming a baby or pet, Create-A-Sim names), a keyboard
+  appears below you. Point and pull the trigger on the keys.
+  - Each word starts with a capital; SHIFT changes the next letter. Hold DEL to keep deleting.
+  - HIDE puts the keyboard away until another text box needs it.
+  - Name boxes in dialogs start with the current name, so OK on its own keeps it.
 - **Free will** needs no special handling. Direct control re-queues itself every tick, so the Sim you're playing
   always has something queued and free will (which only runs when a Sim's queue is empty) leaves them alone. The
   gamepad work established this approach and confirmed it on hardware.
@@ -78,8 +91,15 @@ On the desktop keyboard, press F9.
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game.
 
 **Wrist displays.** Turn your wrist to look at it:
-- **right wrist:** a watch with the time, game speed and household money;
-- **left wrist:** the selected Sim's name and needs.
+- **right wrist:** a watch with the time, game speed and household money, plus any messages waiting;
+- **left wrist:** the selected Sim's name, their action queue and their needs.
+  - The queue shows up to five icons, the running action first and outlined, with its name underneath; a red bar
+    means it's being cancelled.
+  - Point the right controller at an icon (the name turns red: "CANCEL ...") and pull the trigger to cancel it,
+    as clicking it in the game's queue does. Anywhere else on the display, the trigger opens the VR menu.
+
+**Action bubble.** While you're stepped out of your Sim, what they're doing floats over their head as that
+action's icon. Point at it and pull the trigger to cancel it. `ActionBubble=False` turns it off.
 
 **Buy and build mode** (left grip cycles live → buy → build → live, or pick the mode on the flat screen). You
 stay in first person, where you were standing. The game pauses, as usual, and you build on the floor you're on.
@@ -131,6 +151,9 @@ If no runtime or headset is found, Simitone logs why and carries on as the norma
 | Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else (observer) floor | Scroll |
 | Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
 | Right trigger | Point and interact; click on menus | Point and interact; click on menus | Pick up / place / drag a tool; choose in the catalogue | Left click |
+| Right trigger on the left wrist | Cancel the queue icon pointed at; elsewhere, the VR menu | Same | Same | n/a |
+| Right trigger while looking at the watch | Read the oldest waiting message | Same | Same | n/a |
+| Left stick held while your Sim is busy | Cancel their actions and take over | n/a | n/a | n/a |
 | Right grip | Close a pie menu; right click on menus | Close a pie menu; right click on menus | Cancel (put back) | Right click |
 | A | Flat screen | Flat screen | Flat screen | First person |
 | B | Switch to observer | Switch to playing as your Sim | Sell / delete what you hold; else switch Sim / observer | Recentre the screen |
@@ -160,6 +183,9 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 | `LeashDistance` | 4 | Comfortable: how far (m) your Sim can get before you blink after them |
 | `GlideSpeed` | 1.4 | Moderate: the steady speed (m/s) you glide after your Sim at |
 | `BlinkDuration` | 0.25 | Length of a blink (fade out, move, fade in), seconds. 0 makes moves instant |
+| `StickCancelsActions` | True | Holding the stick while your Sim is busy cancels their actions so you can walk them. `False`: it only stands up a seated Sim |
+| `ActionBubble` | True | While you're stepped out, show your Sim's current action over their head (point and pull the trigger to cancel it) |
+| `WatchMessages` | True | In first person, messages that need no answer wait on your watch instead of popping up |
 | `RenderScale` | 1.0 (Frame: 0.75) | Multiplier on the headset's recommended per-eye resolution |
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
 | `MoveSpeed` | 1.6 | Observer walking speed, m/s |
@@ -257,6 +283,8 @@ with SteamVR, and connect the Frame to SteamVR on that PC (Steam Link). Nothing 
 | The view bobs or lags when playing as your Sim | Adjust `SimHeadSmoothing` (lower = smoother) |
 | Queasy while your Sim walks you around | Use `SimActionView=Comfortable` and a stronger `Vignette` (VR menu) |
 | Too many blinks | `SimActionView=Moderate`, a longer `LeashDistance`, or `BlinkDuration=0` for instant moves |
+| Holding the stick cancels what my Sim is doing | That's the take-over; set `StickCancelsActions=False` (VR menu: *Stick when busy*) |
+| A message buzzed but nothing appeared | It's on your watch: look at it and pull the right trigger. Or set `WatchMessages=False` |
 | No way to open the VR menu on your controller | Point at your left wrist (needs `WristDisplays` not `Off`) and pull the trigger, or press F9 |
 | Wrist displays in the wrong place | They sit on the controller's grip pose, which varies by controller; set `WristDisplays=Always` to see them |
 | Game runs too fast / slow in VR | Leave `UpdateRate` at the default or pass `-hzNN`; it must not be changed mid-lot |
@@ -279,10 +307,11 @@ Client/Simitone/Simitone.Client/VR/
                                       vignette amount, movement arc
   VRComfortOverlay.cs                 vignette ring and blink fade, drawn last in each eye
   VRMenu.cs                           the VR options menu (quad layer; live apply, saved to vr.ini)
+  VRKeyboard.cs                       pointer keyboard for whatever text box is waiting (quad layer)
   VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, buy/build mode, flat screen,
                                       movement arc -> "Go Here"
   VRUILayer.cs                        captures the game UI into its own texture for the floating panel
-  VRWristHud.cs, VRPixelFont.cs       watch and needs displays
+  VRWristHud.cs, VRPixelFont.cs       watch (and waiting messages), needs and action queue displays
 ```
 
 Per frame, all on the game thread inside MonoGame's `Draw`:
@@ -341,6 +370,16 @@ Design choices:
   catches up on updates when frames take longer, so simulation speed doesn't depend on the headset's refresh
   rate. A running session also counts as window focus, so a headset user never sees MonoGame's inactive
   slowdown or a deaf UI.
+- **Popups stay the game's own.** VM dialogs are still the game's `UIMobileAlert`s, so:
+  - the panel shows just the band of the window the dialog covers (Simitone's dialogs span its width), copied
+    with `GLInterop.BlitTextureRegion`;
+  - plain messages are the same alerts, held back by `UILotControl` and shown later when you read them on the
+    watch;
+  - the keyboard types through `UITextEdit.PadType` / `PadBackspace`, the on-screen keyboard helpers from the
+    gamepad work, into the focused text box (or the one in the top dialog).
+- **Releasing the trigger.** After the VR menu, the keyboard or a wrist display uses a press, the trigger and grip
+  must be released before they click anything else, so the press that closes the menu never clicks what's behind
+  it.
 - **Comfort is decided from what the Sim does, not from which action it is.** The camera watches three signals:
   - whether direct control is on top;
   - how far the Sim's position has moved since you last had them;
@@ -363,11 +402,14 @@ Design choices:
   - the picking camera reproduces the controller ray;
   - the arc solver lands on a grabbed object;
   - the movement arc reaches about 7.5 m at 45 degrees and lands within its step budget at any pitch.
-- `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay (on a headset-like asymmetric
-  field of view), the VR menu and the wrist displays to PNG files under Xvfb, to look at without a headset.
+- `tools/vr/render-check/run.sh [dir]` renders these to PNG files under Xvfb, to look at without a headset:
+  - the real vignette and blink overlay, on a headset-like asymmetric field of view;
+  - the VR menu;
+  - the wrist displays, with a queue and waiting messages;
+  - the keyboard.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
-  checks pixel orientation and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
+  checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
   path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding. Ubuntu packages: `monado-service libopenxr1-monado
   libopenxr-loader1 xvfb mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri libsdl2-2.0-0`.
 
@@ -381,14 +423,20 @@ Design choices:
   - The wrist display offsets are estimates and may need tuning per controller.
 - **Comfort tuning is untested in a headset.** The thresholds below are first guesses from the research in
   [VR_COMFORT.md](VR_COMFORT.md) and need tuning in play:
-  - when to step out (moved 0.6 m without you steering);
-  - what counts as settled (1 s still) and as lying (head below 55% of standing height);
+  - when to step out (moved 0.6 m without you steering; your own walk through a door doesn't count);
+  - what counts as settled (1 s still seated, 3 s standing with no walk to come);
+  - what counts as lying (head below 50% of standing height, back up above 62%);
   - the 4 m leash, the blink timing and the vignette strengths.
 
   The movement arc queues a "Go Here" like a floor click, so two arcs in a row queue two walks. The Sim's real walk
   and run speeds in VR haven't been measured yet.
 - **The VR menu isn't in the game's Options panel yet** (only in the headset, on the wrist, or F9), and there is
   no first-run comfort wizard.
+- **Popups, actions and typing:**
+  - The keyboard's own preview line shows capitals only (the dot-matrix font has no lowercase); the text box itself
+    shows the real text.
+  - Only Simitone's full-width dialogs are cropped on the panel; anything else shows with the whole UI.
+  - The vacation, downtown and neighbourhood pickers still switch to the flat screen.
 - **Pie menus** float in front of you rather than at the object. They are the regular 2D menus.
 - **Observer mode:** stairs aren't walked up (use right stick up/down at the stairs), and objects don't
   collide.

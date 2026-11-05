@@ -94,6 +94,20 @@ class SmokeGame : Game
                 bool rtFlipped = (px & 0xFF) > 200 && ((px >> 16) & 0xFF) < 50;
                 Console.WriteLine($"orientation: RT texel(1,1)=0x{px:x8} -> MonoGame RT stored {(rtFlipped ? "top-down (flip needed)" : "bottom-up")}");
                 if (!rtFlipped) Failure = "MonoGame render target orientation differs from what GLInterop.BlitTexture assumes";
+
+                // A region copy (the floating panel shows just an open dialog this way): the middle half of the image,
+                // red above blue, must come out with red at the top (GL: last row) and blue at the bottom (GL: row 0).
+                int w = EyeTargets[0].Width, h = EyeTargets[0].Height;
+                using (var band = new RenderTarget2D(GraphicsDevice, w, h / 2))
+                {
+                    var bandTex = GLInterop.GetTextureHandle(band);
+                    GLInterop.BlitTextureRegion(tex, 0, h / 4, w, h / 2, bandTex, 0, 0, w, h / 2, flipY: true);
+                    var bottom = GLInterop.ReadPixel(bandTex, 1, 1);
+                    var top = GLInterop.ReadPixel(bandTex, 1, h / 2 - 2);
+                    bool regionOk = ((bottom >> 16) & 0xFF) > 200 && (bottom & 0xFF) < 50 && (top & 0xFF) > 200 && ((top >> 16) & 0xFF) < 50;
+                    Console.WriteLine($"orientation: region copy bottom=0x{bottom:x8} top=0x{top:x8} -> {(regionOk ? "correct" : "WRONG")}");
+                    if (!regionOk) Failure = "region copy (BlitTextureRegion) has the wrong orientation or offset";
+                }
                 OrientationChecked = true;
             }
 

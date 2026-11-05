@@ -27,6 +27,9 @@ namespace Simitone.Client.VR
         private SpriteBatch MirrorBatch;
         private BasicEffect BeamEffect;
         private VRComfortOverlay ComfortOverlay;
+        private BasicEffect IconEffect;
+        private readonly VertexPositionColor[] BubbleVerts = new VertexPositionColor[48];
+        private readonly VertexPositionColorTexture[] IconVerts = new VertexPositionColorTexture[6];
         private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[1024];
         private ICameraController LastActiveCamera;
         private int FramesSinceInit;
@@ -50,6 +53,7 @@ namespace Simitone.Client.VR
             MirrorBatch = new SpriteBatch(layer.Device);
             BeamEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
             ComfortOverlay = new VRComfortOverlay(layer.Device);
+            IconEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = true };
         }
 
         public bool Immersive => VRCamera != null && State?.Cameras?.ActiveCamera == VRCamera;
@@ -172,6 +176,7 @@ namespace Simitone.Client.VR
                 PPXDepthEngine.SetPPXTarget(targets[eye], null, true, State.OutsideColor);
                 base.InternalDraw(device);
                 DrawPointerBeam(device, cam);
+                DrawActionBubble(device, cam);
                 ComfortOverlay?.Draw(device, cam.Projection, cam.NearPlane, VRCamera.VignetteAmount, VRCamera.FadeAlpha);
             }
             cam.Eye = VREyeCamera.MonoEye;
@@ -259,6 +264,88 @@ namespace Simitone.Client.VR
             device.DepthStencilState = DepthStencilState.Default;
         }
 
+        /// <summary>
+        /// While you're stepped out of your Sim: what they're doing, as the action's icon in a bubble over their head
+        /// (red bar: being cancelled). Point at it and pull the trigger to cancel it.
+        /// </summary>
+        private void DrawActionBubble(GraphicsDevice device, VREyeCamera cam)
+        {
+            var vr = VRCamera;
+            var icon = vr.BubbleIcon;
+            if (!vr.BubbleVisible || IconEffect == null || icon == null || icon.IsDisposed) return;
+            var eyePos = Matrix.Invert(cam.View).Translation;
+            var centre = vr.BubblePosition;
+            var forward = Vector3.Normalize(eyePos - centre);
+            var right = Vector3.Normalize(Vector3.Cross(Math.Abs(forward.Y) > 0.95f ? Vector3.Forward : Vector3.Up, forward));
+            var up = Vector3.Normalize(Vector3.Cross(forward, right));
+            var r = vr.BubbleRadius;
+            var back = vr.BubbleCancelled ? new Color(255, 205, 200) * 0.92f : Color.White * 0.92f;
+
+            // backdrop: an octagon with a little tail down towards the Sim's head
+            int count = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                var a0 = MathHelper.TwoPi * (i + 0.5f) / 8;
+                var a1 = MathHelper.TwoPi * (i + 1.5f) / 8;
+                BubbleVerts[count++] = new VertexPositionColor(centre, back);
+                BubbleVerts[count++] = new VertexPositionColor(centre + (right * (float)Math.Cos(a0) + up * (float)Math.Sin(a0)) * r, back);
+                BubbleVerts[count++] = new VertexPositionColor(centre + (right * (float)Math.Cos(a1) + up * (float)Math.Sin(a1)) * r, back);
+            }
+            BubbleVerts[count++] = new VertexPositionColor(centre - up * r * 0.8f - right * r * 0.3f, back);
+            BubbleVerts[count++] = new VertexPositionColor(centre - up * r * 0.8f + right * r * 0.3f, back);
+            BubbleVerts[count++] = new VertexPositionColor(centre - up * r * 1.55f, back);
+
+            device.BlendState = BlendState.AlphaBlend;
+            device.DepthStencilState = DepthStencilState.DepthRead;
+            device.RasterizerState = RasterizerState.CullNone;
+            BeamEffect.World = Matrix.Identity;
+            BeamEffect.View = cam.View;
+            BeamEffect.Projection = cam.Projection;
+            foreach (var pass in BeamEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawUserPrimitives(PrimitiveType.TriangleList, BubbleVerts, 0, count / 3);
+            }
+
+            // the icon (wide icons hold two pictures side by side, as in the game's queue: use the first)
+            var u1 = icon.Width / (float)icon.Height < 1.1f ? 1f : 0.5f;
+            var h = r * 0.68f;
+            var tint = vr.BubbleCancelled ? Color.White * 0.45f : Color.White;
+            var tl = centre - right * h + up * h;
+            var tr = centre + right * h + up * h;
+            var bl = centre - right * h - up * h;
+            var br = centre + right * h - up * h;
+            IconVerts[0] = new VertexPositionColorTexture(tl, tint, new Vector2(0, 0));
+            IconVerts[1] = new VertexPositionColorTexture(tr, tint, new Vector2(u1, 0));
+            IconVerts[2] = new VertexPositionColorTexture(bl, tint, new Vector2(0, 1));
+            IconVerts[3] = new VertexPositionColorTexture(bl, tint, new Vector2(0, 1));
+            IconVerts[4] = new VertexPositionColorTexture(tr, tint, new Vector2(u1, 0));
+            IconVerts[5] = new VertexPositionColorTexture(br, tint, new Vector2(u1, 1));
+            IconEffect.World = Matrix.Identity;
+            IconEffect.View = cam.View;
+            IconEffect.Projection = cam.Projection;
+            IconEffect.Texture = icon;
+            device.SamplerStates[0] = SamplerState.LinearClamp;
+            foreach (var pass in IconEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawUserPrimitives(PrimitiveType.TriangleList, IconVerts, 0, 2);
+            }
+
+            if (vr.BubbleCancelled)
+            {
+                var red = new Color(230, 60, 50);
+                var bar = AddQuad(0, centre - right * h - up * r * 0.07f, centre + right * h - up * r * 0.07f,
+                    centre - right * h + up * r * 0.07f, centre + right * h + up * r * 0.07f, red);
+                foreach (var pass in BeamEffect.CurrentTechnique.Passes)
+                {
+                    pass.Apply();
+                    device.DrawUserPrimitives(PrimitiveType.TriangleList, BeamVerts, 0, bar / 3);
+                }
+            }
+            device.DepthStencilState = DepthStencilState.Default;
+        }
+
         /// <summary>An arc as strips, fading in from the controller.</summary>
         private int AddArc(int index, Vector3[] points, int pointCount, Vector3 eyePos, float halfWidth, Color colour)
         {
@@ -323,6 +410,7 @@ namespace Simitone.Client.VR
             MirrorBatch?.Dispose();
             BeamEffect?.Dispose();
             ComfortOverlay?.Dispose();
+            IconEffect?.Dispose();
             base.Dispose();
         }
     }

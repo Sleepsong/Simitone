@@ -7,7 +7,7 @@ using Simitone.Client.VR;
 using Simitone.VR;
 using Simitone.VR.OpenXR;
 
-// Renders the VR comfort overlay, the VR options menu and the wrist needs display to PNG files.
+// Renders the VR comfort overlay, the VR options menu, the wrist displays and the VR keyboard to PNG files.
 static class Program
 {
     static int Main(string[] args)
@@ -123,15 +123,46 @@ class RenderGame : Game
         menu.Render(gd);
         Save((RenderTarget2D)typeof(VRMenu).GetField("Target", flags).GetValue(menu), "menu.png");
 
-        // ---- the wrist displays (needs: highlighted, as when pointed at)
+        // ---- the wrist displays: a queue (second action pointed at, third being cancelled) and two messages waiting
         var hud = new VRWristHud();
         typeof(VRWristHud).GetProperty("NeedsVisible").GetSetMethod(true).Invoke(hud, new object[] { true });
         typeof(VRWristHud).GetProperty("WatchVisible").GetSetMethod(true).Invoke(hud, new object[] { true });
-        hud.NeedsHighlight = true;
+        hud.NeedsHover = 1;
         var data = new VRHudData { Valid = true, Hour = 15, Minute = 42, Speed = 2, Money = 20450, SimName = "Bella Goth" };
         for (int i = 0; i < 8; i++) data.Motives[i] = -90 + i * 26;
+        var iconColours = new[] { Color.Orange, Color.MediumPurple, Color.SeaGreen };
+        var names = new[] { "Have Snack", "Watch TV", "Take Shower" };
+        for (int i = 0; i < 3; i++)
+        {
+            var icon = new Texture2D(gd, 32, 32);
+            var pixels = new Color[32 * 32];
+            for (int p = 0; p < pixels.Length; p++)
+            {
+                int x = p % 32, y = p / 32;
+                var inside = (x - 15.5f) * (x - 15.5f) + (y - 15.5f) * (y - 15.5f) < 13 * 13;
+                pixels[p] = inside ? iconColours[i] : Color.Transparent;
+            }
+            icon.SetData(pixels);
+            var item = data.Queue[i];
+            item.Icon = icon;
+            item.Name = names[i];
+            item.Active = i == 0;
+            item.Cancelled = i == 2;
+            item.UID = (ushort)(i + 1);
+        }
+        data.QueueCount = 3;
+        data.Messages = 2;
+        data.MessageTitle = "Job Promotion";
         hud.Render(gd, data);
         Save((RenderTarget2D)typeof(VRWristHud).GetField("Needs", flags).GetValue(hud), "needs.png");
         Save((RenderTarget2D)typeof(VRWristHud).GetField("Watch", flags).GetValue(hud), "watch.png");
+
+        // ---- the keyboard, with some text typed and a key pointed at
+        var keyboard = new VRKeyboard();
+        keyboard.Show(new VRPose { Valid = true, Orientation = Quaternion.Identity, Position = new Vector3(0, 1.6f, 0) }, null);
+        typeof(VRKeyboard).GetField("LastText", flags).SetValue(keyboard, "Bella Go");
+        typeof(VRKeyboard).GetField("Hover", flags).SetValue(keyboard, 23);
+        keyboard.Render(gd);
+        Save((RenderTarget2D)typeof(VRKeyboard).GetField("Target", flags).GetValue(keyboard), "keyboard.png");
     }
 }

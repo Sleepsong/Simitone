@@ -152,6 +152,8 @@ namespace Simitone.Client.VR
         public float VignetteAmount { get; private set; }
         private float BlinkTime = -1, BlinkLength;
         private Action BlinkAction;
+        /// <summary>A blink is under way (fading out or back in).</summary>
+        public bool Blinking => BlinkTime >= 0;
         /// <summary>A blink is fading out: the view holds still until it is black and the move is made.</summary>
         private bool BlinkFadingOut => BlinkAction != null;
         /// <summary>The view jumped this frame (blink, snap turn, placement): not motion for the vignette.</summary>
@@ -165,8 +167,30 @@ namespace Simitone.Client.VR
         public Func<Vector2, sbyte, int> RoomAt;
         /// <summary>Set by the bridge: the Sim is taking the step that pushing the stick sends a seated Sim on.</summary>
         public bool SimStandingUp;
+        /// <summary>
+        /// Set by the bridge: you were steering and walked into a door or stairs, whose routine now runs on top of
+        /// direct control. It's your walk, so it doesn't count as the Sim going off on their own.
+        /// </summary>
+        public bool SimInPortal;
+        /// <summary>Set by the bridge: the Sim is routing (walking somewhere on their own) or has a walk queued.</summary>
+        public bool SimRouting;
         private AvatarComponent LastSimAvatar;
         private float StandingHeadHeight = 1.6f; // metres; learnt while steering (direct control only runs standing)
+        private readonly System.Collections.Generic.Dictionary<AvatarComponent, float> StandingHeights
+            = new System.Collections.Generic.Dictionary<AvatarComponent, float>();
+        private bool SimLying;
+        private Vector3? CarryMotion;   // anchored: how far the Sim carried your head this frame (for the vignette)
+
+        // ---- action bubble: while you're stepped out, what the Sim is doing floats over their head (set by the bridge)
+        public Texture2D BubbleIcon;
+        public bool BubbleCancelled;
+        public ushort BubbleUID;
+        /// <summary>The Sim's head, in world units (Sim mode).</summary>
+        public Vector3 SimHeadWorld { get; private set; }
+        public Vector3 BubblePosition => SimHeadWorld + Vector3.Up * 0.45f * Scale;
+        public float BubbleRadius => 0.17f * Scale;
+        public bool BubbleVisible => SimAvatar != null && SimView != VRSimView.Anchored && Settings.ActionBubble && BubbleIcon != null;
+        private float DrivenHold;       // the vignette keeps the "you're driving" strength briefly after you let go
         private sbyte LastSimLevel;
         private int FramesActive;
         private float SteeringFor, NotSteeringFor, DetachedFor, SinceFollow, SettledFor, HeightSettledFor, GlideStuckFor;
@@ -535,6 +559,7 @@ namespace Simitone.Client.VR
             var headTiles = avatar.GetHeadlinePos() * avatar.Scale + avatar.Position;
             var headY = headTiles.Z * TileUnits + 0.25f * avatar.Scale;
             LastSimHeadY = headY;
+            SimHeadWorld = new Vector3(body.X * TileUnits, headY, body.Y * TileUnits);
             var headAboveFloor = (headY - FloorHeight(world, body, simLevel)) / Scale;
 
             if (avatar != LastSimAvatar)
@@ -545,17 +570,23 @@ namespace Simitone.Client.VR
                 LastSimLevel = simLevel;
                 SettleRefBody = AnchorRefBody = LastFollowBody = body;
                 SettleRefHeadY = HeightRefY = headY;
-                SettledFor = HeightSettledFor = 0;
-                StandingHeadHeight = SimSteering ? Math.Max(0.5f, headAboveFloor) : 1.6f;
+                SettledFor = 0;
+                HeightSettledFor = 1f; // judge their posture straight away (don't show a lying Sim's view first)
+                if (!StandingHeights.TryGetValue(avatar, out StandingHeadHeight))
+                    StandingHeadHeight = SimSteering ? Math.Max(0.5f, headAboveFloor) : 1.6f;
+                SimLying = headAboveFloor < StandingHeadHeight * 0.5f;
                 if (first) Anchor(); else Blink(Anchor);
             }
 
             // ---- what the Sim is doing
             if (SimSteering) { SteeringFor += dt; NotSteeringFor = 0; }
             else { NotSteeringFor += dt; SteeringFor = 0; }
-            if (SimSteering && SimView == VRSimView.Anchored) AnchorRefBody = body;
+            if ((SimSteering || SimInPortal) && SimView == VRSimView.Anchored) AnchorRefBody = body;
             if (SimSteering && headAboveFloor > 0.4f)
+            {
                 StandingHeadHeight += (headAboveFloor - StandingHeadHeight) * (1f - (float)Math.Exp(-dt * 2f));
+                StandingHeights[avatar] = StandingHeadHeight;
+            }
             if (Metres(Vector2.Distance(body, SettleRefBody)) > 0.2f || Math.Abs(headY - SettleRefHeadY) / Scale > 0.15f)
             {
                 SettleRefBody = body;
@@ -570,12 +601,15 @@ namespace Simitone.Client.VR
             }
             else HeightSettledFor += dt;
 
-            // lying: head under about half its standing height (sitting is about two thirds; children are shorter)
-            var upright = headAboveFloor >= StandingHeadHeight * 0.55f;
-            var lying = !upright && HeightSettledFor > 0.3f;
+            // lying: head under half its standing height (sitting is about two thirds; children are shorter). Two
+            // thresholds, so a head hovering around one line doesn't flip between in and out.
+            if (headAboveFloor > StandingHeadHeight * 0.62f) SimLying = false;
+            else if (headAboveFloor < StandingHeadHeight * 0.5f && HeightSettledFor > 0.25f) SimLying = true;
+            var lying = SimLying;
+            var upright = !SimLying;
             // walking off on their own: not steerable, and moved away from where you last had them (the step a seated
-            // Sim takes when you push the stick to stand them up doesn't count)
-            var walkedOff = !SimSteering && !SimStandingUp && NotSteeringFor > 0.25f
+            // Sim takes when you push the stick to stand them up, and your own walk through a door, don't count)
+            var walkedOff = !SimSteering && !SimInPortal && !SimStandingUp && NotSteeringFor > 0.25f
                 && Metres(Vector2.Distance(body, AnchorRefBody)) > 0.6f;
             var levelChanged = simLevel != LastSimLevel;
             LastSimLevel = simLevel;
@@ -590,9 +624,10 @@ namespace Simitone.Client.VR
                 else if (levelChanged || (SimHeadInitialised
                     && Vector2.Distance(new Vector2(SmoothedSimHead.X, SmoothedSimHead.Z) / TileUnits, body) > 1.5f))
                     Blink(Anchor); // stairs, or a jump: never slide there
-                if (BlinkFadingOut) return false;
+                // (with blinks off, StepOut has already moved you out: don't put you back in the head)
+                if (BlinkFadingOut || SimView != VRSimView.Anchored) return false;
                 UpdateAnchoredRig(world, avatar, body, headY, headTrack, dt);
-                return SimSteering && MoveIntent != Vector2.Zero;
+                return (SimSteering || SimInPortal) && MoveIntent != Vector2.Zero;
             }
 
             // ---- stepped out
@@ -602,7 +637,10 @@ namespace Simitone.Client.VR
             var back = (SimSteering && SteeringFor > 0.2f)
                 || (upright && (tier == VRSimActionView.Intense
                     ? HeightSettledFor > 0.4f                       // Intense only steps out while they lie down
-                    : SettledFor > 1.0f && DetachedFor > 1.5f));    // settled: sat down, or busy in one spot
+                    // settled: sat down (1 s), or standing busy in one spot for a while with no walk to come (3 s, so
+                    // the short stops of cooking or cleaning don't blink you in and out)
+                    : DetachedFor > 1.5f && !SimRouting
+                        && SettledFor > (headAboveFloor < StandingHeadHeight * 0.85f ? 1.0f : 3.0f)));
             if (back)
             {
                 Blink(Anchor);
@@ -663,6 +701,7 @@ namespace Simitone.Client.VR
             }
             // Horizontally the Sim's position rather than the head bone, so walk cycles and idle animations don't sway you.
             var follow = 1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing));
+            var carriedFrom = SmoothedSimHead;
             SmoothedSimHead.X += (target.X - SmoothedSimHead.X) * follow;
             SmoothedSimHead.Z += (target.Z - SmoothedSimHead.Z) * follow;
 
@@ -672,7 +711,7 @@ namespace Simitone.Client.VR
             if (HoldingPosture || heightChange > 0.3f)
             {
                 HoldingPosture = true;
-                if (HeightSettledFor > 0.25f)
+                if (HeightSettledFor > 0.3f) // (after the lying check at 0.25 s: lying down steps out instead)
                 {
                     HoldingPosture = false;
                     if (heightChange > 0.08f) Blink(() => { HeldHeadY = LastSimHeadY; SmoothedSimHead.Y = HeldHeadY; });
@@ -680,6 +719,8 @@ namespace Simitone.Client.VR
             }
             else HeldHeadY += (headY - HeldHeadY) * (1f - (float)Math.Exp(-dt * 3f));
             SmoothedSimHead.Y = HeldHeadY;
+            // what the vignette counts: the Sim carrying you, not the lean limit holding your head back
+            CarryMotion = SmoothedSimHead - carriedFrom;
 
             // Lean: you can move your head a little away from the Sim's; walking further drags the anchor along.
             if (!LeanInitialised) { LeanNeutral = headTrack; LeanInitialised = true; }
@@ -873,13 +914,19 @@ namespace Simitone.Client.VR
             if (Teleported || dt <= 0)
             {
                 Teleported = false;
+                CarryMotion = null;
                 return;
             }
             var settings = Settings;
             var h = headTrack * Scale;
             var before = lastRigPosition + RotateYaw(h, lastRigYaw);
             var after = RigPosition + RotateYaw(h, RigYaw);
-            var speed = Vector3.Distance(before, after) / Scale / dt;        // m/s
+            var moved = CarryMotion ?? (after - before);
+            CarryMotion = null;
+            var speed = moved.Length() / Scale / dt;                          // m/s
+            // letting go of the stick: keep the lighter "driving" strength while the Sim slows to a stop
+            if (driven) DrivenHold = 0.6f;
+            else if (DrivenHold > 0) { DrivenHold -= dt; driven = true; }
             var turn = Math.Abs(MathHelper.WrapAngle(RigYaw - lastRigYaw)) / dt; // rad/s
             float target = 0;
             if (speed < 20f)
@@ -1229,10 +1276,10 @@ namespace Simitone.Client.VR
         /// </summary>
         private void UpdateBuildCursor(World world, VRInput input, float dt)
         {
-            if (BuildMode && CursorValid && SimitoneVR.PanelPointerOnPanel)
+            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.MenuOpen))
             {
-                // Choosing from the catalogue: keep the cursor where it was in the world (and hide the arc), so what
-                // you hold doesn't fly about while the pointer is on the panel.
+                // Choosing from the catalogue (or using the VR menu): keep the cursor where it was in the world and hide
+                // the arc, so what you hold doesn't fly about while the pointer is elsewhere.
                 ArcCount = 0;
                 return;
             }

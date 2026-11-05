@@ -9,6 +9,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Simitone.VR;
 using Simitone.VR.Graphics;
+using Simitone.Client.UI.Controls;
 
 namespace Simitone.Client.VR
 {
@@ -61,6 +62,7 @@ namespace Simitone.Client.VR
         private static RenderTarget2D UITarget;
         private static VRWristHud Wrists;
         private static VRMenu Menu;
+        private static VRKeyboard Keyboard;
         private static bool PendingEyeResize;
         private static bool KeyboardMenuToggle;
         private static VRPose LastHead;
@@ -83,7 +85,18 @@ namespace Simitone.Client.VR
         private static Vector3 PanelPosition;
         private static Quaternion PanelOrientation = Quaternion.Identity;
         private static float PanelWidth = 1.7f;
-        private static bool PanelDesk;
+        private enum PanelKind { Full, Desk, Dialog }
+        private static PanelKind PanelKindShown;
+        /// <summary>The part of the UI the panel shows, in window pixels (all of it, or just the open dialog).</summary>
+        private static Rectangle PanelRegion;
+        /// <summary>Set every update by <see cref="VRGameBridge"/>: a pie menu is open.</summary>
+        public static bool PieMenuOpen;
+        private static FSO.Client.UI.Framework.UIElement LastTopDialog;
+        private static bool NeedsRelease;
+        /// <summary>The VR menu or keyboard has the pointer: the bridge draws the beam to it and picks nothing.</summary>
+        public static bool OverlayHasPointer { get; private set; }
+        /// <summary>Distance (metres) from the controller to the menu or keyboard it points at.</summary>
+        public static float OverlayPointerDistance { get; private set; }
         private static bool PanelArmed; // the trigger that opened a menu must be let go before it clicks on it
         private static bool WorldArmed; // ...and a trigger held while coming off the panel doesn't click in the world
         private static bool LastOnPanel;
@@ -99,6 +112,7 @@ namespace Simitone.Client.VR
         // requests consumed by the game (VRGameBridge), set from controller presses in BeginDraw
         private static bool PauseRequested, SpeedRequested, ModeSwitchRequested, NextSimRequested, BuildMenuRequested;
         private static bool WorldSelectRequested, CancelRequested;
+        private static int QueueCancelRequested = -1;
 
         private static Game Game;
         private static StreamWriter LogFile;
@@ -146,6 +160,7 @@ namespace Simitone.Client.VR
                 CreateEyeBuffers(game.GraphicsDevice);
                 Wrists = new VRWristHud();
                 Menu = new VRMenu();
+                Keyboard = new VRKeyboard();
             }
             catch (Exception e)
             {
@@ -177,6 +192,7 @@ namespace Simitone.Client.VR
         /// <summary>(Re)creates the per-eye render targets and swapchains at the current render scale.</summary>
         private static void CreateEyeBuffers(GraphicsDevice gd)
         {
+            GLInterop.Finish(); // the last frame's copies into the old swapchain images must be done before they go
             if (EyeSwapchains != null) foreach (var s in EyeSwapchains) s.Dispose();
             if (EyeTargets != null) foreach (var t in EyeTargets) t.Dispose();
             EyeSwapchains = null;
@@ -184,7 +200,9 @@ namespace Simitone.Client.VR
             float scale = MathHelper.Clamp(Settings.RenderScale, 0.25f, 2f);
             int w = Math.Min(Runtime.MaxWidth, Math.Max(64, (int)(Runtime.RecommendedWidth * scale)));
             int h = Math.Min(Runtime.MaxHeight, Math.Max(64, (int)(Runtime.RecommendedHeight * scale)));
-            EyeSwapchains = new[] { Runtime.CreateSwapchain(w, h), Runtime.CreateSwapchain(w, h) };
+            var first = Runtime.CreateSwapchain(w, h);
+            try { EyeSwapchains = new[] { first, Runtime.CreateSwapchain(w, h) }; }
+            catch { first.Dispose(); throw; }
             EyeTargets = new[]
             {
                 new RenderTarget2D(gd, w, h, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8, 0, RenderTargetUsage.PreserveContents),
@@ -201,8 +219,6 @@ namespace Simitone.Client.VR
         }
 
         public static bool MenuOpen => Menu?.Open == true;
-        /// <summary>How far (metres) the controller is from where it points on the open VR menu; 0 when not on it.</summary>
-        public static float MenuPointerDistance => Menu?.PointerDistance ?? 0;
 
         public static void Shutdown()
         {
@@ -214,6 +230,7 @@ namespace Simitone.Client.VR
                 PanelSwapchain?.Dispose();
                 Wrists?.Dispose();
                 Menu?.Dispose();
+                Keyboard?.Dispose();
                 Runtime.Dispose();
             }
             catch { }
@@ -295,12 +312,34 @@ namespace Simitone.Client.VR
             bool immersive = world?.Immersive == true;
             var input = Runtime.Input;
             var inputActive = input != null && input.Active;
+            var vrCamera = world?.VRCamera;
+            var hud = HudProvider?.Invoke();
 
-            // ---- floating UI panel (first person only): pie menus and dialogs straight ahead, the buy/build
-            // catalogue lower down and tilted up like a desk
+            // After the VR menu, the keyboard or a wrist display has used a press, the trigger and grip must be let go
+            // before they click anything else (the press that closes the menu mustn't click what's behind it).
+            if (!inputActive || (!input.Select.Down && !input.Secondary.Down)) NeedsRelease = false;
+
+            // ---- popups: a buzz when one arrives, wherever you are
+            var dialog = TopModalDialog();
+            if (dialog != LastTopDialog)
+            {
+                if (dialog != null && inputActive)
+                {
+                    Runtime.Haptic(true, 0.45f, 0.08f);
+                    Runtime.Haptic(false, 0.45f, 0.08f);
+                    FSO.HIT.HITVM.Get()?.PlaySoundEvent(FSO.Client.UI.Model.UISounds.Whoosh);
+                }
+                LastTopDialog = dialog;
+            }
+
+            // ---- floating UI panel (first person only): a dialog on its own at eye level, pie menus with the rest of
+            // the UI straight ahead, the buy/build catalogue lower down and tilted up like a desk
+            var kind = BuildMode ? PanelKind.Desk : (dialog is UIMobileDialog && !PieMenuOpen) ? PanelKind.Dialog : PanelKind.Full;
             var showPanel = immersive && (UIPanelWanted || BuildMode);
-            if (showPanel && (!PanelShown || PanelDesk != BuildMode)) { PlacePanel(BuildMode); PanelArmed = false; }
+            if (showPanel && !PanelShown && vrCamera?.Blinking == true) showPanel = false; // wait for a blink to end
+            if (showPanel && (!PanelShown || PanelKindShown != kind)) { PlacePanel(kind); PanelArmed = false; }
             PanelShown = showPanel && LastHead.Valid;
+            PanelRegion = kind == PanelKind.Dialog ? DialogRegion(gd, dialog) : FullRegion(gd);
 
             if (inputActive)
             {
@@ -317,44 +356,88 @@ namespace Simitone.Client.VR
                 if (input.BuildMenu.Pressed) BuildMenuRequested = true;
             }
 
-            // ---- VR options menu: the left menu button, the trigger on the left wrist's needs display, or F9
+            // ---- wrists: the left display's queue icons (trigger cancels) and the rest of it (trigger opens the VR
+            // menu); messages waiting on the watch (look at it and pull that hand's trigger to read the oldest)
             if (immersive && Wrists != null) Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
             var menuWasOpen = MenuOpen;
+            var overlayUsedPress = false;
+            var needsHover = VRWristHud.NotPointed;
+            if (immersive && inputActive && Wrists != null && !MenuOpen && Wrists.PointNeeds(input.RightAim, out var needsPixel))
+            {
+                var slot = VRWristHud.QueueSlotAt(needsPixel);
+                needsHover = hud != null && slot >= 0 && slot < hud.QueueCount ? slot : VRWristHud.PointedAtDisplay;
+            }
+            if (Wrists != null) Wrists.NeedsHover = needsHover;
+            var triggerFree = inputActive && input.Select.Pressed && !NeedsRelease;
+            if (triggerFree && needsHover >= 0)
+            {
+                QueueCancelRequested = hud.Queue[needsHover].UID;
+                Runtime.Haptic(true, 0.35f, 0.03f);
+                overlayUsedPress = true;
+            }
+            else if (triggerFree && needsHover == VRWristHud.NotPointed && immersive && Wrists?.WatchFacing == true
+                && Messages.Count > 0 && !MenuOpen)
+            {
+                GameThread.NextUpdate(_ => ShowOldestMessage());
+                Runtime.Haptic(true, 0.25f, 0.02f);
+                overlayUsedPress = true;
+            }
             if (Menu != null)
             {
-                var wristAimed = immersive && inputActive && !Menu.Open && Wrists != null && Wrists.PointsAtNeeds(input.RightAim);
-                if (Wrists != null) Wrists.NeedsHighlight = wristAimed;
-                if ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || (wristAimed && input.Select.Pressed))
+                var wristMenu = triggerFree && needsHover == VRWristHud.PointedAtDisplay;
+                if ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || wristMenu)
                 {
                     if (Menu.Open) Menu.Close();
                     else Menu.Show(LastHead, inputActive ? input : null);
+                    if (wristMenu) overlayUsedPress = true;
                 }
                 KeyboardMenuToggle = false;
                 if (Menu.Open) Menu.Update(input, Runtime);
             }
 
-            // ---- laser pointer (the menu has it while it's open, including the frame a press closes it)
+            // ---- keyboard: whenever a text box is waiting for typing (until HIDE)
+            var target = KeyboardTarget;
+            var wantKeyboard = Keyboard != null && target != null && target != KeyboardDismissed && LastHead.Valid;
+            if (wantKeyboard && !Keyboard.Visible) Keyboard.Show(LastHead, inputActive ? input : null);
+            else if (!wantKeyboard && Keyboard?.Visible == true) Keyboard.Hide();
+            var keyboardHasPointer = false;
+            if (Keyboard?.Visible == true && !MenuOpen && !overlayUsedPress)
+            {
+                keyboardHasPointer = Keyboard.Update(input, Runtime, FrameDelta);
+                if (keyboardHasPointer && inputActive && (input.Select.Pressed || input.Secondary.Pressed)) NeedsRelease = true;
+                if (Keyboard.HideRequested)
+                {
+                    Keyboard.HideRequested = false;
+                    KeyboardDismissed = target;
+                    Keyboard.Hide();
+                }
+            }
+            OverlayHasPointer = MenuOpen || keyboardHasPointer;
+            OverlayPointerDistance = MenuOpen ? Menu.PointerDistance : keyboardHasPointer ? Keyboard.PointerDistance : 0;
+            if (overlayUsedPress || (menuWasOpen && !MenuOpen)) NeedsRelease = true;
+
+            // ---- laser pointer (not while an overlay has it, nor on the frame one used a press)
             PointerActive = false;
             CursorOnSurface = false;
             PanelPointerOnPanel = false;
             PanelPointerDistance = 0;
-            if (inputActive && !menuWasOpen && !MenuOpen)
+            if (inputActive && !menuWasOpen && !OverlayHasPointer && !overlayUsedPress)
             {
                 if (!immersive)
                 {
                     if (ScreenSwapchain != null && !ScreenPoseDirty)
                         UpdatePointer(gd, input, ScreenPosition, ScreenOrientation, Settings.ScreenWidth,
-                            (float)ScreenSwapchain.Height / ScreenSwapchain.Width, armed: true);
+                            (float)ScreenSwapchain.Height / ScreenSwapchain.Width, !NeedsRelease, FullRegion(gd));
                 }
                 else if (PanelShown)
                 {
                     if (!input.Select.Down) PanelArmed = WorldArmed = true;
-                    var pp = gd.PresentationParameters;
-                    var aspect = (float)pp.BackBufferHeight / Math.Max(1, pp.BackBufferWidth);
+                    if (NeedsRelease) PanelArmed = WorldArmed = false;
+                    var aspect = (float)PanelRegion.Height / Math.Max(1, PanelRegion.Width);
                     // a trigger held while sliding onto the panel (e.g. dragging a wall) doesn't click there
                     if (!LastOnPanel && input.Select.Down && HitsSurface(input, PanelPosition, PanelOrientation, PanelWidth, aspect))
                         PanelArmed = false;
-                    UpdatePointer(gd, input, PanelPosition, PanelOrientation, PanelWidth, aspect, PanelArmed);
+                    UpdatePointer(gd, input, PanelPosition, PanelOrientation, PanelWidth, aspect, PanelArmed, PanelRegion);
                     PanelPointerOnPanel = PointerActive;
                     if (BuildMode && !PointerActive)
                     {
@@ -369,29 +452,32 @@ namespace Simitone.Client.VR
                     }
                     else if (!PointerActive)
                     {
-                        if (input.Select.Pressed) WorldSelectRequested = true; // beside the panel
+                        if (input.Select.Pressed && !NeedsRelease) WorldSelectRequested = true; // beside the panel
                     }
-                    if (input.Secondary.Pressed && !PanelPointerOnPanel) CancelRequested = true;
+                    if (input.Secondary.Pressed && !PanelPointerOnPanel && !NeedsRelease) CancelRequested = true;
                     LastOnPanel = PanelPointerOnPanel;
                 }
-                else
+                else if (!NeedsRelease)
                 {
                     if (input.Select.Pressed) WorldSelectRequested = true;
                     if (input.Secondary.Pressed) CancelRequested = true;
                 }
             }
 
-            var vrCamera = world?.VRCamera;
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
 
-            // ---- wrist displays and the menu (drawn now: switching render targets later would disturb the frame)
+            // ---- wrist displays, keyboard and menu (drawn now: switching render targets later would disturb the frame)
             if (immersive && Wrists != null)
             {
-                try { Wrists.Render(gd, HudProvider?.Invoke()); }
+                try { Wrists.Render(gd, hud); }
                 catch (Exception e) { Log("wrist display error: " + e.Message); }
             }
-            try { Menu?.Render(gd); }
-            catch (Exception e) { Log("VR menu error: " + e.Message); }
+            try
+            {
+                Keyboard?.Render(gd);
+                Menu?.Render(gd);
+            }
+            catch (Exception e) { Log("VR menu/keyboard error: " + e.Message); }
         }
 
         public static void EndDraw(GraphicsDevice gd)
@@ -420,6 +506,7 @@ namespace Simitone.Client.VR
                     {
                         SubmitScreen(gd, ref submission);
                     }
+                    Keyboard?.Submit(Runtime, ref submission);
                     Menu?.Submit(Runtime, ref submission);
                 }
                 Runtime.EndFrame(submission);
@@ -468,7 +555,7 @@ namespace Simitone.Client.VR
 
             var image = ScreenSwapchain.Acquire();
             GLInterop.BlitBackbuffer(w, h, image, w, h);
-            DrawCursor(image, h);
+            DrawCursor(image, new Rectangle(0, 0, w, h));
             ScreenSwapchain.Release();
 
             submission.AddQuad(new VRQuad
@@ -483,15 +570,17 @@ namespace Simitone.Client.VR
         private static void SubmitPanel(ref VRFrameSubmission submission)
         {
             if (UITarget == null) return;
-            int w = UITarget.Width, h = UITarget.Height;
+            var region = Rectangle.Intersect(PanelRegion, new Rectangle(0, 0, UITarget.Width, UITarget.Height));
+            if (region.Width <= 0 || region.Height <= 0) region = new Rectangle(0, 0, UITarget.Width, UITarget.Height);
+            int w = region.Width, h = region.Height;
             if (PanelSwapchain == null || PanelSwapchain.Width != w || PanelSwapchain.Height != h)
             {
                 PanelSwapchain?.Dispose();
                 PanelSwapchain = Runtime.CreateSwapchain(w, h);
             }
             var image = PanelSwapchain.Acquire();
-            GLInterop.BlitTexture(GLInterop.GetTextureHandle(UITarget), w, h, image, 0, 0, w, h, flipY: true);
-            DrawCursor(image, h);
+            GLInterop.BlitTextureRegion(GLInterop.GetTextureHandle(UITarget), region.X, region.Y, w, h, image, 0, 0, w, h, flipY: true);
+            DrawCursor(image, region);
             PanelSwapchain.Release();
 
             submission.AddQuad(new VRQuad
@@ -504,12 +593,13 @@ namespace Simitone.Client.VR
             });
         }
 
-        private static void DrawCursor(uint image, int height)
+        /// <param name="region">The part of the window the image shows.</param>
+        private static void DrawCursor(uint image, Rectangle region)
         {
             if (!PointerActive || !CursorOnSurface) return;
             // GL origin is bottom-left.
-            int cx = PointerPixel.X, cy = height - 1 - PointerPixel.Y;
-            int s = Math.Max(4, height / 120);
+            int cx = PointerPixel.X - region.X, cy = region.Height - 1 - (PointerPixel.Y - region.Y);
+            int s = Math.Max(4, Math.Max(region.Height, region.Width * 9 / 16) / 120);
             GLInterop.FillRects(image, new (int, int, int, int, float, float, float)[]
             {
                 (cx - s - 1, cy - s - 1, 2 * s + 2, 2 * s + 2, 0f, 0f, 0f),
@@ -528,15 +618,22 @@ namespace Simitone.Client.VR
             ScreenPoseDirty = false;
         }
 
-        /// <param name="desk">Buy/build catalogue: lower and tilted up towards you, so the world above stays clear.</param>
-        private static void PlacePanel(bool desk)
+        /// <param name="kind">Desk (buy/build catalogue): lower and tilted up towards you, so the world above stays
+        /// clear. Dialog: just the dialog, at eye level. Full: the whole UI (pie menus).</param>
+        private static void PlacePanel(PanelKind kind)
         {
             var head = LastHead;
             if (!head.Valid) return;
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.Up, VRMath.Yaw(head.Orientation));
             var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
-            PanelDesk = desk;
-            if (desk)
+            PanelKindShown = kind;
+            if (kind == PanelKind.Dialog)
+            {
+                PanelWidth = Settings.PanelWidth;
+                PanelOrientation = yaw;
+                PanelPosition = head.Position + forward * Settings.PanelDistance - new Vector3(0, 0.08f, 0);
+            }
+            else if (kind == PanelKind.Desk)
             {
                 PanelWidth = Settings.PanelWidth * 0.9f;
                 PanelOrientation = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-40));
@@ -573,7 +670,7 @@ namespace Simitone.Client.VR
 
         /// <summary>Points the controller's ray at a flat surface; when it hits, the hit drives the mouse.</summary>
         private static void UpdatePointer(GraphicsDevice gd, VRInput input, Vector3 position, Quaternion orientation,
-            float width, float aspect, bool armed)
+            float width, float aspect, bool armed, Rectangle region)
         {
             var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
             if (!aim.Valid) return;
@@ -592,8 +689,7 @@ namespace Simitone.Client.VR
             float v = 0.5f - local.Y / height;
             if (u < 0 || u > 1 || v < 0 || v > 1) return;
 
-            var pp = gd.PresentationParameters;
-            PointerPixel = new Point((int)(u * pp.BackBufferWidth), (int)(v * pp.BackBufferHeight));
+            PointerPixel = new Point(region.X + (int)(u * region.Width), region.Y + (int)(v * region.Height));
             PointerLeft = armed && input.Select.Down;
             PointerRight = armed && input.Secondary.Down;
             ScrollAccumulator += input.Turn.Y * 900f * FrameDelta;
@@ -612,6 +708,10 @@ namespace Simitone.Client.VR
         private static void InjectPointer(UpdateState state)
         {
             if (state.NewKeys.Contains(Keys.F9) && SessionRunning) KeyboardMenuToggle = true;
+            // the VR keyboard types into the text box that's waiting (between frames, like real key presses)
+            KeyboardTarget = FindTextTarget(state);
+            if (KeyboardTarget == null) KeyboardDismissed = null;
+            Keyboard?.ApplyPending(KeyboardTarget);
             var real = state.MouseState;
             if (!PointerActive)
             {
@@ -633,19 +733,158 @@ namespace Simitone.Client.VR
             if (state.MouseStates.Count > 0) state.MouseStates[0].MouseState = ms;
         }
 
-        /// <summary>True while a modal dialog is open in the game UI.</summary>
-        public static bool DialogOpen()
+        private static Rectangle FullRegion(GraphicsDevice gd)
+        {
+            var pp = gd.PresentationParameters;
+            return new Rectangle(0, 0, Math.Max(1, pp.BackBufferWidth), Math.Max(1, pp.BackBufferHeight));
+        }
+
+        /// <summary>
+        /// The band of the window a mobile-style dialog covers (Simitone's dialogs span the window's width and are
+        /// centred vertically), so the panel can show just the dialog.
+        /// </summary>
+        private static Rectangle DialogRegion(GraphicsDevice gd, FSO.Client.UI.Framework.UIElement dialog)
+        {
+            var full = FullRegion(gd);
+            if (!(dialog is UIMobileDialog md) || md.Width <= 0 || md.Height <= 0) return full;
+            var topLeft = md.LocalPoint(Vector2.Zero);
+            var bottomRight = md.LocalPoint(new Vector2(md.Width, md.Height));
+            var unitsWide = bottomRight.X - topLeft.X;
+            if (unitsWide <= 1) return full;
+            var scale = full.Width / unitsWide; // UI units to window pixels
+            int y0 = Math.Max(0, (int)Math.Floor(topLeft.Y * scale) - 8);
+            int y1 = Math.Min(full.Height, (int)Math.Ceiling(bottomRight.Y * scale) + 8);
+            return y1 - y0 < 32 ? full : new Rectangle(0, y0, full.Width, y1 - y0);
+        }
+
+        /// <summary>The top-most modal dialog in the game UI, or null.</summary>
+        public static FSO.Client.UI.Framework.UIElement TopModalDialog()
+        {
+            var dialogs = Dialogs();
+            if (dialogs == null) return null;
+            for (int i = dialogs.Count - 1; i >= 0; i--) if (dialogs[i].Modal) return dialogs[i].Dialog;
+            return null;
+        }
+
+        private static System.Collections.Generic.List<FSO.Client.UI.DialogReference> Dialogs()
         {
             var layer = FSO.Client.GameFacade.Screens;
-            if (layer == null) return false;
+            if (layer == null) return null;
             DialogsField ??= typeof(FSO.Client.UI.UILayer).GetField("Dialogs",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            if (DialogsField?.GetValue(layer) is System.Collections.Generic.List<FSO.Client.UI.DialogReference> dialogs)
+            return DialogsField?.GetValue(layer) as System.Collections.Generic.List<FSO.Client.UI.DialogReference>;
+        }
+
+        // ------------------------------------------------------------------ messages on the watch
+
+        private class VRMessage
+        {
+            public FSO.Client.UI.Framework.UIElement Alert;
+            public string Title;
+            public long Posted;
+        }
+
+        private static readonly System.Collections.Generic.List<VRMessage> Messages = new System.Collections.Generic.List<VRMessage>();
+        private const int MaxMessages = 5;
+        private const long MessageLifetimeMs = 120000;
+
+        /// <summary>
+        /// Messages that need no answer go to the watch instead of popping up, while you're in first person with the
+        /// wrist displays on (<see cref="VRSettings.WatchMessages"/>).
+        /// </summary>
+        public static bool WatchTakesMessages => SessionRunning && Settings.WatchMessages && CurrentWorld?.Immersive == true
+            && Settings.WristDisplays != VRWristMode.Off;
+
+        /// <summary>Puts a message (an alert not yet shown) on the watch, with a buzz on the right wrist.</summary>
+        public static void PostMessage(FSO.Client.UI.Framework.UIElement alert, string title)
+        {
+            Messages.Add(new VRMessage { Alert = alert, Title = title ?? "", Posted = Environment.TickCount64 });
+            while (Messages.Count > MaxMessages) Messages.RemoveAt(0);
+            Runtime?.Haptic(true, 0.5f, 0.12f);
+            FSO.HIT.HITVM.Get()?.PlaySoundEvent(FSO.Client.UI.Model.UISounds.Whoosh);
+            Log("message on the watch: " + title);
+        }
+
+        public static int MessageCount => Messages.Count;
+        public static string MessageTitle => Messages.Count > 0 ? Messages[0].Title : "";
+
+        /// <summary>Shows the oldest waiting message as a normal dialog. Call from the game update.</summary>
+        public static void ShowOldestMessage()
+        {
+            if (Messages.Count == 0) return;
+            var message = Messages[0];
+            Messages.RemoveAt(0);
+            FSO.Client.UI.Framework.UIScreen.GlobalShowDialog(message.Alert, true);
+        }
+
+        /// <summary>Called every update by the bridge: old messages expire; outside first person they're all shown.</summary>
+        public static void UpdateMessages(bool immersive)
+        {
+            var now = Environment.TickCount64;
+            Messages.RemoveAll(m => now - m.Posted > MessageLifetimeMs);
+            if (!immersive) while (Messages.Count > 0) ShowOldestMessage();
+        }
+
+        /// <summary>The lot is gone: so are its messages.</summary>
+        public static void ClearMessages() => Messages.Clear();
+
+        // ------------------------------------------------------------------ keyboard target
+
+        /// <summary>The text box the VR keyboard types into (set every update), or null.</summary>
+        private static FSO.Client.UI.Controls.UITextEdit KeyboardTarget;
+        private static FSO.Client.UI.Controls.UITextEdit KeyboardDismissed;
+
+        /// <summary>
+        /// The text box waiting for typing: the focused one if it's editable and on screen, else one in the top-most
+        /// modal dialog (which is then focused, as clicking it would).
+        /// </summary>
+        private static FSO.Client.UI.Controls.UITextEdit FindTextTarget(UpdateState state)
+        {
+            if (!SessionRunning) return null;
+            var dialog = TopModalDialog();
+            if (state.InputManager?.GetFocus() is FSO.Client.UI.Controls.UITextEdit focused && !focused.IsReadOnly
+                && IsShown(focused, dialog)) return focused;
+            if (dialog is FSO.Client.UI.Framework.UIContainer container)
             {
-                foreach (var d in dialogs) if (d.Modal) return true;
+                var edit = FindEdit(container);
+                if (edit != null)
+                {
+                    state.InputManager?.SetFocus(edit);
+                    return edit;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>Visible, and part of the top dialog (if one is open) or of the current screen.</summary>
+        private static bool IsShown(FSO.Client.UI.Framework.UIElement element, FSO.Client.UI.Framework.UIElement dialog)
+        {
+            var screen = FSO.Client.GameFacade.Screens?.CurrentUIScreen;
+            for (var e = element; e != null; e = e.Parent)
+            {
+                if (!e.Visible) return false;
+                if (dialog != null ? e == dialog : e == screen) return true;
             }
             return false;
         }
+
+        private static FSO.Client.UI.Controls.UITextEdit FindEdit(FSO.Client.UI.Framework.UIContainer container)
+        {
+            foreach (var child in container.GetChildren())
+            {
+                if (!child.Visible) continue;
+                if (child is FSO.Client.UI.Controls.UITextEdit edit && !edit.IsReadOnly) return edit;
+                if (child is FSO.Client.UI.Framework.UIContainer inner)
+                {
+                    var found = FindEdit(inner);
+                    if (found != null) return found;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>True while a modal dialog is open in the game UI.</summary>
+        public static bool DialogOpen() => TopModalDialog() != null;
 
         // ------------------------------------------------------------------ requests for the game
 
@@ -663,5 +902,14 @@ namespace Simitone.Client.VR
         public static bool ConsumeBuildMenu() => Consume(ref BuildMenuRequested);
         public static bool ConsumeWorldSelect() => Consume(ref WorldSelectRequested);
         public static bool ConsumeCancel() => Consume(ref CancelRequested);
+
+        /// <summary>A queue icon on the left wrist was chosen: the UID of the action to cancel.</summary>
+        public static bool ConsumeQueueCancel(out ushort uid)
+        {
+            uid = (ushort)Math.Max(0, QueueCancelRequested);
+            var requested = QueueCancelRequested >= 0;
+            QueueCancelRequested = -1;
+            return requested;
+        }
     }
 }

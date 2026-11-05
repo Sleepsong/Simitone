@@ -12,6 +12,7 @@ using FSO.SimAntics.Engine;
 using FSO.SimAntics.Model;
 using FSO.SimAntics.NetPlay.Model.Commands;
 using Microsoft.Xna.Framework;
+using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Screens;
 using Simitone.VR;
@@ -30,6 +31,11 @@ namespace Simitone.Client.VR
     ///  - <b>Comfort</b>: the camera decides when to step out of the Sim's head and follow (the SimActionView
     ///    tiers); the bridge tells it whether the player can steer the Sim right now and which room a tile is in.
     ///  - <b>Movement arc</b> (left trigger): where it lands, the Sim walks to with the floor's "Go Here".
+    ///  - <b>Actions</b>: the selected Sim's queue goes to the left wrist display (and the running action to a bubble
+    ///    over their head while you're stepped out); pointing at one and pulling the trigger cancels it, as clicking it
+    ///    in the game's queue does. Holding the stick while your Sim is busy cancels what they're doing so you can
+    ///    walk them again (<see cref="VRSettings.StickCancelsActions"/>).
+    ///  - <b>Messages</b> that need no answer wait on the watch in first person (see <see cref="SimitoneVR.PostMessage"/>).
     ///  - <b>Pointing</b>: the right controller picks objects and Sims; the trigger opens their real pie menu (or "Go
     ///    Here" on the floor), which shows on the floating UI panel together with any dialog.
     ///  - <b>Buy and build mode</b> in first person: the catalogue sits on a desk-like panel, the pointer picks objects
@@ -44,6 +50,7 @@ namespace Simitone.Client.VR
         private const uint GotoGuid = 0x000007C4;     // the floor's "Go Here" object
         private const float RunOn = 0.9f, RunOff = 0.75f;
         private const float StandUpStick = 0.5f, StandUpHold = 0.25f, StandUpRetry = 1.5f;
+        private const float TakeOverStick = 0.5f, TakeOverHold = 0.6f, TakeOverRetry = 2f;
 
         private readonly TS1GameScreen Screen;
         private VMAvatar DirectAvatar;
@@ -52,6 +59,10 @@ namespace Simitone.Client.VR
         private float StandUpHeldFor;
         private double StandUpSentAt = -100;
         private double Now;
+        private float UpdateDelta = 1 / 60f;
+        private float TakeOverHeldFor;
+        private double TakeOverSentAt = -100;
+        private readonly FSO.SimAntics.VMEntity[] IconOwners = new FSO.SimAntics.VMEntity[VRHudData.MaxQueue];
 
         private bool LeftForFlatScreen;
         private bool WasBuyBuild;
@@ -86,11 +97,16 @@ namespace Simitone.Client.VR
             WasImmersive = false;
             LeftForFlatScreen = false;
             Hud.Valid = false;
+            Hud.QueueCount = 0;
+            for (int i = 0; i < IconOwners.Length; i++) IconOwners[i] = null;
+            SimitoneVR.ClearMessages();
         }
 
         public void Update(UpdateState state)
         {
-            Now = state.Time?.TotalGameTime.TotalSeconds ?? Now + 1 / 60.0;
+            var now = state.Time?.TotalGameTime.TotalSeconds ?? Now + 1 / 60.0;
+            UpdateDelta = (float)MathHelper.Clamp((float)(now - Now), 0.001f, 0.1f);
+            Now = now;
             var world = Screen.VRWorld;
             var lc = Screen.LotControl;
             var vm = Screen.vm;
@@ -107,6 +123,10 @@ namespace Simitone.Client.VR
 
             UpdateHud(vm, lc);
             HandleButtons(vm, lc, camera, immersive);
+            SimitoneVR.PieMenuOpen = lc.PieMenuOpen;
+            SimitoneVR.UpdateMessages(immersive);
+            if (SimitoneVR.ConsumeQueueCancel(out var cancelUID) && lc.ActiveEntity is VMAvatar queueOwner)
+                CancelAction(vm, queueOwner, cancelUID);
 
             // ---- buy/build happen in first person (VRBuildMode); options and the travel map are flat: step out of
             // first person for those, and come back after.
@@ -146,6 +166,12 @@ namespace Simitone.Client.VR
             camera.SimAvatar = DirectAvatar?.WorldUI as AvatarComponent;
             camera.SimSteering = DirectAvatar != null && Steering;
             camera.SimStandingUp = DirectAvatar != null && Now - StandUpSentAt < 3.0;
+            camera.SimInPortal = DirectAvatar != null && !Steering && InPortal;
+            camera.SimRouting = DirectAvatar != null && IsRouting(DirectAvatar);
+            var running = Hud.QueueCount > 0 ? Hud.Queue[0] : null;
+            camera.BubbleIcon = DirectAvatar != null ? running?.Icon : null;
+            camera.BubbleCancelled = running?.Cancelled ?? false;
+            camera.BubbleUID = running?.UID ?? 0;
             camera.RoomAt = RoomAtFunc;
             if (DirectAvatar != null) DriveSim(camera, input, vm, lc, state);
             if (camera.ConsumeMoveArc(out var arcTile, out var arcLevel) && DirectAvatar != null)
@@ -185,6 +211,23 @@ namespace Simitone.Client.VR
         /// <summary>Direct control only steers while its frame runs; a queued interaction replaces it until done.</summary>
         private bool Steering => DirectAvatar?.Thread?.Stack.LastOrDefault() is VMDirectControlFrame;
 
+        /// <summary>
+        /// You walked into a door or stairs while steering: its routine runs on top of the direct control frame, which
+        /// takes over again when it's done.
+        /// </summary>
+        private bool InPortal => DirectAvatar?.Thread?.Stack.Any(x => x is VMDirectControlFrame) == true;
+
+        /// <summary>Walking somewhere on their own, or about to (another action, or a walk, is queued after this one).</summary>
+        private bool IsRouting(VMAvatar avatar)
+        {
+            var thread = avatar?.Thread;
+            if (thread == null) return false;
+            if (thread.Stack.Any(x => x is VMRoutingFrame)) return true;
+            var shown = 0;
+            foreach (var action in thread.Queue) if (action.Mode != VMQueueMode.Idle && ++shown > 1) return true;
+            return false;
+        }
+
         private void SendDirectInput(VMDirectControlInput input)
         {
             if (DirectAvatar?.Thread?.Stack.LastOrDefault() is VMDirectControlFrame frame) frame.SendUserControls(input);
@@ -199,10 +242,12 @@ namespace Simitone.Client.VR
             if (!Steering)
             {
                 DirectRunning = false;
-                StandUpForStick(vm, lc, move, camera);
+                if (InPortal) return; // going through a door: you have them back in a moment
+                if (!SimitoneVR.Settings.StickCancelsActions || !TakeOver(vm, move)) StandUpForStick(vm, lc, move, camera);
                 return;
             }
             StandUpHeldFor = 0;
+            TakeOverHeldFor = 0;
 
             if (move == Vector2.Zero)
             {
@@ -222,6 +267,74 @@ namespace Simitone.Client.VR
                 LookDirectionInt = look,
                 Sprint = DirectRunning
             });
+        }
+
+        /// <summary>
+        /// Holding the stick while your Sim is busy cancels everything they're doing or have queued (they wind down as
+        /// when you click their actions), so direct control comes back. Returns false when there's nothing to cancel.
+        /// </summary>
+        private bool TakeOver(VM vm, Vector2 move)
+        {
+            var avatar = DirectAvatar;
+            if (move.Length() < TakeOverStick)
+            {
+                TakeOverHeldFor = 0;
+                return HasCancellable(avatar);
+            }
+            if (!HasCancellable(avatar)) return false;
+            TakeOverHeldFor += UpdateDelta;
+            if (TakeOverHeldFor < TakeOverHold || Now - TakeOverSentAt < TakeOverRetry) return true;
+            var queue = avatar.Thread.Queue;
+            foreach (var i in ShownEntries(queue).ToList())
+            {
+                if (!IsCancelled(avatar, queue[i]))
+                    vm.SendCommand(new VMNetInteractionCancelCmd { ActionUID = queue[i].UID, ActorUID = avatar.PersistID });
+            }
+            TakeOverSentAt = Now;
+            TakeOverHeldFor = 0;
+            HITVM.Get()?.PlaySoundEvent(UISounds.QueueDelete);
+            SimitoneVR.Runtime?.Haptic(false, 0.5f, 0.08f);
+            SimitoneVR.Log("stick: cancelled " + avatar.Name + "'s actions");
+            return true;
+        }
+
+        private static bool HasCancellable(VMAvatar avatar)
+        {
+            var queue = avatar?.Thread?.Queue;
+            if (queue == null) return false;
+            foreach (var i in ShownEntries(queue)) if (!IsCancelled(avatar, queue[i])) return true;
+            return false;
+        }
+
+        /// <summary>The queue entries the game's queue display shows, in order (UIInteractionQueue's rule).</summary>
+        private static System.Collections.Generic.IEnumerable<int> ShownEntries(System.Collections.Generic.List<VMQueuedAction> queue)
+        {
+            var skipParentIdle = false;
+            for (int i = 0; i < queue.Count; i++)
+            {
+                var mode = queue[i].Mode;
+                if (mode != VMQueueMode.Idle && (i == 0 || mode != VMQueueMode.ParentExit) && (!skipParentIdle || mode != VMQueueMode.ParentIdle))
+                    yield return i;
+                if (mode == VMQueueMode.ParentIdle) skipParentIdle = true;
+            }
+        }
+
+        /// <summary>Already being cancelled (as the game's queue display marks it).</summary>
+        private static bool IsCancelled(VMAvatar avatar, VMQueuedAction action)
+        {
+            var priority = action == avatar.Thread.ActiveAction
+                ? avatar.GetPersonData(VMPersonDataVariable.Priority)
+                : action.Priority;
+            return action.NotifyIdle && priority <= 0;
+        }
+
+        /// <summary>Cancels one of a Sim's actions by UID, as clicking it in the game's queue does.</summary>
+        private static void CancelAction(VM vm, VMAvatar avatar, ushort uid)
+        {
+            var action = avatar.Thread?.Queue.FirstOrDefault(x => x.UID == uid);
+            if (action == null || IsCancelled(avatar, action)) return;
+            HITVM.Get()?.PlaySoundEvent(UISounds.QueueDelete);
+            vm.SendCommand(new VMNetInteractionCancelCmd { ActionUID = uid, ActorUID = avatar.PersistID });
         }
 
         /// <summary>
@@ -340,12 +453,13 @@ namespace Simitone.Client.VR
                 camera.PointerVisible = false;
                 return;
             }
-            if (SimitoneVR.MenuOpen)
+            if (SimitoneVR.OverlayHasPointer)
             {
-                // the VR options menu owns the pointer
+                // the VR options menu or keyboard has the pointer
+                var distance = SimitoneVR.OverlayPointerDistance;
                 camera.PointerVisible = true;
-                camera.PointerHasTarget = SimitoneVR.MenuPointerDistance > 0;
-                camera.PointerLength = (SimitoneVR.MenuPointerDistance > 0 ? SimitoneVR.MenuPointerDistance : 2f) * SimitoneVR.Settings.WorldScale;
+                camera.PointerHasTarget = distance > 0;
+                camera.PointerLength = (distance > 0 ? distance : 2f) * SimitoneVR.Settings.WorldScale;
                 return;
             }
             if (SimitoneVR.BuildMode)
@@ -387,6 +501,22 @@ namespace Simitone.Client.VR
             }
 
             var scale = SimitoneVR.Settings.WorldScale;
+
+            // the action bubble over your Sim (while you're stepped out): the trigger cancels what they're doing
+            if (camera.BubbleVisible && RayHitsSphere(camera.PointerStart, camera.PointerDirection, camera.BubblePosition,
+                camera.BubbleRadius, out var bubbleDistance))
+            {
+                camera.PointerVisible = true;
+                camera.PointerHasTarget = !camera.BubbleCancelled;
+                camera.PointerLength = bubbleDistance;
+                if (select && !lc.PieMenuOpen && DirectAvatar != null && !camera.BubbleCancelled)
+                {
+                    CancelAction(vm, DirectAvatar, camera.BubbleUID);
+                    SimitoneVR.Runtime?.Haptic(true, 0.35f, 0.03f);
+                }
+                return;
+            }
+
             var id = world.PickPointed();
             var target = id > 0 ? vm.GetObjectById(id) : null;
             if (target != null && target.Dead) target = null;
@@ -441,6 +571,13 @@ namespace Simitone.Client.VR
                 finally { worldState.SilentLevel = visible; }
             }
             if (lc.PieMenuOpen) SimitoneVR.Runtime?.Haptic(true, 0.35f, 0.03f);
+        }
+
+        private static bool RayHitsSphere(Vector3 start, Vector3 dir, Vector3 centre, float radius, out float distance)
+        {
+            distance = Vector3.Dot(centre - start, dir);
+            if (distance <= 0) return false;
+            return Vector3.DistanceSquared(start + dir * distance, centre) <= radius * radius;
         }
 
         // ------------------------------------------------------------------ UI, buttons, HUD
@@ -609,6 +746,32 @@ namespace Simitone.Client.VR
                     VMMotive.Energy, VMMotive.Fun, VMMotive.Social, VMMotive.Room };
                 for (int i = 0; i < 8; i++) Hud.Motives[i] = sim.GetMotiveData(motives[i]);
             }
+
+            // the action queue, as the game's queue display shows it
+            Hud.QueueCount = 0;
+            var queue = sim?.Thread?.Queue;
+            if (queue != null)
+            {
+                foreach (var i in ShownEntries(queue))
+                {
+                    if (Hud.QueueCount >= VRHudData.MaxQueue) break;
+                    var action = queue[i];
+                    var slot = Hud.QueueCount++;
+                    var item = Hud.Queue[slot];
+                    item.UID = action.UID;
+                    item.Name = action.Name ?? "";
+                    item.Active = i == 0;
+                    item.Cancelled = IsCancelled(sim, action);
+                    if (IconOwners[slot] != action.IconOwner || item.Icon == null)
+                    {
+                        IconOwners[slot] = action.IconOwner;
+                        try { item.Icon = action.IconOwner != null ? UIIconCache.GetObject(action.IconOwner) : null; }
+                        catch { item.Icon = null; }
+                    }
+                }
+            }
+            Hud.Messages = SimitoneVR.MessageCount;
+            Hud.MessageTitle = SimitoneVR.MessageTitle;
         }
     }
 }

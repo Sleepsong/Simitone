@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -61,11 +62,33 @@ namespace Simitone.Client.VR
             ['|'] = new byte[] { 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04 },
             ['%'] = new byte[] { 0x18, 0x19, 0x02, 0x04, 0x08, 0x13, 0x03 },
             ['+'] = new byte[] { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 },
+            ['!'] = new byte[] { 0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04 },
+            ['?'] = new byte[] { 0x0E, 0x11, 0x01, 0x02, 0x04, 0x00, 0x04 },
+            ['\''] = new byte[] { 0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00 },
+            ['&'] = new byte[] { 0x0C, 0x12, 0x14, 0x08, 0x15, 0x12, 0x0D },
             ['<'] = new byte[] { 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02 },
             ['('] = new byte[] { 0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02 },
             [')'] = new byte[] { 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08 },
             [' '] = new byte[] { 0, 0, 0, 0, 0, 0, 0 },
         };
+
+        /// <summary>Cuts <paramref name="text"/> to fit <paramref name="maxWidth"/> pixels, ending in ".." if it was cut.</summary>
+        public static string Fit(string text, int dot, int maxWidth)
+        {
+            text ??= "";
+            if (Measure(text, dot) <= maxWidth) return text;
+            var chars = Math.Max(0, (maxWidth / dot + 1) / (GlyphWidth + 1) - 2);
+            return text.Substring(0, Math.Min(text.Length, chars)).TrimEnd() + "..";
+        }
+
+        /// <summary>Keeps the end of <paramref name="text"/> that fits (for text being typed), starting ".." if cut.</summary>
+        public static string FitEnd(string text, int dot, int maxWidth)
+        {
+            text ??= "";
+            if (Measure(text, dot) <= maxWidth) return text;
+            var chars = Math.Max(0, (maxWidth / dot + 1) / (GlyphWidth + 1) - 2);
+            return ".." + text.Substring(Math.Max(0, text.Length - chars));
+        }
 
         /// <summary>Width in pixels of <paramref name="text"/> at the given dot size.</summary>
         public static int Measure(string text, int dot) => text.Length == 0 ? 0 : (text.Length * (GlyphWidth + 1) - 1) * dot;
