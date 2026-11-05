@@ -108,6 +108,26 @@ namespace Simitone.Client.VR
         public Vector3 PointerStart, PointerDirection;
         public float PointerLength = 6f;
         public bool PointerHasTarget;
+        private bool PointerAimValid;
+
+        // ---- buy/build mode (set by VRGameBridge). The game's own object holder and build tools do the work: they
+        // read a virtual mouse that SimitoneVR parks on CursorPixel, and in this mode the "mono" camera is replaced by
+        // a cursor camera that maps exactly that pixel onto where you aim (the arc's landing point while placing,
+        // along the controller's ray while picking things up).
+        public bool BuildMode;
+        /// <summary>Holding an object or using a build tool: aim with the arc. Otherwise the straight pointer picks.</summary>
+        public bool PlacementMode;
+        public bool PlacementValid = true;
+        /// <summary>The right stick's X axis rotates the held object instead of turning you.</summary>
+        public bool SuppressTurn;
+        /// <summary>Launch speed of the placement arc (m/s).</summary>
+        public float Reach = 7f;
+        /// <summary>Where the virtual mouse sits, in the coordinates the holder passes to EstTileAtPosWithScroll.</summary>
+        public Vector2 CursorPixel;
+        public Vector3 CursorTarget;
+        public bool CursorValid;
+        public readonly Vector3[] ArcPoints = new Vector3[64];
+        public int ArcCount;
 
         // desktop keyboard fallback (no controllers, e.g. testing with a simulated headset)
         private Vector2 KeyboardMove;
@@ -362,7 +382,7 @@ namespace Simitone.Client.VR
             var headTrack = head.Valid ? head.Position : new Vector3(0, settings.FallbackEyeHeight, 0);
 
             // ---- turning (pivot around the head so the world rotates around you, not around the play space centre)
-            float turnX = (input != null && input.Active ? input.Turn.X : 0) + KeyboardTurn;
+            float turnX = (input != null && input.Active && !SuppressTurn ? input.Turn.X : 0) + KeyboardTurn;
             float yawDelta = 0;
             if (settings.TurnMode == VRTurnMode.Snap && KeyboardTurn == 0)
             {
@@ -388,10 +408,21 @@ namespace Simitone.Client.VR
                 UpdateObserverRig(world, head, headTrack, input, turnX, dt);
             }
 
-            KeepAllFloorsVisible(world);
+            if (BuildMode)
+            {
+                // Build like the normal game: on your floor, with the floors above and the roof out of the way.
+                if (world.State.Level != PlayerLevel) world.State.Level = PlayerLevel;
+                world.State.DrawRoofs = false;
+            }
+            else
+            {
+                KeepAllFloorsVisible(world);
+                world.State.DrawRoofs = true;
+            }
             HeadWorld = TrackingToWorld(headTrack);
             UpdateMatrices(world, head);
             UpdatePointer(input);
+            UpdateBuildCursor(world, input, dt);
         }
 
         /// <summary>Sim mode: put the neutral head position inside the Sim's head.</summary>
@@ -440,8 +471,8 @@ namespace Simitone.Client.VR
         {
             var settings = Settings;
 
-            // ---- floor changes (right stick up/down, PageUp/PageDown)
-            float turnY = input != null && input.Active ? input.Turn.Y : 0;
+            // ---- floor changes (right stick up/down, PageUp/PageDown); while placing, the stick changes the reach
+            float turnY = input != null && input.Active && !(BuildMode && PlacementMode) ? input.Turn.Y : 0;
             int levelChange = KeyboardLevel;
             KeyboardLevel = 0;
             if (!LevelLatched && Math.Abs(turnY) > 0.8f && Math.Abs(turnX) < 0.5f)
@@ -655,6 +686,7 @@ namespace Simitone.Client.VR
 
         private void UpdatePointer(VRInput input)
         {
+            PointerAimValid = false;
             if (input == null || !input.Active)
             {
                 PointerVisible = false;
@@ -668,6 +700,99 @@ namespace Simitone.Client.VR
             }
             PointerStart = TrackingToWorld(aim.Position);
             PointerDirection = Vector3.Normalize(RotateYaw(aim.Forward, RigYaw));
+            PointerAimValid = true;
+        }
+
+        // ------------------------------------------------------------------ buy/build cursor
+
+        /// <summary>
+        /// Placing: a ballistic arc from the controller (like a teleport arc) lands on your floor, and the cursor
+        /// camera looks straight down at the landing point. Picking: the cursor camera looks down the controller's
+        /// ray, so the game's own picking finds what you point at. Either way the camera's projection is shifted so
+        /// that <see cref="CursorPixel"/> maps exactly to that aim, and given a tiny field of view so that any other
+        /// mouse position (e.g. while the pointer is on the catalogue) still maps to practically the same spot.
+        /// </summary>
+        private void UpdateBuildCursor(World world, VRInput input, float dt)
+        {
+            if (BuildMode && CursorValid && SimitoneVR.PanelPointerOnPanel)
+            {
+                // Choosing from the catalogue: keep the cursor where it was in the world (and hide the arc), so what
+                // you hold doesn't fly about while the pointer is on the panel.
+                ArcCount = 0;
+                return;
+            }
+            ArcCount = 0;
+            CursorValid = false;
+            if (!BuildMode || !PointerAimValid) return;
+            var cam = EyeCamera;
+            var scale = Scale;
+            Matrix view;
+
+            if (PlacementMode)
+            {
+                // (the stick scrolls the catalogue instead while you point at it)
+                var stickY = input != null && input.Active && !SimitoneVR.PanelPointerOnPanel ? input.Turn.Y : 0;
+                Reach = MathHelper.Clamp(Reach * (float)Math.Exp(stickY * 1.2f * dt), 1.5f, 18f);
+
+                var pos = PointerStart;
+                var velocity = PointerDirection * Reach * scale;
+                var gravity = 9.8f * scale;
+                const float step = 0.015f;
+                ArcPoints[ArcCount++] = pos;
+                bool landed = false;
+                for (int i = 0; i < 300 && !landed; i++)
+                {
+                    var next = pos + velocity * step;
+                    velocity.Y -= gravity * step;
+                    var floor = FloorHeight(world, new Vector2(next.X, next.Z) / TileUnits, PlayerLevel);
+                    if (next.Y <= floor)
+                    {
+                        var drop = pos.Y - next.Y;
+                        var f = drop > 1e-5f ? MathHelper.Clamp((pos.Y - floor) / drop, 0, 1) : 1;
+                        next = pos + (next - pos) * f;
+                        next.Y = floor;
+                        landed = true;
+                    }
+                    pos = next;
+                    if ((i % 5 == 4 || landed) && ArcCount < ArcPoints.Length) ArcPoints[ArcCount++] = pos;
+                }
+                if (!landed)
+                {
+                    // out of range: drop straight down from where the arc gave up
+                    pos.Y = FloorHeight(world, new Vector2(pos.X, pos.Z) / TileUnits, PlayerLevel);
+                    if (ArcCount < ArcPoints.Length) ArcPoints[ArcCount++] = pos;
+                }
+                CursorTarget = pos;
+                view = Matrix.CreateLookAt(pos + Vector3.Up * 20f, pos, Vector3.Forward);
+            }
+            else
+            {
+                var dir = PointerDirection;
+                var floor = FloorHeight(world, new Vector2(PointerStart.X, PointerStart.Z) / TileUnits, PlayerLevel);
+                var t = dir.Y < -0.01f ? (floor - PointerStart.Y) / dir.Y : 30f * scale;
+                CursorTarget = PointerStart + dir * Math.Max(0, t);
+                var up = Math.Abs(dir.Y) > 0.99f ? Vector3.Forward : Vector3.Up;
+                view = Matrix.CreateLookAt(PointerStart, PointerStart + dir, up);
+            }
+
+            var pp = world.State.Device.PresentationParameters;
+            cam.MonoView = view;
+            cam.MonoProjection = VRMath.ShiftedProjection(0.004f, pp.BackBufferWidth, pp.BackBufferHeight, CursorPixel, 0.05f, 4000f);
+            cam.Invalidate();
+            CursorValid = true;
+        }
+
+        /// <summary>
+        /// Picks the arc's reach so that it lands on <paramref name="target"/> with the controller where it is now:
+        /// used when you grab an object, so it doesn't jump away.
+        /// </summary>
+        public void AimArcAt(Vector3 target)
+        {
+            if (!PointerAimValid) return;
+            var scale = Scale;
+            var speed = VRMath.ArcSpeedToHit(PointerStart, PointerDirection, target, 9.8f * scale);
+            if (speed == null) return; // above the straight line: no arc gets there
+            Reach = MathHelper.Clamp(speed.Value / scale, 1.5f, 18f);
         }
 
         /// <summary>Sets up the pointer camera along the controller ray (for FreeSO's picking).</summary>

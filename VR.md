@@ -6,8 +6,13 @@
 
 Simitone can be played in VR through OpenXR. **In a lot you are your Sim**: you see through their eyes, walk
 them around with the thumbstick, and point at things to use them. The clock is on your right wrist and your
-needs are on your left. Everything that isn't the 3D lot (loading screens, the neighbourhood, CAS, build and
-buy mode) appears on a flat virtual screen floating in front of you.
+needs are on your left.
+
+In **buy and build mode** you stay where you are and place things remotely. A beam picks objects up from a
+distance, and a teleport-style arc shows where they'll land.
+
+Everything that isn't the 3D lot (loading screens, the neighbourhood, CAS, options) appears on a flat virtual
+screen floating in front of you.
 
 It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux, Monado, and natively on the
 **Valve Steam Frame** (SteamOS, arm64), standalone or streamed from a PC.
@@ -38,9 +43,25 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
 - **right wrist:** a watch with the time, game speed and household money;
 - **left wrist:** the selected Sim's name and needs.
 
+**Buy and build mode** (left grip cycles live → buy → build → live, or pick the mode on the flat screen). You
+stay in first person, where you were standing. The game pauses, as usual, and you build on the floor you're on.
+- **The catalogue** is on a desk-like panel below you; point at it and pull the trigger to choose something.
+- **Placing:** what you're holding hangs at the end of an arc from your controller, like a teleport arc. Green
+  means it fits, red means it doesn't. Aim and pull the trigger to place it.
+  - Right stick up/down throws the arc further or nearer.
+  - Right stick left/right turns the object 90 degrees.
+- **Moving existing objects:** point the straight beam at an object (green when you're on one) and pull the
+  trigger to pick it up, gravity-gun style; it stays where it is until you aim the arc somewhere else.
+- **Cancel and sell:** the right grip puts it back or cancels (as Escape does), and B sells or deletes what you're
+  holding.
+- **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool on the
+  panel, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
+  arc.
+- **Other floors:** in observer mode (B) right stick up/down changes the floor you're standing and building on.
+
 **Flat screen.** A (or Tab) switches between first person and the normal game on a floating screen, where the
-laser pointer is your mouse. Build, buy and options mode, and the travel map, switch to the flat screen
-automatically and come back to first person when you're done.
+laser pointer is your mouse. Options mode and the travel map switch to the flat screen automatically and come
+back to first person when you're done. With `VRBuildMode=False`, buy and build use the flat screen too.
 
 ## Running on a PC
 
@@ -61,19 +82,20 @@ If no runtime or headset is found, Simitone logs why and carries on as the norma
 
 ## Controls
 
-| Input | First person: Sim | First person: observer | Flat screen |
-|---|---|---|---|
-| Left stick | Walk your Sim | Move | n/a |
-| Left stick click (hold) | Run | Sprint | n/a |
-| Right stick left/right | Snap / smooth turn | Snap / smooth turn | n/a |
-| Right stick up/down | n/a | Go up / down a floor | Scroll |
-| Right stick click | Cycle game speed | Cycle game speed | Cycle game speed |
-| Right trigger | Point and interact; click on menus | Point and interact; click on menus | Left click |
-| Right grip | Close a pie menu; right click on menus | Close a pie menu; right click on menus | Right click |
-| A | Flat screen | Flat screen | First person |
-| B | Switch to observer | Switch to playing as your Sim | Recentre the screen |
-| X | Pause / resume | Pause / resume | Pause / resume |
-| Y | Next Sim in the family | Next Sim in the family | Next Sim in the family |
+| Input | First person: Sim | First person: observer | Buy / build (first person) | Flat screen |
+|---|---|---|---|---|
+| Left stick | Walk your Sim | Move | (observer: move) | n/a |
+| Left stick click (hold) | Run | Sprint | (observer: sprint) | n/a |
+| Left grip | Buy mode | Buy mode | Next mode (buy → build → live) | Next mode |
+| Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
+| Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else (observer) floor | Scroll |
+| Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
+| Right trigger | Point and interact; click on menus | Point and interact; click on menus | Pick up / place / drag a tool; choose in the catalogue | Left click |
+| Right grip | Close a pie menu; right click on menus | Close a pie menu; right click on menus | Cancel (put back) | Right click |
+| A | Flat screen | Flat screen | Flat screen | First person |
+| B | Switch to observer | Switch to playing as your Sim | Sell / delete what you hold; else switch Sim / observer | Recentre the screen |
+| X | Pause / resume | Pause / resume | n/a | Pause / resume |
+| Y | Next Sim in the family | Next Sim in the family | n/a | Next Sim in the family |
 
 Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_controller_interaction`),
 **Oculus Touch**, **Valve Index** (left A/B act as X/Y), **HTC Vive** wands (trackpads move and turn) and the
@@ -104,7 +126,9 @@ Q/E to turn, PageUp/PageDown to change floors (observer).
 | `HeightOffset` | 0 | Observer: metres added to your tracked height (e.g. 0.5 to play seated) |
 | `FallbackEyeHeight` | 1.65 | Eye height if the runtime has no floor-level tracking space |
 | `ScreenDistance` / `ScreenWidth` | 2.0 / 2.4 | Flat screen distance and width, metres |
-| `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating pie menu / dialog panel distance and width, metres |
+| `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating pie menu / dialog panel distance and width, metres (the buy/build catalogue desk is closer, lower and 90% as wide) |
+| `VRBuildMode` | True | Buy and build in first person with remote placement. `False` uses the flat screen instead |
+| `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
 | `SimHeadSmoothing` | 8 | How quickly the view follows your Sim's head (per second). Lower is smoother but laggier |
 | `LeanLimit` | 0.3 | How far (m) you can lean away from your Sim's head before the view drags along |
@@ -199,7 +223,7 @@ Client/Simitone/Simitone.Client/VR/
   SimitoneVR.cs                       game-loop glue: frame begin/end, flat screen, UI panel, laser mouse, buttons
   VRLotWorld.cs                       World subclass: renders the lot once per eye + pointer beam; FreeSO picking
   VRCameraController.cs               eye matrices; Sim mode (head anchor, lean) and observer locomotion
-  VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, flat screen for build/buy
+  VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, buy/build mode, flat screen
   VRUILayer.cs                        captures the game UI into its own texture for the floating panel
   VRWristHud.cs, VRPixelFont.cs       watch and needs displays
 ```
@@ -230,6 +254,20 @@ On the next game update, `VRGameBridge`:
 - picks what the controller points at (FreeSO's own picker, run through a camera looking down the ray);
 - opens pie menus with `UILotControl.OpenPieMenu`.
 
+**Buy and build mode** reuses everything Simitone already does with the mouse: the object holder
+(`UIObjectHolder`), which buys, moves, rotates, places and sells with all the game's placement rules, and the
+build tools (`UICustomLotControl`s).
+- **Virtual mouse:** off the catalogue, `SimitoneVR` parks the mouse in the middle of the window and drives its
+  left button with the trigger.
+- **Cursor camera:** `VRCameraController.UpdateBuildCursor` replaces the "mono" camera, which the UI's
+  screen-to-world maths uses, with one whose shifted, tiny-FOV projection makes that pixel unproject exactly onto
+  your aim:
+  - while placing: a camera straight above the arc's landing point;
+  - while picking: a camera looking down the controller's ray.
+- **Result:** `World.EstTileAtPosWithScroll` and `GetObjectIDAtScreenPos` see the mouse "at" the arc or beam.
+- **On the catalogue:** because the field of view is tiny, a mouse sitting there still maps to practically the
+  same spot, so a held object doesn't fly about while you choose.
+
 Design choices:
 
 - **FreeSO is used as-is**, at the gamepad work's engine (`Sleepsong/FreeSO` `simitone/controller-phase7`,
@@ -247,6 +285,10 @@ Design choices:
 
 - `tools/vr/layout-check/run.sh` compares every hand-written OpenXR struct's size and field offsets with the
   Khronos C headers (165 checks).
+- `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
+  - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
+  - the picking camera reproduces the controller ray;
+  - the arc solver lands on a grabbed object.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
@@ -256,7 +298,7 @@ Design choices:
 ## Known limitations and next steps
 
 - **Untested on real hardware**, including the Steam Frame, and untested with a real lot (needs The Sims). That
-  includes Sim mode, pointing, the floating panel and the wrist displays.
+  includes Sim mode, pointing, the floating panel, the wrist displays and buy/build mode.
 - **Uncertain hardware details:**
   - The Frame controller's face-button paths are inferred from its Touch-like layout. If SteamVR rejects them,
     it falls back to a reduced binding set and then to the Touch bindings (logged in `vr.log`).
@@ -274,9 +316,12 @@ Design choices:
 - Cosmetic: FreeSO smooths avatar normals in its draw call, so with two eye passes that smoothing runs twice as
   fast.
 
-**Planned: VR build and buy mode.** Today build and buy are on the flat screen. The plan is for you to stand
-in one spot in Sim view and place objects remotely: a beam from the controller picks up or aims a catalogue
-object, the placement preview follows where you point (snapping to tiles and rotating with the stick), and the
-trigger places it. Think Half-Life: Alyx's gravity gloves, or the arc of VR teleport locomotion, but placing
-furniture instead of moving yourself. The pointer, FreeSO picking and floor-hit code in `VRGameBridge` are the
-starting point, along with `UILotControl`'s object holder.
+**Buy/build mode: next steps.**
+- **Catalogue:** it is the 2D catalogue on a panel; a VR-native catalogue would be a wrist tablet with 3D
+  thumbnails.
+- **Feedback:** there is no "pull" animation; the held object snaps from tile to tile at the end of the arc, as it
+  does under the mouse. Placement errors play the game's error sound, but the reason only shows as a tooltip on the
+  panel.
+- **Your Sim's floor only:** in Sim mode you can only build on the floor your Sim is on; switch to observer (B) to
+  build elsewhere.
+- **Cutaway:** walls stay up while you build, with no cutaway.

@@ -37,6 +37,10 @@ namespace Simitone.VR
     ///   A (right) ......... first person / flat screen         B (right) .......... play as Sim / observer; recentre screen
     ///   X (left) .......... pause / resume the game            Y (left) ........... next Sim in the family
     ///   Right trigger ..... point and interact / click         Right grip ......... right click / close a pie menu
+    ///   Left grip ......... cycle live / buy / build mode
+    ///
+    /// In buy and build mode the trigger picks up and places, the right stick rotates (X) and changes the arc's reach
+    /// (Y) while holding something, the right grip cancels and B sells what you're holding.
     ///
     /// Bindings are suggested for the Steam Frame controller, Oculus Touch, Valve Index, HTC Vive and the KHR
     /// simple controller. SteamVR also lets players rebind everything in its controller binding UI.
@@ -50,13 +54,13 @@ namespace Simitone.VR
         private ulong LeftHand, RightHand;
 
         private ulong MoveAction, TurnAction, SprintAction;
-        private ulong ToggleViewAction, SwitchModeAction, PauseAction, SpeedAction, NextSimAction;
+        private ulong ToggleViewAction, SwitchModeAction, PauseAction, SpeedAction, NextSimAction, BuildMenuAction;
         private ulong SelectAction, SecondaryAction, AimPoseAction, GripPoseAction, HapticAction;
         private ulong LeftAimSpace, RightAimSpace, LeftGripSpace, RightGripSpace;
 
         public Vector2 Move;
         public Vector2 Turn;
-        public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, Select, Secondary;
+        public VRButton Sprint, ToggleView, SwitchMode, Pause, Speed, NextSim, BuildMenu, Select, Secondary;
         public float SelectValue, SecondaryValue;
         public VRPose LeftAim, RightAim, LeftGrip, RightGrip;
         public bool Active;
@@ -90,6 +94,7 @@ namespace Simitone.VR
             PauseAction = CreateAction("pause", "Pause / resume", XrActionType.BooleanInput, false);
             SpeedAction = CreateAction("speed", "Cycle game speed", XrActionType.BooleanInput, false);
             NextSimAction = CreateAction("next_sim", "Next Sim in the family", XrActionType.BooleanInput, false);
+            BuildMenuAction = CreateAction("build_menu", "Cycle live / buy / build mode", XrActionType.BooleanInput, false);
             SelectAction = CreateAction("select", "Interact / click", XrActionType.FloatInput, false);
             SecondaryAction = CreateAction("secondary", "Right click / close menu", XrActionType.FloatInput, false);
             AimPoseAction = CreateAction("aim", "Pointer", XrActionType.PoseInput, true);
@@ -167,6 +172,7 @@ namespace Simitone.VR
                     (TurnAction, R + "input/thumbstick"),
                     (SelectAction, R + "input/trigger/value"),
                     (SecondaryAction, R + "input/squeeze/value"),
+                    (BuildMenuAction, L + "input/squeeze/value"),
                     (AimPoseAction, L + "input/aim/pose"),
                     (AimPoseAction, R + "input/aim/pose"),
                     (GripPoseAction, L + "input/grip/pose"),
@@ -218,6 +224,7 @@ namespace Simitone.VR
                 (NextSimAction, L + "input/b/click"),
                 (SelectAction, R + "input/trigger/value"),
                 (SecondaryAction, R + "input/squeeze/value"),
+                (BuildMenuAction, L + "input/squeeze/value"),
                 (AimPoseAction, L + "input/aim/pose"),
                 (AimPoseAction, R + "input/aim/pose"),
                 (GripPoseAction, L + "input/grip/pose"),
@@ -321,6 +328,7 @@ namespace Simitone.VR
             Pause.Set(GetBool(session, PauseAction));
             Speed.Set(GetBool(session, SpeedAction));
             NextSim.Set(GetBool(session, NextSimAction));
+            BuildMenu.Set(GetBool(session, BuildMenuAction));
             SelectValue = GetFloat(session, SelectAction);
             SecondaryValue = GetFloat(session, SecondaryAction);
             // Hysteresis so a resting finger does not chatter the click.
@@ -338,7 +346,7 @@ namespace Simitone.VR
             Active = false;
             Move = Turn = Vector2.Zero;
             Sprint.Set(false); ToggleView.Set(false); SwitchMode.Set(false); Pause.Set(false); Speed.Set(false);
-            NextSim.Set(false); Select.Set(false); Secondary.Set(false);
+            NextSim.Set(false); BuildMenu.Set(false); Select.Set(false); Secondary.Set(false);
             SelectValue = SecondaryValue = 0;
             LeftAim.Valid = RightAim.Valid = LeftGrip.Valid = RightGrip.Valid = false;
         }

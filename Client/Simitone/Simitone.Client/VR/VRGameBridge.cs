@@ -12,6 +12,7 @@ using FSO.SimAntics.Engine;
 using FSO.SimAntics.Model;
 using FSO.SimAntics.NetPlay.Model.Commands;
 using Microsoft.Xna.Framework;
+using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Screens;
 using Simitone.VR;
 
@@ -28,7 +29,11 @@ namespace Simitone.Client.VR
     ///    doesn't fire for them (confirmed on hardware for the gamepad).
     ///  - <b>Pointing</b>: the right controller picks objects and Sims; the trigger opens their real pie menu (or "Go
     ///    Here" on the floor), which shows on the floating UI panel together with any dialog.
-    ///  - <b>Flat screen</b> for build/buy/options and the travel map, returning to first person afterwards.
+    ///  - <b>Buy and build mode</b> in first person: the catalogue sits on a desk-like panel, the pointer picks objects
+    ///    up from a distance and an arc places them (see <see cref="VRCameraController"/>'s build cursor). The game's
+    ///    own object holder and build tools do the work, driven by a virtual mouse.
+    ///  - <b>Flat screen</b> for options and the travel map (and buy/build if VRBuildMode is off), returning to
+    ///    first person afterwards.
     ///  - Family switching, pause and speed buttons, and the data for the wrist displays.
     /// </summary>
     public class VRGameBridge
@@ -46,6 +51,9 @@ namespace Simitone.Client.VR
         private double Now;
 
         private bool LeftForFlatScreen;
+        private bool WasBuyBuild;
+        private UIObjectSelection LastHolding;
+        private bool RotateLatched;
         private bool WasImmersive;
         private int WallsModeBefore = 1;
         private bool FrontendVisibleBefore = true;
@@ -95,8 +103,19 @@ namespace Simitone.Client.VR
             UpdateHud(vm, lc);
             HandleButtons(vm, lc, camera, immersive);
 
-            // ---- build/buy/options and the travel map are flat: step out of first person, and come back after.
-            var wantFlat = !lc.LiveMode || !lc.Visible;
+            // ---- buy/build happen in first person (VRBuildMode); options and the travel map are flat: step out of
+            // first person for those, and come back after.
+            var mainMode = Screen.Frontend?.MainPanel?.Mode ?? UIMainPanelMode.LIVE;
+            var buyBuild = !lc.LiveMode && (mainMode == UIMainPanelMode.BUY || mainMode == UIMainPanelMode.BUILD);
+            var vrBuild = buyBuild && SimitoneVR.Settings.VRBuildMode;
+            var wantFlat = !lc.Visible || (!lc.LiveMode && !vrBuild);
+            if (vrBuild && !WasBuyBuild && !immersive && world.Visible && SimitoneVR.SessionRunning)
+            {
+                // switched to buy/build from the flat screen: build in first person
+                world.ToggleImmersive(resume: true);
+                immersive = world.Immersive;
+            }
+            WasBuyBuild = buyBuild;
             if (immersive && wantFlat)
             {
                 LeftForFlatScreen = true;
@@ -110,7 +129,8 @@ namespace Simitone.Client.VR
                 immersive = world.Immersive;
             }
 
-            UpdateImmersiveUI(lc, immersive);
+            UpdateImmersiveUI(lc, immersive, vrBuild);
+            UpdateBuildMode(camera, lc, immersive && vrBuild);
 
             // ---- play as your Sim
             VMAvatar wanted = null;
@@ -123,7 +143,7 @@ namespace Simitone.Client.VR
 
             // ---- pointing at things
             UpdatePointer(world, camera, vm, lc, state, immersive);
-            SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen());
+            SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen() || SimitoneVR.BuildMode);
         }
 
         // ------------------------------------------------------------------ direct control
@@ -291,6 +311,32 @@ namespace Simitone.Client.VR
                 camera.PointerVisible = false;
                 return;
             }
+            if (SimitoneVR.BuildMode)
+            {
+                if (cancel)
+                {
+                    var holder = lc.ObjectHolder;
+                    if (holder?.Holding != null) holder.Cancel();
+                    else lc.ReleaseCustomControl();
+                }
+                // The object holder / build tools pick and place through the virtual mouse; here we only show the
+                // straight pointer (green over something) while nothing is held.
+                if (SimitoneVR.PanelPointerOnPanel)
+                {
+                    camera.PointerVisible = true;
+                    camera.PointerHasTarget = true;
+                    camera.PointerLength = SimitoneVR.PanelPointerDistance * SimitoneVR.Settings.WorldScale;
+                }
+                else if (!camera.PlacementMode)
+                {
+                    camera.PointerVisible = true;
+                    var picked = world.PickPointed();
+                    camera.PointerHasTarget = picked > 0 && vm.GetObjectById(picked) is VMGameObject;
+                    camera.PointerLength = Math.Max(0.2f, Vector3.Distance(camera.PointerStart, camera.CursorTarget));
+                }
+                return;
+            }
+
             if (cancel && lc.PieMenuOpen) lc.CancelPie();
 
             if (SimitoneVR.PanelShown)
@@ -367,36 +413,103 @@ namespace Simitone.Client.VR
         /// away around the (invisible) mouse. The rest of the UI stays live so pie menus and dialogs can be shown on
         /// the floating panel.
         /// </summary>
-        private void UpdateImmersiveUI(Simitone.Client.UI.Panels.UILotControl lc, bool immersive)
+        private void UpdateImmersiveUI(Simitone.Client.UI.Panels.UILotControl lc, bool immersive, bool vrBuild)
         {
-            if (immersive == WasImmersive) return;
-            WasImmersive = immersive;
             var frontend = Screen.Frontend;
-            if (immersive)
+            if (immersive != WasImmersive)
             {
-                WallsModeBefore = lc.WallsMode;
-                lc.WallsMode = 2;
-                if (frontend != null)
+                WasImmersive = immersive;
+                if (immersive)
                 {
-                    FrontendVisibleBefore = frontend.Visible;
-                    frontend.Visible = false;
+                    WallsModeBefore = lc.WallsMode;
+                    lc.WallsMode = 2;
+                    if (frontend != null) FrontendVisibleBefore = frontend.Visible;
+                }
+                else
+                {
+                    lc.WallsMode = WallsModeBefore;
+                    if (frontend != null) frontend.Visible = FrontendVisibleBefore;
+                    lc.CancelPie();
                 }
             }
-            else
+            // In first person the bottom panel is only shown in buy/build mode, where it's the catalogue.
+            if (immersive && frontend != null && frontend.Visible != vrBuild) frontend.Visible = vrBuild;
+        }
+
+        /// <summary>Buy/build mode in first person: what the camera's cursor does, rotating, and grabbing.</summary>
+        private void UpdateBuildMode(VRCameraController camera, Simitone.Client.UI.Panels.UILotControl lc, bool active)
+        {
+            SimitoneVR.BuildMode = active;
+            camera.BuildMode = active;
+            var holder = lc.ObjectHolder;
+            var holding = active ? holder?.Holding : null;
+            camera.PlacementMode = active && (holding != null || lc.CustomControl != null);
+            camera.PlacementValid = holding == null || holding.CanPlace == VMPlacementError.Success;
+            camera.SuppressTurn = holding != null;
+
+            if (!active)
             {
-                lc.WallsMode = WallsModeBefore;
-                if (frontend != null) frontend.Visible = FrontendVisibleBefore;
-                lc.CancelPie();
+                LastHolding = null;
+                RotateLatched = false;
+                return;
             }
+
+            // Grabbed an existing object: aim the arc at it so it doesn't jump away (the holder's grab offset was
+            // measured for the straight pointer).
+            if (holding != null && holding != LastHolding && holding.IsBought)
+            {
+                var basePos = holding.Group.BaseObject.Position;
+                var tile = new Vector2(basePos.x / 16f + 0.5f, basePos.y / 16f + 0.5f);
+                holding.TilePosOffset = Vector2.Zero;
+                camera.AimArcAt(new Vector3(tile.X * VRCameraController.TileUnits,
+                    VRCameraController.FloorHeight(Screen.VRWorld, tile, camera.PlayerLevel),
+                    tile.Y * VRCameraController.TileUnits));
+            }
+            if (holding != null && holding != LastHolding) SimitoneVR.Runtime?.Haptic(true, 0.4f, 0.04f);
+            LastHolding = holding;
+
+            // Right stick left/right turns what you hold by 90 degrees.
+            var input = SimitoneVR.Runtime?.Input;
+            var turnX = input != null && input.Active ? input.Turn.X : 0;
+            if (holding != null && !RotateLatched && Math.Abs(turnX) > 0.7f)
+            {
+                holder.RotateObject(turnX > 0 ? 2 : -2);
+                RotateLatched = true;
+            }
+            else if (Math.Abs(turnX) < 0.3f) RotateLatched = false;
         }
 
         private void HandleButtons(VM vm, Simitone.Client.UI.Panels.UILotControl lc, VRCameraController camera, bool immersive)
         {
             if (SimitoneVR.ConsumeModeSwitch() && immersive)
             {
-                SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer : VRPlayMode.Sim;
-                SimitoneVR.Log("play mode: " + SimitoneVR.PlayMode);
-                HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                if (SimitoneVR.BuildMode && lc.ObjectHolder?.Holding != null)
+                {
+                    lc.ObjectHolder.SellBack(null); // B while holding something in buy/build: sell / delete it
+                }
+                else
+                {
+                    SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer : VRPlayMode.Sim;
+                    SimitoneVR.Log("play mode: " + SimitoneVR.PlayMode);
+                    HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                }
+            }
+
+            if (SimitoneVR.ConsumeBuildMenu())
+            {
+                // left grip: live -> buy -> build -> live
+                var frontend = Screen.Frontend;
+                if (frontend?.MainPanel != null)
+                {
+                    var next = frontend.MainPanel.Mode switch
+                    {
+                        UIMainPanelMode.LIVE => UIMainPanelMode.BUY,
+                        UIMainPanelMode.BUY => UIMainPanelMode.BUILD,
+                        _ => UIMainPanelMode.LIVE
+                    };
+                    frontend.SwitchMode(next);
+                    SimitoneVR.Log("mode: " + next);
+                }
             }
 
             if (SimitoneVR.ConsumeNextSim())

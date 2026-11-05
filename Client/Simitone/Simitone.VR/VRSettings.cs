@@ -44,6 +44,13 @@ namespace Simitone.VR
         /// <summary>Virtual screen (menus, build/buy, CAS, neighbourhood) distance and width in metres.</summary>
         public float ScreenDistance = 2.0f;
         public float ScreenWidth = 2.4f;
+        /// <summary>
+        /// Buy and build mode in first person: pick objects up from a distance with the pointer and place them where
+        /// an arc lands, like a teleport arc. False switches buy/build to the flat screen instead.
+        /// </summary>
+        public bool VRBuildMode = true;
+        /// <summary>Starting launch speed of the placement arc (m/s); the right stick changes it while placing.</summary>
+        public float ArcReach = 7f;
         /// <summary>Pie menus and dialogs float this far in front of you (metres), this wide.</summary>
         public float PanelDistance = 1.3f;
         public float PanelWidth = 1.7f;

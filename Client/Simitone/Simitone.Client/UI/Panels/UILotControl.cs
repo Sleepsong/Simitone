@@ -413,6 +413,15 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        /// <summary>Puts away the current build tool (wall, floor, wallpaper...), as Escape does.</summary>
+        public void ReleaseCustomControl()
+        {
+            if (CustomControl == null) return;
+            CustomControl.Release();
+            CustomControl = null;
+            OnCustomControlReleased?.Invoke();
+        }
+
         public void SimulateMD(UpdateState state)
         {
             if (CustomControl != null) CustomControl.MouseDown(state);

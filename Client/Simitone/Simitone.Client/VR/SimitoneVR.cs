@@ -67,25 +67,33 @@ namespace Simitone.Client.VR
         private static Vector3 ScreenPosition;
         private static Quaternion ScreenOrientation = Quaternion.Identity;
 
-        // floating UI panel (first person, while a pie menu or dialog is open)
+        // floating UI panel (first person, while a pie menu or dialog is open, and in buy/build mode)
         /// <summary>Set every update by <see cref="VRGameBridge"/>.</summary>
         public static bool UIPanelWanted;
+        /// <summary>Buy/build mode in first person (set by <see cref="VRGameBridge"/>): the catalogue is on a desk-like
+        /// panel and, off the panel, the pointer is the game's mouse at the placement cursor.</summary>
+        public static bool BuildMode;
         public static bool PanelShown { get; private set; }
         public static bool PanelPointerOnPanel { get; private set; }
         public static float PanelPointerDistance { get; private set; }
         private static Vector3 PanelPosition;
         private static Quaternion PanelOrientation = Quaternion.Identity;
+        private static float PanelWidth = 1.7f;
+        private static bool PanelDesk;
         private static bool PanelArmed; // the trigger that opened a menu must be let go before it clicks on it
+        private static bool WorldArmed; // ...and a trigger held while coming off the panel doesn't click in the world
+        private static bool LastOnPanel;
 
         // laser pointer -> mouse
         private static bool PointerActive;
+        private static bool CursorOnSurface; // the pointer is on the screen/panel (draw a cursor there)
         private static Point PointerPixel;
         private static int ScrollOffset;
         private static float ScrollAccumulator;
         private static bool PointerLeft, PointerRight;
 
         // requests consumed by the game (VRGameBridge), set from controller presses in BeginDraw
-        private static bool PauseRequested, SpeedRequested, ModeSwitchRequested, NextSimRequested;
+        private static bool PauseRequested, SpeedRequested, ModeSwitchRequested, NextSimRequested, BuildMenuRequested;
         private static bool WorldSelectRequested, CancelRequested;
 
         private static Game Game;
@@ -252,9 +260,10 @@ namespace Simitone.Client.VR
             var input = Runtime.Input;
             var inputActive = input != null && input.Active;
 
-            // ---- floating UI panel (first person only)
-            var showPanel = immersive && UIPanelWanted;
-            if (showPanel && !PanelShown) { PlacePanel(); PanelArmed = false; }
+            // ---- floating UI panel (first person only): pie menus and dialogs straight ahead, the buy/build
+            // catalogue lower down and tilted up like a desk
+            var showPanel = immersive && (UIPanelWanted || BuildMode);
+            if (showPanel && (!PanelShown || PanelDesk != BuildMode)) { PlacePanel(BuildMode); PanelArmed = false; }
             PanelShown = showPanel && LastHead.Valid;
 
             if (inputActive)
@@ -269,10 +278,12 @@ namespace Simitone.Client.VR
                 if (input.Pause.Pressed) PauseRequested = true;
                 if (input.Speed.Pressed) SpeedRequested = true;
                 if (input.NextSim.Pressed) NextSimRequested = true;
+                if (input.BuildMenu.Pressed) BuildMenuRequested = true;
             }
 
             // ---- laser pointer
             PointerActive = false;
+            CursorOnSurface = false;
             PanelPointerOnPanel = false;
             PanelPointerDistance = 0;
             if (inputActive)
@@ -285,13 +296,31 @@ namespace Simitone.Client.VR
                 }
                 else if (PanelShown)
                 {
-                    if (!input.Select.Down) PanelArmed = true;
+                    if (!input.Select.Down) PanelArmed = WorldArmed = true;
                     var pp = gd.PresentationParameters;
-                    UpdatePointer(gd, input, PanelPosition, PanelOrientation, Settings.PanelWidth,
-                        (float)pp.BackBufferHeight / Math.Max(1, pp.BackBufferWidth), PanelArmed);
+                    var aspect = (float)pp.BackBufferHeight / Math.Max(1, pp.BackBufferWidth);
+                    // a trigger held while sliding onto the panel (e.g. dragging a wall) doesn't click there
+                    if (!LastOnPanel && input.Select.Down && HitsSurface(input, PanelPosition, PanelOrientation, PanelWidth, aspect))
+                        PanelArmed = false;
+                    UpdatePointer(gd, input, PanelPosition, PanelOrientation, PanelWidth, aspect, PanelArmed);
                     PanelPointerOnPanel = PointerActive;
-                    if (input.Select.Pressed && !PointerActive) WorldSelectRequested = true; // beside the panel
-                    if (input.Secondary.Pressed && !PointerActive) CancelRequested = true;
+                    if (BuildMode && !PointerActive)
+                    {
+                        // Off the catalogue the pointer is the game's mouse, parked where the cursor camera maps it
+                        // onto your aim (VRCameraController.UpdateBuildCursor).
+                        if (LastOnPanel && input.Select.Down) WorldArmed = false;
+                        PointerPixel = WorldCursorPixel(gd);
+                        PointerLeft = WorldArmed && input.Select.Down;
+                        PointerRight = false;
+                        PointerActive = true;
+                        if (WorldArmed && input.Select.Pressed) Runtime.Haptic(true, 0.2f, 0.015f);
+                    }
+                    else if (!PointerActive)
+                    {
+                        if (input.Select.Pressed) WorldSelectRequested = true; // beside the panel
+                    }
+                    if (input.Secondary.Pressed && !PanelPointerOnPanel) CancelRequested = true;
+                    LastOnPanel = PanelPointerOnPanel;
                 }
                 else
                 {
@@ -299,6 +328,9 @@ namespace Simitone.Client.VR
                     if (input.Secondary.Pressed) CancelRequested = true;
                 }
             }
+
+            var vrCamera = world?.VRCamera;
+            if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
 
             // ---- wrist displays (drawn now: switching render targets later would disturb the frame)
             if (immersive && Wrists != null)
@@ -412,15 +444,15 @@ namespace Simitone.Client.VR
             {
                 Swapchain = PanelSwapchain,
                 Pose = VRMath.Pose(PanelPosition, PanelOrientation),
-                Width = Settings.PanelWidth,
-                Height = Settings.PanelWidth * h / w,
+                Width = PanelWidth,
+                Height = PanelWidth * h / w,
                 Transparent = true
             });
         }
 
         private static void DrawCursor(uint image, int height)
         {
-            if (!PointerActive) return;
+            if (!PointerActive || !CursorOnSurface) return;
             // GL origin is bottom-left.
             int cx = PointerPixel.X, cy = height - 1 - PointerPixel.Y;
             int s = Math.Max(4, height / 120);
@@ -442,14 +474,47 @@ namespace Simitone.Client.VR
             ScreenPoseDirty = false;
         }
 
-        private static void PlacePanel()
+        /// <param name="desk">Buy/build catalogue: lower and tilted up towards you, so the world above stays clear.</param>
+        private static void PlacePanel(bool desk)
         {
             var head = LastHead;
             if (!head.Valid) return;
-            var yaw = VRMath.Yaw(head.Orientation);
-            PanelOrientation = Quaternion.CreateFromAxisAngle(Vector3.Up, yaw);
-            var forward = Vector3.Transform(-Vector3.UnitZ, PanelOrientation);
-            PanelPosition = head.Position + forward * Settings.PanelDistance - new Vector3(0, 0.15f, 0);
+            var yaw = Quaternion.CreateFromAxisAngle(Vector3.Up, VRMath.Yaw(head.Orientation));
+            var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
+            PanelDesk = desk;
+            if (desk)
+            {
+                PanelWidth = Settings.PanelWidth * 0.9f;
+                PanelOrientation = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-40));
+                PanelPosition = head.Position + forward * (Settings.PanelDistance * 0.7f) - new Vector3(0, 0.55f, 0);
+            }
+            else
+            {
+                PanelWidth = Settings.PanelWidth;
+                PanelOrientation = yaw;
+                PanelPosition = head.Position + forward * Settings.PanelDistance - new Vector3(0, 0.15f, 0);
+            }
+        }
+
+        /// <summary>The virtual mouse position used for the world in buy/build mode: the middle of the window,
+        /// clear of the catalogue (bottom) and the item info panel (top).</summary>
+        private static Point WorldCursorPixel(GraphicsDevice gd)
+        {
+            var pp = gd.PresentationParameters;
+            return new Point(pp.BackBufferWidth / 2, pp.BackBufferHeight / 2);
+        }
+
+        private static bool HitsSurface(VRInput input, Vector3 position, Quaternion orientation, float width, float aspect)
+        {
+            var aim = input.RightAim.Valid ? input.RightAim : input.LeftAim;
+            if (!aim.Valid) return false;
+            var normal = Vector3.Transform(Vector3.UnitZ, orientation);
+            var denom = Vector3.Dot(aim.Forward, normal);
+            if (Math.Abs(denom) < 1e-4f) return false;
+            var t = Vector3.Dot(position - aim.Position, normal) / denom;
+            if (t <= 0) return false;
+            var local = Vector3.Transform(aim.Position + aim.Forward * t - position, Quaternion.Inverse(orientation));
+            return Math.Abs(local.X) <= width / 2 && Math.Abs(local.Y) <= width * aspect / 2;
         }
 
         /// <summary>Points the controller's ray at a flat surface; when it hits, the hit drives the mouse.</summary>
@@ -481,6 +546,7 @@ namespace Simitone.Client.VR
             ScrollOffset += (int)ScrollAccumulator;
             ScrollAccumulator -= (int)ScrollAccumulator;
             PointerActive = true;
+            CursorOnSurface = true;
             if (armed && (input.Select.Pressed || input.Secondary.Pressed)) Runtime.Haptic(true, 0.25f, 0.015f);
         }
 
@@ -539,6 +605,7 @@ namespace Simitone.Client.VR
         public static bool ConsumeSpeedRequest() => Consume(ref SpeedRequested);
         public static bool ConsumeModeSwitch() => Consume(ref ModeSwitchRequested);
         public static bool ConsumeNextSim() => Consume(ref NextSimRequested);
+        public static bool ConsumeBuildMenu() => Consume(ref BuildMenuRequested);
         public static bool ConsumeWorldSelect() => Consume(ref WorldSelectRequested);
         public static bool ConsumeCancel() => Consume(ref CancelRequested);
     }

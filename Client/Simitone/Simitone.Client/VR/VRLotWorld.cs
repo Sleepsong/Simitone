@@ -26,7 +26,7 @@ namespace Simitone.Client.VR
 
         private SpriteBatch MirrorBatch;
         private BasicEffect BeamEffect;
-        private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[12];
+        private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[64 * 6 + 6];
         private ICameraController LastActiveCamera;
         private int FramesSinceInit;
         private bool AutoEntered;
@@ -191,41 +191,52 @@ namespace Simitone.Client.VR
             }
         }
 
-        /// <summary>The laser from the controller: a thin strip facing the eye, plus a dot where it ends.</summary>
+        /// <summary>
+        /// The laser from the controller: a thin strip facing the eye with a dot where it ends. While placing
+        /// something in buy/build mode it is the placement arc instead, green where the object fits and red where not.
+        /// </summary>
         private void DrawPointerBeam(GraphicsDevice device, VREyeCamera cam)
         {
             var vr = VRCamera;
-            if (!vr.PointerVisible || BeamEffect == null) return;
-            var start = vr.PointerStart;
-            var end = start + vr.PointerDirection * vr.PointerLength;
+            if (BeamEffect == null) return;
             var eyePos = Matrix.Invert(cam.View).Translation;
             var scale = SimitoneVR.Settings.WorldScale;
-            var colour = vr.PointerHasTarget ? new Color(120, 255, 140) : new Color(230, 230, 255);
-
-            var toEye = eyePos - (start + end) / 2;
-            var side = Vector3.Cross(end - start, toEye);
-            if (side.LengthSquared() < 1e-8f) return;
-            side.Normalize();
             var w = 0.002f * scale;
-            var faded = colour * 0.1f;
-            BeamVerts[0] = new VertexPositionColor(start - side * w, faded);
-            BeamVerts[1] = new VertexPositionColor(start + side * w, faded);
-            BeamVerts[2] = new VertexPositionColor(end - side * w, colour);
-            BeamVerts[3] = new VertexPositionColor(end + side * w, colour);
-            BeamVerts[4] = BeamVerts[2];
-            BeamVerts[5] = BeamVerts[1];
+            int count = 0;
+            Color colour;
+            Vector3 end;
+
+            if (vr.BuildMode && vr.PlacementMode && vr.ArcCount > 1)
+            {
+                colour = vr.PlacementValid ? new Color(120, 255, 140) : new Color(255, 90, 80);
+                for (int i = 0; i + 1 < vr.ArcCount; i++)
+                {
+                    var alpha = 0.25f + 0.75f * (i + 1) / (vr.ArcCount - 1);
+                    count = AddSegment(count, vr.ArcPoints[i], vr.ArcPoints[i + 1], eyePos, w, colour * alpha, colour * alpha);
+                }
+                end = vr.ArcPoints[vr.ArcCount - 1];
+            }
+            else
+            {
+                if (!vr.PointerVisible) return;
+                var start = vr.PointerStart;
+                end = start + vr.PointerDirection * vr.PointerLength;
+                colour = vr.PointerHasTarget ? new Color(120, 255, 140) : new Color(230, 230, 255);
+                count = AddSegment(count, start, end, eyePos, w, colour * 0.1f, colour);
+            }
+            if (count == 0) return;
 
             // the dot: a small square facing the eye
             var forward = Vector3.Normalize(eyePos - end);
             var up = Math.Abs(forward.Y) > 0.95f ? Vector3.Forward : Vector3.Up;
             var right = Vector3.Normalize(Vector3.Cross(up, forward)) * 0.012f * scale;
             up = Vector3.Normalize(Vector3.Cross(forward, right)) * 0.012f * scale;
-            BeamVerts[6] = new VertexPositionColor(end - right - up, colour);
-            BeamVerts[7] = new VertexPositionColor(end + right - up, colour);
-            BeamVerts[8] = new VertexPositionColor(end - right + up, colour);
-            BeamVerts[9] = BeamVerts[8];
-            BeamVerts[10] = BeamVerts[7];
-            BeamVerts[11] = new VertexPositionColor(end + right + up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end - right - up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end + right - up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end - right + up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end - right + up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end + right - up, colour);
+            BeamVerts[count++] = new VertexPositionColor(end + right + up, colour);
 
             BeamEffect.World = Matrix.Identity;
             BeamEffect.View = cam.View;
@@ -236,9 +247,25 @@ namespace Simitone.Client.VR
             foreach (var pass in BeamEffect.CurrentTechnique.Passes)
             {
                 pass.Apply();
-                device.DrawUserPrimitives(PrimitiveType.TriangleList, BeamVerts, 0, 4);
+                device.DrawUserPrimitives(PrimitiveType.TriangleList, BeamVerts, 0, count / 3);
             }
             device.DepthStencilState = DepthStencilState.Default;
+        }
+
+        /// <summary>Adds a strip from a to b, turned to face the eye, as two triangles.</summary>
+        private int AddSegment(int index, Vector3 a, Vector3 b, Vector3 eyePos, float halfWidth, Color colourA, Color colourB)
+        {
+            if (index + 6 > BeamVerts.Length - 6) return index;
+            var side = Vector3.Cross(b - a, eyePos - (a + b) / 2);
+            if (side.LengthSquared() < 1e-10f) return index;
+            side = Vector3.Normalize(side) * halfWidth;
+            BeamVerts[index++] = new VertexPositionColor(a - side, colourA);
+            BeamVerts[index++] = new VertexPositionColor(a + side, colourA);
+            BeamVerts[index++] = new VertexPositionColor(b - side, colourB);
+            BeamVerts[index++] = new VertexPositionColor(b - side, colourB);
+            BeamVerts[index++] = new VertexPositionColor(a + side, colourA);
+            BeamVerts[index++] = new VertexPositionColor(b + side, colourB);
+            return index;
         }
 
         public override void Dispose()
