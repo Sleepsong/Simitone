@@ -1,106 +1,129 @@
 using System;
 using System.Collections.Generic;
+using FSO.Client.UI.Controls;
 using FSO.Client.UI.Model;
+using FSO.Common.Rendering.Framework.Model;
 using FSO.HIT;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
+using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using Simitone.VR;
 
 namespace Simitone.Client.VR
 {
     /// <summary>
-    /// The first-run comfort setup: a few pages, each one question with big choices (the current setting is
-    /// highlighted, and choosing applies it at once): what happens when your Sim walks off, turning, moving, standing
-    /// or seated, and the vignette. Shown the first time VR starts (until <see cref="VRSettings.ComfortSetupDone"/>),
-    /// and from the VR menu's "Comfort setup". Point with the right controller; the trigger chooses, the grip goes back.
+    /// The first-run comfort setup, as a Simitone dialog floating in front of you: a few pages, each one question with
+    /// outlined choices (the current setting is filled green, and choosing applies it at once): what happens when your
+    /// Sim walks off, turning, moving, standing or seated, and the vignette. Shown the first time VR starts (until
+    /// <see cref="VRSettings.ComfortSetupDone"/>), and from the VR menu's "Comfort setup". Point with the right
+    /// controller and pull the trigger; the grip goes back a page.
     /// </summary>
-    public class VRSetup : VRPanel
+    public class VRSetup : VRUIPanel
     {
-        private const int Width = 720, Height = 640, Margin = 24;
-        private const int ChoiceTop = 150, ChoiceHeight = 84, ChoiceGap = 10;
-        private const int NavTop = Height - Margin - 56, NavWidth = 200;
+        private const int PanelWidth = 1000, PanelHeight = 790, Left = 50, ContentWidth = 880;
+        private const int ChoicesTop = 230, ChoiceHeight = 96, ChoiceGap = 10;
 
         private class Choice
         {
-            public string Name;
-            public string Help;
+            public string Name, Help;
             public Action Apply;
             public Func<bool> IsCurrent;
         }
 
         private class Page
         {
-            public string Title;
-            public string Intro;
+            public string Title, Intro;
             public readonly List<Choice> Choices = new List<Choice>();
         }
 
         private readonly List<Page> Pages = new List<Page>();
         private int PageIndex;
-        public bool Open { get; private set; }
-        private int Hover = NoHover;   // a choice index, or BackButton / NextButton
-        private bool Armed;
-        private bool Dirty = true;
+        private readonly UILabel StepLabel, PageTitle, Intro;
+        private readonly UIBigButton Back, Next;
+        private readonly List<UIVRChoice> ChoiceUI = new List<UIVRChoice>();
 
-        private const int NoHover = -1, BackButton = -2, NextButton = -3;
         private static VRSettings Settings => SimitoneVR.Settings;
 
-        public VRSetup()
+        public VRSetup() : base(PanelWidth, PanelHeight, 0.75f)
         {
-            WidthMetres = 0.66f;
+            DefinePages();
+            VRUI.DialogFrame(this, PanelWidth, PanelHeight, "Comfort setup");
+            StepLabel = VRUI.Label("", 19, UIStyle.Current.DialogTitle, FSO.Client.UI.Framework.TextAlignment.Right | FSO.Client.UI.Framework.TextAlignment.Middle);
+            StepLabel.Position = new Vector2(PanelWidth - 32 - 40 - 200, 10);
+            StepLabel.Size = new Vector2(200, 70);
+            Add(StepLabel);
+            PageTitle = VRUI.Label("", 25, UIStyle.Current.Text);
+            PageTitle.Position = new Vector2(Left, 104);
+            Add(PageTitle);
+            Intro = VRUI.Paragraph("", 15, UIStyle.Current.Text * 0.85f, ContentWidth, 80);
+            Intro.Position = new Vector2(Left, 146);
+            Add(Intro);
 
+            Back = new UIBigButton(false) { Caption = "Back", Width = 275 };
+            Back.Position = new Vector2(Left, PanelHeight - 125);
+            Back.OnButtonClick += _ => GoBack();
+            Add(Back);
+            Next = new UIBigButton(true) { Caption = "Next", Width = 275 };
+            Next.Position = new Vector2(PanelWidth - 32 - Left - 275, PanelHeight - 125);
+            Next.OnButtonClick += _ => GoNext();
+            Add(Next);
+            BuildPage();
+        }
+
+        private void DefinePages()
+        {
             Pages.Add(new Page
             {
-                Title = "WELCOME TO SIMITONE VR",
-                Intro = "A FEW QUICK CHOICES TO KEEP YOU COMFORTABLE. YOU CAN CHANGE THEM ANY TIME IN THE VR MENU: THE LEFT "
-                    + "MENU BUTTON, OR POINT AT YOUR LEFT WRIST AND PULL THE TRIGGER. POINT WITH THE RIGHT CONTROLLER AND "
-                    + "PULL THE TRIGGER TO CHOOSE."
+                Title = "Welcome to Simitone VR",
+                Intro = "A few quick choices to keep you comfortable. You can change them any time in the VR menu: the left "
+                    + "menu button, or the VR options button on your left wrist. Point with the right controller and pull the "
+                    + "trigger to choose."
             });
 
-            var tiers = Add("WHEN YOUR SIM WALKS OFF ON THEIR OWN", "TO A FRIDGE, A CHAIR, A FRIEND...");
-            Option(tiers, "COMFORTABLE (BEST TO START)", "STEP OUT, WATCH, AND FOLLOW THEM IN QUICK BLINKS. THE VIEW NEVER SLIDES.",
+            var tiers = Add("When your Sim walks off on their own", "To the fridge, a chair, a friend...");
+            Option(tiers, "Comfortable (best to start)", "Step out, watch, and follow them in quick blinks. The view never slides.",
                 () => Settings.SimActionView = VRSimActionView.Comfortable, () => Settings.SimActionView == VRSimActionView.Comfortable);
-            Option(tiers, "MODERATE", "STEP OUT AND GLIDE AFTER THEM AT A STEADY WALKING PACE.",
+            Option(tiers, "Moderate", "Step out and glide after them at a steady walking pace.",
                 () => Settings.SimActionView = VRSimActionView.Moderate, () => Settings.SimActionView == VRSimActionView.Moderate);
-            Option(tiers, "INTENSE", "STAY IN THEIR HEAD WHILE THEY WALK YOU ABOUT. FOR PEOPLE USED TO VR.",
+            Option(tiers, "Intense", "Stay in their head while they walk you about. For people used to VR.",
                 () => Settings.SimActionView = VRSimActionView.Intense, () => Settings.SimActionView == VRSimActionView.Intense);
 
-            var turning = Add("TURNING", "WITH THE RIGHT STICK.");
-            Option(turning, "SNAP 30 (BEST TO START)", "TURN IN QUICK STEPS.", () => SetSnap(30), () => IsSnap(30));
-            Option(turning, "SNAP 45", "BIGGER STEPS.", () => SetSnap(45), () => IsSnap(45));
-            Option(turning, "SMOOTH", "TURN CONTINUOUSLY. THIS CAN MAKE SOME PEOPLE FEEL SICK.",
+            var turning = Add("Turning", "With the right stick.");
+            Option(turning, "Snap 30 (best to start)", "Turn in quick steps.", () => SetSnap(30), () => IsSnap(30));
+            Option(turning, "Snap 45", "Bigger steps.", () => SetSnap(45), () => IsSnap(45));
+            Option(turning, "Smooth", "Turn continuously. This can make some people feel sick.",
                 () => { Settings.TurnMode = VRTurnMode.Smooth; Settings.SmoothTurnDegreesPerSecond = 120; },
                 () => Settings.TurnMode == VRTurnMode.Smooth);
 
-            var moving = Add("MOVING", "PLAYING AS YOUR SIM, THEY WALK; AS AN OBSERVER, YOU DO.");
-            Option(moving, "STICK AND ARC", "WALK WITH THE LEFT STICK, OR HOLD THE LEFT TRIGGER, AIM THE ARC AND LET GO TO GO THERE.",
+            var moving = Add("Moving", "Playing as your Sim, they walk; as an observer, you do.");
+            Option(moving, "Stick and arc", "Walk with the left stick, or hold the left trigger, aim the arc and let go to go there.",
                 () => Settings.Movement = VRMovement.StickAndArc, () => Settings.Movement == VRMovement.StickAndArc);
-            Option(moving, "ARC ONLY (MOST COMFORTABLE)", "ONLY THE ARC: YOUR SIM WALKS THERE AND YOU FOLLOW. NO SLIDING AT ALL.",
+            Option(moving, "Arc only (most comfortable)", "Only the arc: your Sim walks there and you follow. No sliding at all.",
                 () => Settings.Movement = VRMovement.Arc, () => Settings.Movement == VRMovement.Arc);
-            Option(moving, "STICK ONLY", "ONLY THE LEFT STICK.",
+            Option(moving, "Stick only", "Only the left stick.",
                 () => Settings.Movement = VRMovement.Stick, () => Settings.Movement == VRMovement.Stick);
 
-            var posture = Add("HOW ARE YOU PLAYING?", "IN YOUR SIM'S HEAD YOU SEE FROM THEIR HEIGHT EITHER WAY.");
-            Option(posture, "STANDING", "YOUR OWN HEIGHT WHEN YOU STEP OUT OR ROAM AS AN OBSERVER.",
+            var posture = Add("How are you playing?", "In your Sim's head you see from their height either way.");
+            Option(posture, "Standing", "Your own height when you step out, or roam as an observer.",
                 () => Settings.HeightOffset = 0, () => Settings.HeightOffset < 0.01f);
-            Option(posture, "SEATED", "RAISES YOUR VIEW BY 45 CM WHEN YOU'RE NOT IN YOUR SIM'S HEAD.",
+            Option(posture, "Seated", "Raises your view by 45 cm when you're not in your Sim's head.",
                 () => Settings.HeightOffset = 0.45f, () => Settings.HeightOffset >= 0.01f);
 
-            var vignette = Add("VIGNETTE", "DARKENS THE EDGE OF YOUR VIEW WHILE IT MOVES WITHOUT YOU MOVING YOUR HEAD.");
-            Option(vignette, "OFF", "NEVER.", () => SetVignette(VRVignetteStrength.Off, VRVignetteStrength.Off),
+            var vignette = Add("Vignette", "Darkens the edge of your view while it moves without you moving your head.");
+            Option(vignette, "Off", "Never.", () => SetVignette(VRVignetteStrength.Off, VRVignetteStrength.Off),
                 () => Settings.Vignette == VRVignetteStrength.Off);
-            Option(vignette, "LOW", "A LITTLE, WHILE YOUR SIM CARRIES YOU.", () => SetVignette(VRVignetteStrength.Low, VRVignetteStrength.Off),
+            Option(vignette, "Low", "A little, while your Sim carries you.", () => SetVignette(VRVignetteStrength.Low, VRVignetteStrength.Off),
                 () => Settings.Vignette == VRVignetteStrength.Low);
-            Option(vignette, "MEDIUM (BEST TO START)", "WHILE YOUR SIM CARRIES YOU, AND A LITTLE WHILE YOU WALK THEM.",
+            Option(vignette, "Medium (best to start)", "While your Sim carries you, and a little while you walk them.",
                 () => SetVignette(VRVignetteStrength.Medium, VRVignetteStrength.Low), () => Settings.Vignette == VRVignetteStrength.Medium);
-            Option(vignette, "HIGH", "STRONGLY, ALSO WHILE YOU WALK THEM.", () => SetVignette(VRVignetteStrength.High, VRVignetteStrength.Medium),
+            Option(vignette, "High", "Strongly, also while you walk them.", () => SetVignette(VRVignetteStrength.High, VRVignetteStrength.Medium),
                 () => Settings.Vignette == VRVignetteStrength.High);
 
             Pages.Add(new Page
             {
-                Title = "ALL SET",
-                Intro = "HAVE FUN! IF ANYTHING FEELS UNCOMFORTABLE, TAKE A BREAK AND TRY THE COMFORTABLE OPTIONS. THE VR MENU HAS "
-                    + "ALL OF THESE AND MORE, AND THE GAME'S OPTIONS PANEL HAS A VR BUTTON TOO."
+                Title = "All set",
+                Intro = "Have fun! If anything feels uncomfortable, take a break and try the more comfortable options. The VR "
+                    + "menu has all of these and more, and the game's Options panel has a VR button too."
             });
         }
 
@@ -128,24 +151,69 @@ namespace Simitone.Client.VR
             Settings.VignetteWhenMoving = moving;
         }
 
-        // ------------------------------------------------------------------ open, close, pointing
+        // ------------------------------------------------------------------ pages
 
-        public void Show(VRPose head, VRInput input)
+        private void BuildPage()
+        {
+            foreach (var old in ChoiceUI) Remove(old);
+            ChoiceUI.Clear();
+            var page = Pages[PageIndex];
+            StepLabel.Caption = $"{PageIndex + 1} of {Pages.Count}";
+            PageTitle.Caption = page.Title;
+            Intro.Caption = page.Intro ?? "";
+            for (int i = 0; i < page.Choices.Count; i++)
+            {
+                var choice = page.Choices[i];
+                var ui = new UIVRChoice(choice.Name, choice.Help, ContentWidth, ChoiceHeight);
+                ui.Position = new Vector2(Left, ChoicesTop + i * (ChoiceHeight + ChoiceGap));
+                ui.OnChosen += () =>
+                {
+                    choice.Apply();
+                    Settings.Save();
+                    HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                };
+                Add(ui);
+                ChoiceUI.Add(ui);
+            }
+            Back.Visible = PageIndex > 0;
+            Next.Caption = PageIndex == Pages.Count - 1 ? "Start" : "Next";
+        }
+
+        protected override void Refresh(UpdateState state)
+        {
+            var page = Pages[PageIndex];
+            for (int i = 0; i < ChoiceUI.Count && i < page.Choices.Count; i++) ChoiceUI[i].Selected = page.Choices[i].IsCurrent();
+        }
+
+        /// <summary>Starts the setup from its first page, in front of you.</summary>
+        public void Begin(VRPose head)
         {
             if (!head.Valid) return;
-            PlaceInFront(head, 0.9f, 0.1f, 8);
-            Open = true;
+            PlaceInFront(head, 1.0f, 0.1f, 8);
             PageIndex = 0;
-            Armed = input == null || (!input.Select.Down && !input.Secondary.Down);
-            Hover = NoHover;
-            Dirty = true;
+            BuildPage();
+            Show();
             HITVM.Get()?.PlaySoundEvent(UISounds.Click);
         }
 
-        private void Finish()
+        public void GoBack()
         {
-            Open = false;
-            PointerDistance = 0;
+            if (PageIndex == 0) return;
+            PageIndex--;
+            BuildPage();
+            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+        }
+
+        private void GoNext()
+        {
+            if (PageIndex < Pages.Count - 1)
+            {
+                PageIndex++;
+                BuildPage();
+                HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                return;
+            }
+            Hide();
             Settings.ComfortSetupDone = true;
             Settings.Save();
             SimitoneVR.Log($"comfort setup done: {Settings.SimActionView}, {Settings.TurnMode} {Settings.SnapTurnDegrees}, "
@@ -153,124 +221,12 @@ namespace Simitone.Client.VR
             HITVM.Get()?.PlaySoundEvent(UISounds.Click);
         }
 
-        private const int IntroTop = 82, IntroLine = 20;
-
-        /// <summary>Where a page's choices start: below its intro text.</summary>
-        private static int ChoicesTop(Page page)
-            => Math.Max(ChoiceTop, IntroTop + VRPixelFont.Wrap(page.Intro ?? "", 2, Width - Margin * 2).Count * IntroLine + 12);
-
-        private static Rectangle ChoiceRect(Page page, int i)
-            => new Rectangle(Margin, ChoicesTop(page) + i * (ChoiceHeight + ChoiceGap), Width - Margin * 2, ChoiceHeight);
-        private static Rectangle BackRect => new Rectangle(Margin, NavTop, NavWidth, 56);
-        private static Rectangle NextRect => new Rectangle(Width - Margin - NavWidth, NavTop, NavWidth, 56);
-
-        /// <summary>Points the right controller at the setup and handles choosing. Call once per frame while open.</summary>
-        public void Update(VRInput input, VRRuntime runtime)
-        {
-            PointerDistance = 0;
-            if (!Open || input == null || !input.Active) return;
-            if (!input.Select.Down && !input.Secondary.Down) Armed = true;
-
-            var page = Pages[PageIndex];
-            var hover = NoHover;
-            if (PointAt(input, Width, Height, out var pixel))
-            {
-                for (int i = 0; i < page.Choices.Count; i++) if (ChoiceRect(page, i).Contains(pixel)) hover = i;
-                if (PageIndex > 0 && BackRect.Contains(pixel)) hover = BackButton;
-                if (NextRect.Contains(pixel)) hover = NextButton;
-            }
-            if (hover != Hover)
-            {
-                Hover = hover;
-                Dirty = true;
-                if (hover != NoHover) runtime?.Haptic(true, 0.1f, 0.01f);
-            }
-            if (!Armed) return;
-
-            if (input.Secondary.Pressed && PageIndex > 0) GoTo(PageIndex - 1, runtime);
-            if (!input.Select.Pressed || hover == NoHover) return;
-            if (hover == BackButton) GoTo(PageIndex - 1, runtime);
-            else if (hover == NextButton)
-            {
-                if (PageIndex == Pages.Count - 1) Finish();
-                else GoTo(PageIndex + 1, runtime);
-            }
-            else
-            {
-                page.Choices[hover].Apply();
-                Settings.Save();
-                Dirty = true;
-                runtime?.Haptic(true, 0.3f, 0.02f);
-                HITVM.Get()?.PlaySoundEvent(UISounds.Click);
-            }
-        }
-
-        private void GoTo(int index, VRRuntime runtime)
+        /// <summary>For the UI check tool: shows a page without placing the panel.</summary>
+        public void ShowPage(int index)
         {
             PageIndex = Math.Max(0, Math.Min(Pages.Count - 1, index));
-            Hover = NoHover;
-            Dirty = true;
-            runtime?.Haptic(true, 0.2f, 0.015f);
-            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
-        }
-
-        // ------------------------------------------------------------------ drawing
-
-        /// <summary>Redraws the setup when something changed. Call outside the main draw.</summary>
-        public void Render(GraphicsDevice gd)
-        {
-            if (!Open || (!Dirty && Target != null)) return;
-            Dirty = false;
-            var page = Pages[PageIndex];
-
-            var bg = new Color(16, 20, 28) * 0.95f;
-            var frame = new Color(90, 200, 255);
-            var text = Color.White * 0.92f;
-            var green = new Color(140, 255, 190);
-
-            BeginRender(gd, Width, Height);
-            Fill(new Rectangle(0, 0, Width, Height), bg);
-            Border(new Rectangle(0, 0, Width, Height), frame, 3);
-            Text($"COMFORT SETUP  {PageIndex + 1}/{Pages.Count}", Margin, 18, 2, text * 0.5f);
-            var titleDot = VRPixelFont.Measure(page.Title, 4) <= Width - Margin * 2 ? 4 : 3; // long titles a size smaller
-            Text(VRPixelFont.Fit(page.Title, titleDot, Width - Margin * 2), Margin, titleDot == 4 ? 40 : 44, titleDot, frame);
-            var y = IntroTop;
-            foreach (var line in VRPixelFont.Wrap(page.Intro ?? "", 2, Width - Margin * 2))
-            {
-                Text(line, Margin, y, 2, text * 0.8f);
-                y += IntroLine;
-            }
-
-            for (int i = 0; i < page.Choices.Count; i++)
-            {
-                var choice = page.Choices[i];
-                var r = ChoiceRect(page, i);
-                var current = choice.IsCurrent();
-                Fill(r, i == Hover ? frame * 0.3f : current ? green * 0.18f : new Color(40, 48, 62));
-                if (current) Border(r, green, 3);
-                Text((current ? "> " : "") + choice.Name, r.X + 16, r.Y + 12, 3, current ? green : text);
-                var helpY = r.Y + 44;
-                foreach (var line in VRPixelFont.Wrap(choice.Help, 2, r.Width - 32))
-                {
-                    Text(line, r.X + 16, helpY, 2, text * 0.7f);
-                    helpY += 18;
-                }
-            }
-
-            if (PageIndex > 0)
-            {
-                Fill(BackRect, Hover == BackButton ? frame * 0.45f : new Color(40, 48, 62));
-                TextCentred("BACK", BackRect, 3, text);
-            }
-            var last = PageIndex == Pages.Count - 1;
-            Fill(NextRect, Hover == NextButton ? frame * 0.6f : frame * 0.3f);
-            TextCentred(last ? "START" : "NEXT", NextRect, 3, Color.White);
-            EndRender(gd);
-        }
-
-        public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
-        {
-            if (Open) SubmitPanel(runtime, ref submission);
+            BuildPage();
+            Show();
         }
     }
 }

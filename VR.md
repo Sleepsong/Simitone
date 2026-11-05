@@ -81,9 +81,10 @@ best-supported single fix for motion sickness.
 - `VignetteWhenMoving` sets it while you walk with the stick or turn smoothly (Low by default).
 
 **VR menu.** Open it with the left controller's menu button (Touch-style controllers). On Index, squeeze the left
-trackpad. On any controller, point at your left wrist (the needs display lights up) and pull the trigger.
+trackpad. On any controller, press **VR Options** on your left wrist display.
 On the desktop keyboard, press F9.
-- **Using it:** point at an option; the trigger steps it forward and the grip steps it back.
+- **Using it:** it's a Simitone dialog with the options in two lists; point at an option and pull the trigger to
+  step it to its next value.
 - **Options:**
   - comfort: Sim actions, vignette strengths;
   - moving: movement (stick, arc or both), turning (snap 30/45/90 or smooth), walk direction (head or left hand),
@@ -93,7 +94,7 @@ On the desktop keyboard, press F9.
   - render scale;
   - *Comfort setup*, which runs the first-run setup again.
 - **Saving:** changes apply immediately and are saved to `vr.ini`.
-- **Closing:** pull the trigger beside the menu, choose *Close*, or press the menu button again.
+- **Closing:** pull the trigger beside the menu, press OK, or press the menu button again.
 - **In the game's Options panel:** with `-vr`, options mode has a **VR** button next to Free Will. It opens the same
   options as a list you click through (each click steps an option), on the flat screen or on the desktop.
 
@@ -115,15 +116,18 @@ panel's VR button.
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game.
 
 **Wrist displays.** Turn your wrist to look at it:
-- **right wrist:** a watch with the time, game speed and household money, plus any messages waiting;
-- **left wrist:** the selected Sim's name, their action queue and their needs.
-  - The queue shows up to five icons, the running action first and outlined, with its name underneath; a red bar
-    means it's being cancelled.
-  - Point the right controller at an icon (the name turns red: "CANCEL ...") and pull the trigger to cancel it,
-    as clicking it in the game's queue does. Anywhere else on the display, the trigger opens the VR menu.
+- **right wrist:** a watch made of the game's clock (time and speed) and money display, plus any messages
+  waiting;
+- **left wrist:** the selected Sim's name, their action queue, their needs and a **VR Options** button.
+  - The queue uses the game's own queue icons: the running action is big and ringed, with its name underneath, and
+    a cancel mark shows one being cancelled.
+  - Point the right controller at an icon and pull the trigger to cancel it, as clicking it in the game's queue
+    does.
+  - The needs are the game's need bars, Hunger to Bladder on the left and Energy to Room on the right, as in The
+    Sims.
 
-**Action bubble.** While you're stepped out of your Sim, what they're doing floats over their head as that
-action's icon. Point at it and pull the trigger to cancel it. `ActionBubble=False` turns it off.
+**Action bubble.** While you're stepped out of your Sim, what they're doing floats over their head, drawn as the
+game's queue icon. Point at it and pull the trigger to cancel it. `ActionBubble=False` turns it off.
 
 **Buy and build mode** (left grip cycles live → buy → build → live, or pick the mode on the flat screen). You
 stay in first person, where you were standing. The game pauses, as usual, and you build on the floor you're on.
@@ -192,12 +196,12 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Left stick click | Run (until you let go of the stick) | Sprint (hold) | (observer: sprint) | n/a |
 | Left grip | Buy mode | Buy mode | Next mode (buy → build → live) | Next mode |
 | Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
-| Left menu button (Touch); left trackpad squeeze (Index); trigger on the left wrist | VR menu | VR menu | VR menu | VR menu |
+| Left menu button (Touch); left trackpad squeeze (Index); VR Options on the left wrist | VR menu | VR menu | VR menu | VR menu |
 | Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
 | Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else (observer) floor | Scroll |
 | Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
 | Right trigger | Point and interact; click on menus | Point and interact; click on menus | Pick up / place / drag a tool; choose in the catalogue | Left click |
-| Right trigger on the left wrist | Cancel the queue icon pointed at; elsewhere, the VR menu | Same | Same | n/a |
+| Right trigger on the left wrist | Cancel the queue icon pointed at, or press VR Options | Same | Same | n/a |
 | Right trigger while looking at the watch | Read the oldest waiting message | Same | Same | n/a |
 | Left stick held while your Sim is busy | Cancel their actions and take over | n/a | n/a | n/a |
 | Right grip | Close a pie menu; right click on menus | Close a pie menu; right click on menus | Cancel (put back) | Right click |
@@ -334,7 +338,7 @@ with SteamVR, and connect the Frame to SteamVR on that PC (Steam Link). Nothing 
 | Too many blinks | `SimActionView=Moderate`, a longer `LeashDistance`, or `BlinkDuration=0` for instant moves |
 | Holding the stick cancels what my Sim is doing | That's the take-over; set `StickCancelsActions=False` (VR menu: *Stick when busy*) |
 | A message buzzed but nothing appeared | It's on your watch: look at it and pull the right trigger. Or set `WatchMessages=False` |
-| No way to open the VR menu on your controller | Point at your left wrist (needs `WristDisplays` not `Off`) and pull the trigger, or press F9 |
+| No way to open the VR menu on your controller | Press VR Options on your left wrist display (needs `WristDisplays` not `Off`), or F9 |
 | Wrist displays in the wrong place | They sit on the controller's grip pose, which varies by controller; set `WristDisplays=Always` to see them |
 | Game runs too fast / slow in VR | Leave `UpdateRate` at the default or pass `-hzNN`; it must not be changed mid-lot |
 
@@ -355,7 +359,8 @@ Client/Simitone/Simitone.Client/VR/
   VRCameraController.cs               eye matrices; Sim mode (comfort tiers, blinks, lean), observer locomotion,
                                       vignette amount, movement arc
   VRComfortOverlay.cs                 vignette ring and blink fade, drawn last in each eye
-  VRPanel.cs                          base for floating panels (quad layer, pointing, render target)
+  VRUIPanel.cs                        a panel of Simitone UI floating in the room (a UIExternalContainer)
+  VRUIControls.cs                     Simitone-style building blocks: dialog frame, choices, keys, headset icon
   VROptions.cs                        the option list shared by the VR menu and the Options panel
   VRMenu.cs                           the VR options menu (live apply, saved to vr.ini)
   VRSetup.cs                          the first-run comfort setup
@@ -364,7 +369,7 @@ Client/Simitone/Simitone.Client/VR/
   VRGameBridge.cs                     direct control of your Sim, pointing -> pie menus, buy/build mode, flat screen,
                                       movement arc -> "Go Here"
   VRUILayer.cs                        captures the game UI into its own texture for the floating panel
-  VRWristHud.cs, VRPixelFont.cs       watch (and waiting messages), needs and action queue displays
+  VRWristHud.cs                       watch (and waiting messages), needs and action queue displays
 ```
 
 Per frame, all on the game thread inside MonoGame's `Draw`:
@@ -423,6 +428,13 @@ Design choices:
   catches up on updates when frames take longer, so simulation speed doesn't depend on the headset's refresh
   rate. A running session also counts as window focus, so a headset user never sees MonoGame's inactive
   slowdown or a deaf UI.
+- **The VR panels are Simitone UI.** The menu, the comfort setup, the keyboard and the wrist displays are
+  `UIExternalContainer`s:
+  - FreeSO's UI layer updates them and renders each into its own texture with its own input, using Simitone's
+    fonts, art (dialog stripes and title bars, outlined boxes, big buttons, the clock, money, need bars and queue
+    icons) and controls (touch lists, buttons);
+  - the controller's ray is each panel's mouse, so buttons, lists and queue icons work as they do with a mouse;
+  - `VRUIPanel` copies the texture into a swapchain and submits it as a quad layer.
 - **Popups stay the game's own.** VM dialogs are still the game's `UIMobileAlert`s, so:
   - the panel shows just the band of the window the dialog covers (Simitone's dialogs span its width), copied
     with `GLInterop.BlitTextureRegion`;
@@ -455,13 +467,16 @@ Design choices:
   - the picking camera reproduces the controller ray;
   - the arc solver lands on a grabbed object;
   - the movement arc reaches about 7.5 m at 45 degrees and lands within its step budget at any pitch.
-- `tools/vr/render-check/run.sh [dir]` renders these to PNG files under Xvfb, to look at without a headset:
-  - the real vignette and blink overlay, on a headset-like asymmetric field of view;
+- `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
+  field of view, to a PNG file under Xvfb.
+- `tools/vr/ui-check/run.sh <published Simitone> [dir]` renders every VR panel with Simitone's real UI (its fonts,
+  art and controls, through FreeSO's UI layer) and sample game data, to PNG files under Xvfb:
+  - the watch and the left wrist display;
   - the VR menu;
-  - the wrist displays, with a queue and waiting messages;
-  - the keyboard;
   - two comfort setup pages;
-  - the Options panel's VR icon.
+  - the keyboard.
+
+  It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
@@ -486,8 +501,6 @@ Design choices:
   The speeds in [Speeds](#speeds) are worked out from the engine; `vr.log` records the real ones while you play.
 - **No left-handed mode yet:** the right controller always points and the left one walks.
 - **Popups, actions and typing:**
-  - The keyboard's own preview line shows capitals only (the dot-matrix font has no lowercase); the text box itself
-    shows the real text.
   - Only Simitone's full-width dialogs are cropped on the panel; anything else shows with the whole UI.
   - The vacation, downtown and neighbourhood pickers still switch to the flat screen.
 - **Pie menus** float in front of you rather than at the object. They are the regular 2D menus.

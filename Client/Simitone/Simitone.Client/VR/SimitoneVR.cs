@@ -64,7 +64,8 @@ namespace Simitone.Client.VR
         private static VRMenu Menu;
         private static VRKeyboard Keyboard;
         private static VRSetup Setup;
-        private static bool SetupRequested, SetupShownThisSession;
+        private static bool SetupRequested, SetupShownThisSession, MenuRequested;
+        private static bool PanelPressArmed;
         private static bool PendingEyeResize;
         private static bool KeyboardMenuToggle;
         private static VRPose LastHead;
@@ -160,10 +161,7 @@ namespace Simitone.Client.VR
             try
             {
                 CreateEyeBuffers(game.GraphicsDevice);
-                Wrists = new VRWristHud();
-                Menu = new VRMenu();
-                Keyboard = new VRKeyboard();
-                Setup = new VRSetup();
+                // (the panels are Simitone UI: made once the game's content is loaded, see EnsurePanels)
             }
             catch (Exception e)
             {
@@ -221,13 +219,50 @@ namespace Simitone.Client.VR
             PendingEyeResize = true;
         }
 
-        public static bool MenuOpen => Menu?.Open == true;
-        public static bool SetupOpen => Setup?.Open == true;
+        public static bool MenuOpen => Menu?.IsOpen == true;
+        public static bool SetupOpen => Setup?.Shown == true;
         /// <summary>The VR menu or the comfort setup is open (it has the pointer and the trigger).</summary>
         public static bool OverlayOpen => MenuOpen || SetupOpen;
 
         /// <summary>Opens the comfort setup (from the VR menu or the game's Options panel) at the next frame.</summary>
         public static void StartSetup() => SetupRequested = true;
+
+        /// <summary>Opens the VR menu at the next frame (the VR options button on the left wrist).</summary>
+        public static void RequestMenu() => MenuRequested = true;
+
+        /// <summary>A queue icon on the left wrist was clicked: cancel that action (VRGameBridge does it).</summary>
+        public static void RequestQueueCancel(ushort uid) => QueueCancelRequested = uid;
+
+        /// <summary>
+        /// The VR panels are Simitone UI (fonts, art, controls), so they're made once the game's UI and content are
+        /// ready, rather than when VR starts.
+        /// </summary>
+        private static void EnsurePanels()
+        {
+            if (Menu != null || FSO.Client.GameFacade.Screens == null || FSO.Content.Content.Get() == null
+                || FSO.Client.GameFacade.GraphicsDevice == null) return;
+            try
+            {
+                Wrists = new VRWristHud();
+                Menu = new VRMenu();
+                Keyboard = new VRKeyboard();
+                Setup = new VRSetup();
+            }
+            catch (Exception e)
+            {
+                Log("could not make the VR panels: " + e);
+                Menu = null;
+            }
+        }
+
+        /// <summary>The panels the controller can point at now: a modal one (setup, menu) alone, else keyboard and wrist.</summary>
+        private static System.Collections.Generic.IEnumerable<VRUIPanel> PointablePanels(bool immersive)
+        {
+            if (SetupOpen) { yield return Setup; yield break; }
+            if (MenuOpen) { yield return Menu; yield break; }
+            if (Keyboard?.Shown == true) yield return Keyboard;
+            if (immersive && Wrists?.Needs.Shown == true) yield return Wrists.Needs;
+        }
 
         public static void Shutdown()
         {
@@ -237,10 +272,10 @@ namespace Simitone.Client.VR
                 if (EyeSwapchains != null) foreach (var s in EyeSwapchains) s.Dispose();
                 ScreenSwapchain?.Dispose();
                 PanelSwapchain?.Dispose();
-                Wrists?.Dispose();
-                Menu?.Dispose();
-                Keyboard?.Dispose();
-                Setup?.Dispose();
+                Wrists?.Destroy();
+                Menu?.Destroy();
+                Keyboard?.Destroy();
+                Setup?.Destroy();
                 Runtime.Dispose();
             }
             catch { }
@@ -261,6 +296,10 @@ namespace Simitone.Client.VR
             Runtime = null;
             PointerActive = false;
             PanelShown = false;
+            Wrists?.HideAll();
+            Menu?.Hide();
+            Keyboard?.Hide();
+            Setup?.Hide();
             // Without a headset, first person would leave you with no UI and keyboard-only movement.
             var world = CurrentWorld;
             if (world?.Immersive == true) GameThread.NextUpdate(_ => world.ExitImmersive());
@@ -323,7 +362,6 @@ namespace Simitone.Client.VR
             var input = Runtime.Input;
             var inputActive = input != null && input.Active;
             var vrCamera = world?.VRCamera;
-            var hud = HudProvider?.Invoke();
 
             // After the VR menu, the keyboard or a wrist display has used a press, the trigger and grip must be let go
             // before they click anything else (the press that closes the menu mustn't click what's behind it).
@@ -366,77 +404,92 @@ namespace Simitone.Client.VR
                 if (input.BuildMenu.Pressed) BuildMenuRequested = true;
             }
 
-            // ---- wrists: the left display's queue icons (trigger cancels) and the rest of it (trigger opens the VR
-            // menu); messages waiting on the watch (look at it and pull that hand's trigger to read the oldest)
-            if (immersive && Wrists != null) Wrists.UpdatePlacement(input, LastHead, Settings.WristDisplays);
+            // ---- the VR panels (Simitone UI): wrist displays, comfort setup, VR menu, keyboard
+            EnsurePanels();
+            if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays);
+            else Wrists?.HideAll();
             var overlayWasOpen = OverlayOpen;
-            var overlayUsedPress = false;
 
-            // ---- comfort setup: the first time VR runs, or when asked for
+            // the comfort setup: the first time VR runs, or when asked for
             if (Setup != null && LastHead.Valid && (SetupRequested || (!Settings.ComfortSetupDone && !SetupShownThisSession)))
             {
                 Menu?.Close();
-                Setup.Show(LastHead, inputActive ? input : null);
+                Setup.Begin(LastHead);
                 SetupRequested = false;
                 SetupShownThisSession = true;
+                NeedsRelease = true;
             }
-            if (SetupOpen) Setup.Update(input, Runtime);
-
-            var needsHover = VRWristHud.NotPointed;
-            if (immersive && inputActive && Wrists != null && !OverlayOpen && Wrists.PointNeeds(input.RightAim, out var needsPixel))
+            // the VR menu: the left menu button, F9, or the VR options button on the left wrist
+            if (Menu != null && !SetupOpen && ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || MenuRequested))
             {
-                var slot = VRWristHud.QueueSlotAt(needsPixel);
-                needsHover = hud != null && slot >= 0 && slot < hud.QueueCount ? slot : VRWristHud.PointedAtDisplay;
+                if (Menu.IsOpen) Menu.Close();
+                else Menu.OpenAt(LastHead);
+                NeedsRelease = true;
             }
-            if (Wrists != null) Wrists.NeedsHover = needsHover;
-            var triggerFree = inputActive && input.Select.Pressed && !NeedsRelease;
-            if (triggerFree && needsHover >= 0)
-            {
-                QueueCancelRequested = hud.Queue[needsHover].UID;
-                Runtime.Haptic(true, 0.35f, 0.03f);
-                overlayUsedPress = true;
-            }
-            else if (triggerFree && needsHover == VRWristHud.NotPointed && immersive && Wrists?.WatchFacing == true
-                && Messages.Count > 0 && !OverlayOpen)
-            {
-                GameThread.NextUpdate(_ => ShowOldestMessage());
-                Runtime.Haptic(true, 0.25f, 0.02f);
-                overlayUsedPress = true;
-            }
-            if (Menu != null && !SetupOpen)
-            {
-                var wristMenu = triggerFree && needsHover == VRWristHud.PointedAtDisplay;
-                if ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || wristMenu)
-                {
-                    if (Menu.Open) Menu.Close();
-                    else Menu.Show(LastHead, inputActive ? input : null);
-                    if (wristMenu) overlayUsedPress = true;
-                }
-                KeyboardMenuToggle = false;
-                if (Menu.Open) Menu.Update(input, Runtime);
-            }
-
-            // ---- keyboard: whenever a text box is waiting for typing (until HIDE)
+            KeyboardMenuToggle = MenuRequested = false;
+            // the keyboard: whenever a text box is waiting for typing (until Hide)
             var target = KeyboardTarget;
-            var wantKeyboard = Keyboard != null && target != null && target != KeyboardDismissed && LastHead.Valid;
-            if (wantKeyboard && !Keyboard.Visible) Keyboard.Show(LastHead, inputActive ? input : null);
-            else if (!wantKeyboard && Keyboard?.Visible == true) Keyboard.Hide();
-            var keyboardHasPointer = false;
-            if (Keyboard?.Visible == true && !OverlayOpen && !overlayUsedPress)
+            if (Keyboard != null)
             {
-                keyboardHasPointer = Keyboard.Update(input, Runtime, FrameDelta);
-                if (keyboardHasPointer && inputActive && (input.Select.Pressed || input.Secondary.Pressed)) NeedsRelease = true;
                 if (Keyboard.HideRequested)
                 {
                     Keyboard.HideRequested = false;
                     KeyboardDismissed = target;
-                    Keyboard.Hide();
+                }
+                var wantKeyboard = target != null && target != KeyboardDismissed && LastHead.Valid;
+                if (wantKeyboard && !Keyboard.Shown) Keyboard.ShowAt(LastHead);
+                else if (!wantKeyboard && Keyboard.Shown) Keyboard.Hide();
+            }
+
+            // the controller's ray on the panels: the nearest one it hits has it as its mouse. A press that started
+            // off the panels doesn't press on one (e.g. dragging a wall onto the wrist).
+            VRUIPanel pointed = null;
+            var pointedPixel = Vector2.Zero;
+            var pointedDistance = float.MaxValue;
+            var aim = inputActive ? (input.RightAim.Valid ? input.RightAim : input.LeftAim) : default;
+            var panels = new System.Collections.Generic.List<VRUIPanel>(PointablePanels(immersive));
+            foreach (var panel in panels)
+            {
+                if (panel.Hit(aim, out var pixel, out var distance) && distance < pointedDistance)
+                {
+                    pointed = panel;
+                    pointedPixel = pixel;
+                    pointedDistance = distance;
                 }
             }
-            OverlayHasPointer = OverlayOpen || keyboardHasPointer;
-            OverlayPointerDistance = SetupOpen ? Setup.PointerDistance : MenuOpen ? Menu.PointerDistance
-                : keyboardHasPointer ? Keyboard.PointerDistance : 0;
-            if (overlayUsedPress || (overlayWasOpen && !OverlayOpen)) NeedsRelease = true;
+            var buttonsDown = inputActive && (input.Select.Down || input.Secondary.Down);
+            if (!buttonsDown) PanelPressArmed = true;
+            else if (pointed == null) PanelPressArmed = false;
+            foreach (var panel in new VRUIPanel[] { Setup, Menu, Keyboard, Wrists?.Needs, Wrists?.Watch })
+            {
+                if (panel == null) continue;
+                if (panel == pointed) panel.SetMouse(pointedPixel, PanelPressArmed && input.Select.Down, PanelPressArmed && input.Secondary.Down);
+                else panel.SetMouse(null, false, false);
+            }
+            var overlayUsedPress = pointed != null && buttonsDown;
+            if (overlayUsedPress) NeedsRelease = true;
+
+            var triggerFree = inputActive && input.Select.Pressed && !NeedsRelease;
+            if (triggerFree && pointed == null)
+            {
+                if (MenuOpen)
+                {
+                    Menu.Close(); // pulled beside the menu
+                    overlayUsedPress = NeedsRelease = true;
+                }
+                else if (immersive && Wrists?.WatchFacing == true && Messages.Count > 0 && !OverlayOpen)
+                {
+                    // looking at the watch with messages waiting: read the oldest
+                    GameThread.NextUpdate(_ => ShowOldestMessage());
+                    Runtime.Haptic(true, 0.25f, 0.02f);
+                    overlayUsedPress = NeedsRelease = true;
+                }
+            }
+            if (SetupOpen && inputActive && input.Secondary.Pressed) Setup.GoBack(); // the grip goes back a page
+
+            OverlayHasPointer = OverlayOpen || pointed != null;
+            OverlayPointerDistance = pointed != null ? pointedDistance : 0;
+            if (overlayWasOpen && !OverlayOpen) NeedsRelease = true;
 
             // ---- laser pointer (not while an overlay has it, nor on the frame one used a press)
             PointerActive = false;
@@ -488,19 +541,7 @@ namespace Simitone.Client.VR
 
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
 
-            // ---- wrist displays, keyboard and menu (drawn now: switching render targets later would disturb the frame)
-            if (immersive && Wrists != null)
-            {
-                try { Wrists.Render(gd, hud); }
-                catch (Exception e) { Log("wrist display error: " + e.Message); }
-            }
-            try
-            {
-                Keyboard?.Render(gd);
-                Menu?.Render(gd);
-                Setup?.Render(gd);
-            }
-            catch (Exception e) { Log("VR menu/keyboard error: " + e.Message); }
+            // (the panels themselves are drawn by the UI layer, into their own textures, during the frame)
         }
 
         public static void EndDraw(GraphicsDevice gd)
@@ -735,7 +776,7 @@ namespace Simitone.Client.VR
             // the VR keyboard types into the text box that's waiting (between frames, like real key presses)
             KeyboardTarget = FindTextTarget(state);
             if (KeyboardTarget == null) KeyboardDismissed = null;
-            Keyboard?.ApplyPending(KeyboardTarget);
+            if (Keyboard != null) Keyboard.TextTarget = KeyboardTarget; // the keyboard types into it as its keys are pressed
             var real = state.MouseState;
             if (!PointerActive)
             {

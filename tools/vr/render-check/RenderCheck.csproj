@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Renders the VR comfort overlay (vignette, blink), the VR options menu, the wrist displays and the VR keyboard to PNG files
+    Renders the VR comfort overlay (vignette, blink) to a PNG file (none, low, medium, high, blink at half)
     with the real Simitone.Client code, so they can be looked at without a headset. Run with run.sh (Xvfb).
   -->
   <PropertyGroup>

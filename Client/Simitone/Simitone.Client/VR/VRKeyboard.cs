@@ -1,254 +1,145 @@
-using System;
 using System.Collections.Generic;
-using FSO.Client.UI.Model;
 using FSO.Client.UI.Controls;
+using FSO.Client.UI.Framework;
+using FSO.Client.UI.Model;
+using FSO.Common.Rendering.Framework.Model;
 using FSO.HIT;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
+using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using Simitone.VR;
-using Simitone.VR.Graphics;
 
 namespace Simitone.Client.VR
 {
     /// <summary>
-    /// A keyboard you point at, for typing in the headset: it appears below the view whenever a text box is waiting
-    /// for input (naming a baby or pet, Create-A-Sim names, any dialog with a text box) and types into it with
-    /// FreeSO's on-screen keyboard helpers (<see cref="UITextEdit.PadType"/>, <see cref="UITextEdit.PadBackspace"/>).
-    /// Point with the right controller and pull the trigger on a key. Letters start each word in capitals; SHIFT
-    /// changes the next letter's case. HIDE puts it away until another text box wants it.
+    /// A keyboard you point at, in Simitone's look (outlined keys, the game's font): it appears below the view whenever a
+    /// text box is waiting for typing (naming a baby or pet, Create-A-Sim names, any dialog with a text box) and types
+    /// into it with FreeSO's on-screen keyboard helpers (<see cref="UITextEdit.PadType"/>, <see cref="UITextEdit.PadBackspace"/>).
+    /// Each word starts with a capital; Shift changes the next letter. Hold Del to keep deleting. Hide puts it away until
+    /// another text box wants it.
     /// </summary>
-    public class VRKeyboard : VRPanel
+    public class VRKeyboard : VRUIPanel
     {
-        private const int KeyW = 64, KeyH = 54, Gap = 6, Margin = 12, PreviewHeight = 58, Stagger = 16;
-        private const int Width = Margin * 2 + 10 * KeyW + 9 * Gap + 2 * Stagger;
+        private const int KeyW = 88, KeyH = 66, Gap = 8, Margin = 28, Stagger = 22, PreviewHeight = 74;
+        private const int PanelWidth = Margin * 2 + 10 * KeyW + 9 * Gap + 2 * Stagger + 32;
+        private const int PanelHeight = Margin + PreviewHeight + 16 + 5 * (KeyH + Gap) - Gap + Margin;
 
-        private enum KeyKind { Char, Shift, Backspace, Space, Hide }
-
-        private struct Key
-        {
-            public Rectangle Rect;
-            public KeyKind Kind;
-            public char Char;
-            public string Label;
-        }
-
-        private readonly List<Key> Keys = new List<Key>();
-        private readonly int Height;
-        public bool Visible { get; private set; }
-        private int Hover = -1;
-        private bool Armed;
-        private bool Dirty = true;
-        private bool Shift;      // the next letter's case is flipped
-        private string LastText;
+        private readonly List<(UIVRKey key, char c)> Letters = new List<(UIVRKey, char)>();
+        private readonly UIVRKey ShiftKey, DeleteKey;
+        private readonly UILabel Preview;
+        private bool Shift;
         private float RepeatTimer;
 
-        // keys pressed since the last game update, in order ('\b' = backspace), applied there to the text box
-        private readonly List<char> Pending = new List<char>();
+        /// <summary>The text box being typed into (set every update by SimitoneVR).</summary>
+        public UITextEdit TextTarget;
+        /// <summary>Hide was pressed: SimitoneVR puts the keyboard away until another text box wants it.</summary>
+        public bool HideRequested;
 
-        public VRKeyboard()
+        public VRKeyboard() : base(PanelWidth, PanelHeight, 0.6f)
         {
-            WidthMetres = 0.56f;
-            var rows = new[] { "1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM-" };
-            int y = Margin + PreviewHeight + Gap;
+            Add(new UIDiagonalStripe(new Point(PanelWidth - 32, PanelHeight), UIDiagonalStripeSide.RIGHT, UIStyle.Current.DialogBg));
+
+            var previewBox = VRUI.Outline(PanelWidth - 32 - Margin * 2, PreviewHeight);
+            previewBox.Position = new Vector2(Margin, Margin);
+            Add(previewBox);
+            Preview = VRUI.Label("", 25, UIStyle.Current.Text, TextAlignment.Left | TextAlignment.Middle);
+            Preview.Position = new Vector2(Margin + 24, Margin);
+            Preview.Size = new Vector2(PanelWidth - 32 - Margin * 2 - 48, PreviewHeight);
+            Add(Preview);
+
+            var rows = new[] { "1234567890", "qwertyuiop", "asdfghjkl'", "zxcvbnm-" };
+            int y = Margin + PreviewHeight + 16;
             for (int r = 0; r < rows.Length; r++)
             {
-                var row = rows[r];
-                int x = Margin + Math.Min(r, 2) * Stagger; // staggered like a real keyboard
+                int x = Margin + System.Math.Min(r, 2) * Stagger; // staggered like a real keyboard
                 if (r == 3)
                 {
-                    Keys.Add(new Key { Rect = new Rectangle(Margin, y, KeyW * 3 / 2, KeyH), Kind = KeyKind.Shift, Label = "SHIFT" });
+                    ShiftKey = AddKey("Shift", Margin, y, KeyW * 3 / 2, 19, _ => { Shift = !Shift; Click(); });
                     x = Margin + KeyW * 3 / 2 + Gap;
                 }
-                foreach (var c in row)
+                foreach (var c in rows[r])
                 {
-                    Keys.Add(new Key { Rect = new Rectangle(x, y, KeyW, KeyH), Kind = KeyKind.Char, Char = c, Label = c.ToString() });
+                    var ch = c;
+                    var key = AddKey(c.ToString(), x, y, KeyW, 25, _ => Type(ch));
+                    if (char.IsLetter(c)) Letters.Add((key, c));
                     x += KeyW + Gap;
                 }
-                if (r == 3) Keys.Add(new Key { Rect = new Rectangle(x, y, Width - Margin - x, KeyH), Kind = KeyKind.Backspace, Label = "DEL" });
+                if (r == 3) DeleteKey = AddKey("Del", x, y, PanelWidth - 32 - Margin - x, 19, _ => { Delete(); RepeatTimer = 0.5f; });
                 y += KeyH + Gap;
             }
-            Keys.Add(new Key { Rect = new Rectangle(Margin + KeyW * 2, y, KeyW * 6 + Gap * 5, KeyH), Kind = KeyKind.Space, Label = "SPACE" });
-            Keys.Add(new Key { Rect = new Rectangle(Width - Margin - KeyW * 2, y, KeyW * 2, KeyH), Kind = KeyKind.Hide, Label = "HIDE" });
-            Height = y + KeyH + Margin;
+            AddKey("Space", Margin + 2 * (KeyW + Gap), y, 6 * KeyW + 5 * Gap, 19, _ => Type(' '));
+            AddKey("Hide", PanelWidth - 32 - Margin - 2 * KeyW - Gap, y, 2 * KeyW + Gap, 19, _ => { HideRequested = true; Click(); });
         }
 
-        /// <summary>Shows the keyboard below and in front of you, tilted up like a desk (tracking space).</summary>
-        public void Show(VRPose head, VRInput input)
+        private UIVRKey AddKey(string label, int x, int y, int width, int textSize, System.Action<UIVRKey> press)
         {
-            if (!head.Valid) return;
-            PlaceInFront(head, 0.5f, 0.4f, 40);
-            Visible = true;
-            Armed = input == null || !input.Select.Down;
-            Hover = -1;
-            Dirty = true;
+            var key = new UIVRKey(label, width, KeyH, textSize) { Position = new Vector2(x, y) };
+            key.OnPress += press;
+            Add(key);
+            return key;
         }
 
-        public void Hide()
+        /// <summary>Whether the next letter typed will be a capital: at the start of a word, unless Shift flips it.</summary>
+        private bool NextIsCapital
         {
-            Visible = false;
-            PointerDistance = 0;
-            Hover = -1;
-            ClearPending();
+            get
+            {
+                var text = TextTarget?.CurrentText ?? "";
+                var startOfWord = text.Length == 0 || text.EndsWith(" ");
+                return startOfWord != Shift;
+            }
         }
 
-        /// <summary>
-        /// Points the right controller at the keyboard and presses keys. Returns true while the pointer is on it (the
-        /// keyboard then has the pointer, not the screen or panel behind).
-        /// </summary>
-        public bool Update(VRInput input, VRRuntime runtime, float dt)
+        private void Type(char c)
         {
-            PointerDistance = 0;
-            if (!Visible || input == null || !input.Active) return false;
-            if (!input.Select.Down) Armed = true;
+            if (char.IsLetter(c))
+            {
+                c = NextIsCapital ? char.ToUpperInvariant(c) : char.ToLowerInvariant(c);
+                Shift = false;
+            }
+            TextTarget?.PadType(c.ToString());
+            Click();
+        }
 
-            var hover = -1;
-            var onKeyboard = PointAt(input, Width, Height, out var pixel);
-            if (onKeyboard)
-            {
-                for (int i = 0; i < Keys.Count; i++)
-                {
-                    var r = Keys[i].Rect;
-                    r.Inflate(Gap / 2, Gap / 2);
-                    if (r.Contains(pixel)) { hover = i; break; }
-                }
-            }
-            if (hover != Hover)
-            {
-                Hover = hover;
-                Dirty = true;
-                RepeatTimer = 0;
-                if (hover >= 0) runtime?.Haptic(true, 0.08f, 0.008f);
-            }
-            if (!Armed || hover < 0) return onKeyboard;
+        private void Delete()
+        {
+            TextTarget?.PadBackspace();
+            Click();
+        }
 
-            if (input.Select.Pressed)
+        private void Click()
+        {
+            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+            SimitoneVR.Runtime?.Haptic(true, 0.25f, 0.012f);
+        }
+
+        protected override void Refresh(UpdateState state)
+        {
+            // letters show the case they'll type
+            var capital = NextIsCapital;
+            foreach (var (key, c) in Letters) key.Caption = capital ? char.ToUpperInvariant(c).ToString() : c.ToString();
+            ShiftKey.Lit = Shift;
+            Preview.Caption = (TextTarget?.CurrentText ?? "") + "|";
+
+            // hold Del to keep deleting
+            if (DeleteKey.Held)
             {
-                Press(Keys[hover], runtime);
-                RepeatTimer = 0.5f;
-            }
-            else if (input.Select.Down && Keys[hover].Kind == KeyKind.Backspace)
-            {
-                // hold DEL to keep deleting
-                RepeatTimer -= dt;
+                RepeatTimer -= (float)(state.Time?.ElapsedGameTime.TotalSeconds ?? 1 / 60.0);
                 if (RepeatTimer <= 0)
                 {
-                    Press(Keys[hover], runtime);
+                    Delete();
                     RepeatTimer = 0.08f;
                 }
             }
-            return onKeyboard;
         }
 
-        private void Press(Key key, VRRuntime runtime)
+        /// <summary>Shows the keyboard below and in front of you, tilted up like a desk (tracking space).</summary>
+        public void ShowAt(VRPose head)
         {
-            runtime?.Haptic(true, 0.25f, 0.012f);
-            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
-            Dirty = true;
-            switch (key.Kind)
-            {
-                case KeyKind.Char:
-                    var c = key.Char;
-                    if (char.IsLetter(c))
-                    {
-                        // capital at the start of each word, unless SHIFT flips it
-                        var text = ExpectedText();
-                        var startOfWord = text.Length == 0 || text.EndsWith(" ");
-                        c = startOfWord != Shift ? char.ToUpperInvariant(c) : char.ToLowerInvariant(c);
-                        Shift = false;
-                    }
-                    Pending.Add(c);
-                    break;
-                case KeyKind.Space:
-                    Pending.Add(' ');
-                    break;
-                case KeyKind.Backspace:
-                    if (Pending.Count > 0 && Pending[Pending.Count - 1] != '\b') Pending.RemoveAt(Pending.Count - 1);
-                    else Pending.Add('\b');
-                    break;
-                case KeyKind.Shift:
-                    Shift = !Shift;
-                    break;
-                case KeyKind.Hide:
-                    HideRequested = true;
-                    break;
-            }
-        }
-
-        /// <summary>The text as it will be once the pending keys are applied (typing at the end).</summary>
-        private string ExpectedText()
-        {
-            var text = new System.Text.StringBuilder(LastText ?? "");
-            foreach (var c in Pending)
-            {
-                if (c != '\b') text.Append(c);
-                else if (text.Length > 0) text.Length--;
-            }
-            return text.ToString();
-        }
-
-        /// <summary>Set when HIDE was pressed; the owner hides the keyboard until another text box wants it.</summary>
-        public bool HideRequested;
-
-        /// <summary>Applies the keys pressed since the last update to the text box. Call from the game update.</summary>
-        public void ApplyPending(UITextEdit target)
-        {
-            if (target == null) { ClearPending(); return; }
-            var run = new System.Text.StringBuilder();
-            foreach (var c in Pending)
-            {
-                if (c != '\b') { run.Append(c); continue; }
-                if (run.Length > 0) { target.PadType(run.ToString()); run.Clear(); }
-                target.PadBackspace();
-            }
-            if (run.Length > 0) target.PadType(run.ToString());
-            ClearPending();
-            var text = target.CurrentText ?? "";
-            if (text != LastText)
-            {
-                LastText = text;
-                Dirty = true;
-            }
-        }
-
-        private void ClearPending() => Pending.Clear();
-
-        // ------------------------------------------------------------------ drawing
-
-        /// <summary>Redraws the keyboard when something changed. Call outside the main draw.</summary>
-        public void Render(GraphicsDevice gd)
-        {
-            if (!Visible || (!Dirty && Target != null)) return;
-            Dirty = false;
-
-            var bg = new Color(16, 20, 28) * 0.94f;
-            var frame = new Color(90, 200, 255);
-            var keyBg = new Color(40, 48, 62);
-            var text = Color.White * 0.92f;
-
-            BeginRender(gd, Width, Height);
-            Fill(new Rectangle(0, 0, Width, Height), bg);
-            Border(new Rectangle(0, 0, Width, Height), frame, 3);
-
-            // what's in the text box (the font only has capitals; the box itself shows the real text)
-            var preview = new Rectangle(Margin, Margin, Width - Margin * 2, PreviewHeight);
-            Fill(preview, Color.Black * 0.5f);
-            var shown = VRPixelFont.FitEnd((LastText ?? "") + "_", 3, preview.Width - 24);
-            Text(shown, preview.X + 12, preview.Y + (PreviewHeight - 21) / 2, 3, new Color(140, 255, 190));
-
-            for (int i = 0; i < Keys.Count; i++)
-            {
-                var key = Keys[i];
-                var active = key.Kind == KeyKind.Shift && Shift;
-                Fill(key.Rect, i == Hover ? frame * 0.55f : active ? frame * 0.35f : keyBg);
-                TextCentred(key.Label, key.Rect, key.Label.Length == 1 ? 4 : 2, i == Hover ? Color.White : text);
-            }
-            EndRender(gd);
-        }
-
-        /// <summary>Adds the keyboard to the frame while it's shown.</summary>
-        public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
-        {
-            if (Visible) SubmitPanel(runtime, ref submission);
+            if (!head.Valid) return;
+            PlaceInFront(head, 0.5f, 0.4f, 40);
+            Shift = false;
+            Show();
         }
     }
 }

@@ -7,8 +7,8 @@ using Simitone.Client.VR;
 using Simitone.VR;
 using Simitone.VR.OpenXR;
 
-// Renders the VR comfort overlay, the VR options menu, the wrist displays, the VR keyboard, the comfort setup and
-// the options panel's VR icon to PNG files.
+// Renders the VR comfort overlay (vignette strengths, blink) to a PNG file, with the real Simitone.Client code.
+// The VR panels are Simitone UI: tools/vr/ui-check renders those.
 static class Program
 {
     static int Main(string[] args)
@@ -110,85 +110,10 @@ class RenderGame : Game
         for (int i = 0; i < cases.Length; i++)
         {
             batch.Draw(tiles[i], new Vector2(i * size, 30), Color.White);
-            VRPixelFont.Draw(batch, white, cases[i].name, new Vector2(i * size + 8, 8), 2, Color.White);
         }
         batch.End();
         gd.SetRenderTarget(null);
         Save(strip, "vignette.png");
 
-        // ---- the VR options menu, with a row hovered
-        var menu = new VRMenu();
-        menu.Show(new VRPose { Valid = true, Orientation = Quaternion.Identity, Position = new Vector3(0, 1.6f, 0) }, null);
-        var flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        typeof(VRMenu).GetField("Hover", flags).SetValue(menu, 0);
-        menu.Render(gd);
-        Save((RenderTarget2D)typeof(VRPanel).GetField("Target", flags).GetValue(menu), "menu.png");
-
-        // ---- the wrist displays: a queue (second action pointed at, third being cancelled) and two messages waiting
-        var hud = new VRWristHud();
-        typeof(VRWristHud).GetProperty("NeedsVisible").GetSetMethod(true).Invoke(hud, new object[] { true });
-        typeof(VRWristHud).GetProperty("WatchVisible").GetSetMethod(true).Invoke(hud, new object[] { true });
-        hud.NeedsHover = 1;
-        var data = new VRHudData { Valid = true, Hour = 15, Minute = 42, Speed = 2, Money = 20450, SimName = "Bella Goth" };
-        for (int i = 0; i < 8; i++) data.Motives[i] = -90 + i * 26;
-        var iconColours = new[] { Color.Orange, Color.MediumPurple, Color.SeaGreen };
-        var names = new[] { "Have Snack", "Watch TV", "Take Shower" };
-        for (int i = 0; i < 3; i++)
-        {
-            var icon = new Texture2D(gd, 32, 32);
-            var pixels = new Color[32 * 32];
-            for (int p = 0; p < pixels.Length; p++)
-            {
-                int x = p % 32, y = p / 32;
-                var inside = (x - 15.5f) * (x - 15.5f) + (y - 15.5f) * (y - 15.5f) < 13 * 13;
-                pixels[p] = inside ? iconColours[i] : Color.Transparent;
-            }
-            icon.SetData(pixels);
-            var item = data.Queue[i];
-            item.Icon = icon;
-            item.Name = names[i];
-            item.Active = i == 0;
-            item.Cancelled = i == 2;
-            item.UID = (ushort)(i + 1);
-        }
-        data.QueueCount = 3;
-        data.Messages = 2;
-        data.MessageTitle = "Job Promotion";
-        hud.Render(gd, data);
-        Save((RenderTarget2D)typeof(VRWristHud).GetField("Needs", flags).GetValue(hud), "needs.png");
-        Save((RenderTarget2D)typeof(VRWristHud).GetField("Watch", flags).GetValue(hud), "watch.png");
-
-        // ---- the first-run comfort setup: the comfort tier page and the vignette page (the most choices)
-        var setup = new VRSetup();
-        setup.Show(new VRPose { Valid = true, Orientation = Quaternion.Identity, Position = new Vector3(0, 1.6f, 0) }, null);
-        foreach (var page in new[] { 1, 5 })
-        {
-            typeof(VRSetup).GetField("PageIndex", flags).SetValue(setup, page);
-            typeof(VRSetup).GetField("Hover", flags).SetValue(setup, page == 1 ? 1 : -3);
-            typeof(VRSetup).GetField("Dirty", flags).SetValue(setup, true);
-            setup.Render(gd);
-            Save((RenderTarget2D)typeof(VRPanel).GetField("Target", flags).GetValue(setup), $"setup-{page}.png");
-        }
-
-        // ---- the VR button's icon in the game's options panel
-        using (var icon = VRPixelFont.MakeTexture(gd, "VR", 5, 65, 65, Color.White))
-        {
-            var iconTarget = new RenderTarget2D(gd, 65, 65);
-            gd.SetRenderTarget(iconTarget);
-            gd.Clear(new Color(60, 90, 140));
-            batch.Begin();
-            batch.Draw(icon, Vector2.Zero, Color.White);
-            batch.End();
-            gd.SetRenderTarget(null);
-            Save(iconTarget, "vr-icon.png");
-        }
-
-        // ---- the keyboard, with some text typed and a key pointed at
-        var keyboard = new VRKeyboard();
-        keyboard.Show(new VRPose { Valid = true, Orientation = Quaternion.Identity, Position = new Vector3(0, 1.6f, 0) }, null);
-        typeof(VRKeyboard).GetField("LastText", flags).SetValue(keyboard, "Bella Go");
-        typeof(VRKeyboard).GetField("Hover", flags).SetValue(keyboard, 23);
-        keyboard.Render(gd);
-        Save((RenderTarget2D)typeof(VRPanel).GetField("Target", flags).GetValue(keyboard), "keyboard.png");
     }
 }

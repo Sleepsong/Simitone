@@ -559,7 +559,7 @@ namespace Simitone.Client.UI.Panels
             label.Caption = "VR Options";
 
             if (VRIcon == null || VRIcon.IsDisposed)
-                VRIcon = VRPixelFont.MakeTexture(GameFacade.GraphicsDevice, "VR", 5, 65, 65, Color.White);
+                VRIcon = VRUI.Headset(GameFacade.GraphicsDevice);
             var button = new UICatButton(VRIcon);
             button.Position = new Vector2(buttonX - 50, 16);
             button.OnButtonClick += (btn) => UIScreen.GlobalShowDialog(new UIVROptionsDialog(), true);

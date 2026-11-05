@@ -25,8 +25,8 @@ namespace Simitone.Client.VR
 
         private static readonly (VRTurnMode mode, float degrees, string name)[] Turns =
         {
-            (VRTurnMode.Snap, 30, "SNAP 30"), (VRTurnMode.Snap, 45, "SNAP 45"), (VRTurnMode.Snap, 90, "SNAP 90"),
-            (VRTurnMode.Smooth, 90, "SMOOTH SLOW"), (VRTurnMode.Smooth, 120, "SMOOTH"), (VRTurnMode.Smooth, 180, "SMOOTH FAST"),
+            (VRTurnMode.Snap, 30, "Snap 30"), (VRTurnMode.Snap, 45, "Snap 45"), (VRTurnMode.Snap, 90, "Snap 90"),
+            (VRTurnMode.Smooth, 90, "Smooth, slow"), (VRTurnMode.Smooth, 120, "Smooth"), (VRTurnMode.Smooth, 180, "Smooth, fast"),
         };
         private static readonly float[] Heights = { 0, 0.15f, 0.3f, 0.45f, 0.6f };
         private static readonly float[] RenderScales = { 0.5f, 0.6f, 0.7f, 0.75f, 0.8f, 0.9f, 1f, 1.1f, 1.25f, 1.5f };
@@ -38,32 +38,32 @@ namespace Simitone.Client.VR
             void Add(string label, Func<string> value, Action<int> change)
                 => list.Add(new VROption { Label = label, Value = value, Change = change });
 
-            Add("SIM ACTIONS", () => Name(Settings.SimActionView), d => Settings.SimActionView = Cycle(Settings.SimActionView, d));
-            Add("VIGNETTE", () => Name(Settings.Vignette), d => Settings.Vignette = Cycle(Settings.Vignette, d));
-            Add("VIGNETTE MOVING", () => Name(Settings.VignetteWhenMoving), d => Settings.VignetteWhenMoving = Cycle(Settings.VignetteWhenMoving, d));
-            Add("MOVEMENT", () => MovementName(Settings.Movement), d => Settings.Movement = Cycle(Settings.Movement, d));
-            Add("TURNING", () => Turns[TurnIndex()].name, d => SetTurn(Turns[Wrap(TurnIndex() + d, Turns.Length)]));
-            Add("WALK TOWARDS", () => Settings.MoveDirection == VRMoveDirection.Head ? "HEAD" : "LEFT HAND",
+            Add("Sim actions", () => Name(Settings.SimActionView), d => Settings.SimActionView = Cycle(Settings.SimActionView, d));
+            Add("Vignette", () => Name(Settings.Vignette), d => Settings.Vignette = Cycle(Settings.Vignette, d));
+            Add("Vignette when moving", () => Name(Settings.VignetteWhenMoving), d => Settings.VignetteWhenMoving = Cycle(Settings.VignetteWhenMoving, d));
+            Add("Movement", () => MovementName(Settings.Movement), d => Settings.Movement = Cycle(Settings.Movement, d));
+            Add("Turning", () => Turns[TurnIndex()].name, d => SetTurn(Turns[Wrap(TurnIndex() + d, Turns.Length)]));
+            Add("Walk towards", () => Settings.MoveDirection == VRMoveDirection.Head ? "Head" : "Left hand",
                 d => Settings.MoveDirection = Cycle(Settings.MoveDirection, d));
-            Add("RUN", () => Settings.RunAtFullTilt ? "STICK FULL TILT" : "CLICK STICK", d => Settings.RunAtFullTilt = !Settings.RunAtFullTilt);
-            Add("FAST GAME + WALKING", () => Settings.NormalSpeedWhenSteering ? "SLOW TO 1" : "KEEP SPEED",
+            Add("Run", () => Settings.RunAtFullTilt ? "Stick full tilt" : "Click the stick", d => Settings.RunAtFullTilt = !Settings.RunAtFullTilt);
+            Add("Fast game + walking", () => Settings.NormalSpeedWhenSteering ? "Slow down" : "Keep speed",
                 d => Settings.NormalSpeedWhenSteering = !Settings.NormalSpeedWhenSteering);
-            Add("PLAY AS", () => SimitoneVR.PlayMode == VRPlayMode.Sim ? "YOUR SIM" : "OBSERVER", d =>
+            Add("Play as", () => SimitoneVR.PlayMode == VRPlayMode.Sim ? "Your Sim" : "Observer", d =>
             {
                 SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer : VRPlayMode.Sim;
                 Settings.PlayMode = SimitoneVR.PlayMode;
             });
-            Add("EXTRA HEIGHT", () => Settings.HeightOffset < 0.01f ? "OFF" : "+" + Settings.HeightOffset.ToString("0.00") + " M",
+            Add("Extra height", () => Settings.HeightOffset < 0.01f ? "Off" : "+" + Settings.HeightOffset.ToString("0.00") + " m",
                 d => Settings.HeightOffset = Heights[Wrap(Nearest(Heights, Settings.HeightOffset) + d, Heights.Length)]);
-            Add("WRIST DISPLAYS", () => Name(Settings.WristDisplays), d => Settings.WristDisplays = Cycle(Settings.WristDisplays, d));
-            Add("MESSAGES", () => Settings.WatchMessages ? "ON WATCH" : "POP UP", d => Settings.WatchMessages = !Settings.WatchMessages);
-            Add("STICK WHEN BUSY", () => Settings.StickCancelsActions ? "TAKES OVER" : "WAITS", d => Settings.StickCancelsActions = !Settings.StickCancelsActions);
-            Add("ACTION BUBBLE", () => Settings.ActionBubble ? "ON" : "OFF", d => Settings.ActionBubble = !Settings.ActionBubble);
-            Add("BUY AND BUILD", () => Settings.VRBuildMode ? "IN VR" : "FLAT SCREEN", d => Settings.VRBuildMode = !Settings.VRBuildMode);
-            Add("RENDER SCALE", () => (int)Math.Round(Settings.RenderScale * 100) + "%",
+            Add("Wrist displays", () => Name(Settings.WristDisplays), d => Settings.WristDisplays = Cycle(Settings.WristDisplays, d));
+            Add("Messages", () => Settings.WatchMessages ? "On the watch" : "Pop up", d => Settings.WatchMessages = !Settings.WatchMessages);
+            Add("Stick when busy", () => Settings.StickCancelsActions ? "Takes over" : "Waits", d => Settings.StickCancelsActions = !Settings.StickCancelsActions);
+            Add("Action bubble", () => Settings.ActionBubble ? "On" : "Off", d => Settings.ActionBubble = !Settings.ActionBubble);
+            Add("Buy and build", () => Settings.VRBuildMode ? "In VR" : "Flat screen", d => Settings.VRBuildMode = !Settings.VRBuildMode);
+            Add("Render scale", () => (int)Math.Round(Settings.RenderScale * 100) + "%",
                 d => SimitoneVR.SetRenderScale(RenderScales[Wrap(Nearest(RenderScales, Settings.RenderScale) + d, RenderScales.Length)]));
             if (includeSetup)
-                list.Add(new VROption { Label = "COMFORT SETUP", Value = () => "START", Change = d => SimitoneVR.StartSetup(), IsAction = true });
+                list.Add(new VROption { Label = "Comfort setup", Value = () => "Start", Change = d => SimitoneVR.StartSetup(), IsAction = true });
             return list;
         }
 
@@ -78,9 +78,9 @@ namespace Simitone.Client.VR
 
         public static string MovementName(VRMovement movement) => movement switch
         {
-            VRMovement.Stick => "STICK",
-            VRMovement.Arc => "ARC",
-            _ => "STICK + ARC"
+            VRMovement.Stick => "Stick",
+            VRMovement.Arc => "Arc",
+            _ => "Stick + arc"
         };
 
         public static void SetTurn((VRTurnMode mode, float degrees, string name) turn)
@@ -90,7 +90,7 @@ namespace Simitone.Client.VR
             else Settings.SmoothTurnDegreesPerSecond = turn.degrees;
         }
 
-        public static string Name<T>(T value) where T : struct, Enum => value.ToString().ToUpperInvariant();
+        public static string Name<T>(T value) where T : struct, Enum => value.ToString();
 
         public static T Cycle<T>(T value, int direction) where T : struct, Enum
         {

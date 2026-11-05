@@ -1,8 +1,14 @@
 using System;
+using System.Collections.Generic;
+using FSO.Client;
+using FSO.Client.UI.Controls;
+using FSO.Client.UI.Framework;
+using FSO.Common.Rendering.Framework.Model;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using Simitone.VR;
-using Simitone.VR.Graphics;
 
 namespace Simitone.Client.VR
 {
@@ -46,266 +52,279 @@ namespace Simitone.Client.VR
     }
 
     /// <summary>
-    /// The HUD on your wrists while in first person. Each display is drawn into a small render target and shown as a
-    /// transparent quad attached to the controller's grip pose, on the back of the wrist; by default only while you
-    /// turn that wrist to look at it.
-    ///  - <b>Right wrist, the watch:</b> time, game speed and money, and a "!" line when messages are waiting (look at it
-    ///    and pull that hand's trigger to read the oldest).
-    ///  - <b>Left wrist:</b> the Sim's name, their action queue (icons, the running one first, and its name) and their
-    ///    needs. Point the right controller at a queue icon and pull the trigger to cancel that action; anywhere else
-    ///    on the display, the trigger opens the VR options menu.
+    /// The displays on your wrists while in first person, made of Simitone's own UI (see <see cref="VRWatchPanel"/> and
+    /// <see cref="VRNeedsPanel"/>), each attached to the controller's grip pose on the back of the wrist; by default
+    /// shown only while you turn that wrist to look at it.
     /// </summary>
-    public class VRWristHud : IDisposable
+    public class VRWristHud
     {
-        private const int WatchWidth = 256, WatchHeight = 160;
-        private const int NeedsWidth = 256, NeedsHeight = 344;
-        private const float WatchMetres = 0.075f;  // physical width of the watch face
-        private const float NeedsMetres = 0.085f;
-        private const int QueueTop = 30, QueueSlot = 40, QueueStride = 48, QueueLeft = 12;
-        private const int MotivesTop = 100;
+        public readonly VRWatchPanel Watch = new VRWatchPanel();
+        public readonly VRNeedsPanel Needs = new VRNeedsPanel();
 
-        private static readonly string[] MotiveNames = { "HUNGER", "COMFORT", "HYGIENE", "BLADDER", "ENERGY", "FUN", "SOCIAL", "ROOM" };
-
-        private RenderTarget2D Watch, Needs;
-        private VRSwapchain WatchChain, NeedsChain;
-        private SpriteBatch Batch;
-        private Texture2D White;
-        private int RenderCountdown;
-        public bool WatchVisible { get; private set; }
-        public bool NeedsVisible { get; private set; }
         /// <summary>The watch is turned towards your eyes (you're looking at it), whatever <see cref="VRWristMode"/> is.</summary>
         public bool WatchFacing { get; private set; }
-        private XrPoseCache WatchPose, NeedsPose;
-        private int _NeedsHover = NotPointed;
 
-        public const int NotPointed = -2;
-        public const int PointedAtDisplay = -1;
-
-        /// <summary>
-        /// What the right controller points at on the needs display: <see cref="NotPointed"/>, the display itself
-        /// (<see cref="PointedAtDisplay"/>: the trigger opens the VR menu) or a queue slot (0..4: the trigger cancels it).
-        /// </summary>
-        public int NeedsHover
-        {
-            get => _NeedsHover;
-            set
-            {
-                if (value == _NeedsHover) return;
-                _NeedsHover = value;
-                RenderCountdown = 0;
-            }
-        }
-
-        private struct XrPoseCache
-        {
-            public Vector3 Position;
-            public Quaternion Orientation;
-        }
-
-        /// <summary>Decides visibility from the hand and head poses (tracking space). Call once per frame.</summary>
+        /// <summary>Places and shows (or hides) the displays from the hand and head poses (tracking space). Once per frame.</summary>
         public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode)
         {
-            WatchVisible = NeedsVisible = WatchFacing = false;
-            if (mode == VRWristMode.Off || input == null || !input.Active || !head.Valid) return;
-            // grip space: -Z towards the fingers, +X away from the left palm / into the right palm.
-            // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
-            WatchVisible = Place(input.RightGrip, head, new Vector3(-0.035f, 0.005f, 0.085f), -MathHelper.PiOver2, mode, out WatchPose, out var watchFacing);
-            NeedsVisible = Place(input.LeftGrip, head, new Vector3(0.035f, 0.005f, 0.085f), MathHelper.PiOver2, mode, out NeedsPose, out _);
-            WatchFacing = watchFacing;
+            WatchFacing = false;
+            bool watch = false, needs = false;
+            if (mode != VRWristMode.Off && input != null && input.Active && head.Valid)
+            {
+                // grip space: -Z towards the fingers, +X away from the left palm / into the right palm.
+                // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
+                watch = Place(Watch, input.RightGrip, head, new Vector3(-0.035f, 0.005f, 0.085f), -MathHelper.PiOver2, mode, out var watchFacing);
+                needs = Place(Needs, input.LeftGrip, head, new Vector3(0.035f, 0.005f, 0.085f), MathHelper.PiOver2, mode, out _);
+                WatchFacing = watchFacing;
+            }
+            SetShown(Watch, watch);
+            SetShown(Needs, needs);
         }
 
-        /// <summary>
-        /// Where a controller ray hits the (visible) needs display, in its pixels (with a little margin around it, so
-        /// the result can be just outside the image). False if it misses.
-        /// </summary>
-        public bool PointNeeds(VRPose aim, out Point pixel)
+        public void HideAll()
         {
-            pixel = Point.Zero;
-            if (!NeedsVisible || !aim.Valid) return false;
-            var normal = Vector3.Transform(Vector3.UnitZ, NeedsPose.Orientation);
-            var denom = Vector3.Dot(aim.Forward, normal);
-            if (Math.Abs(denom) < 1e-4f) return false;
-            var t = Vector3.Dot(NeedsPose.Position - aim.Position, normal) / denom;
-            if (t <= 0 || t > 1.5f) return false;
-            var local = Vector3.Transform(aim.Position + aim.Forward * t - NeedsPose.Position, Quaternion.Inverse(NeedsPose.Orientation));
-            const float margin = 0.02f;
-            var height = NeedsMetres * NeedsHeight / NeedsWidth;
-            if (Math.Abs(local.X) > NeedsMetres / 2 + margin || Math.Abs(local.Y) > height / 2 + margin) return false;
-            pixel = new Point((int)((local.X / NeedsMetres + 0.5f) * NeedsWidth), (int)((0.5f - local.Y / height) * NeedsHeight));
-            return true;
+            WatchFacing = false;
+            SetShown(Watch, false);
+            SetShown(Needs, false);
         }
 
-        /// <summary>The queue slot (0..4) at a pixel of the needs display, or -1.</summary>
-        public static int QueueSlotAt(Point pixel)
+        private static void SetShown(VRUIPanel panel, bool shown)
         {
-            if (pixel.Y < QueueTop - 4 || pixel.Y > QueueTop + QueueSlot + 4) return -1;
-            var slot = (pixel.X - QueueLeft + (QueueStride - QueueSlot) / 2) / QueueStride;
-            return pixel.X >= QueueLeft - 4 && slot >= 0 && slot < VRHudData.MaxQueue ? slot : -1;
+            if (shown && !panel.Shown) panel.Show();
+            else if (!shown && panel.Shown) panel.Hide();
         }
 
-        private static bool Place(VRPose grip, VRPose head, Vector3 offset, float yaw, VRWristMode mode, out XrPoseCache pose, out bool facing)
+        private static bool Place(VRUIPanel panel, VRPose grip, VRPose head, Vector3 offset, float yaw, VRWristMode mode, out bool facing)
         {
-            pose = default;
             facing = false;
             if (!grip.Valid) return false;
-            pose.Orientation = grip.Orientation * Quaternion.CreateFromAxisAngle(Vector3.Up, yaw);
-            pose.Position = grip.Position + Vector3.Transform(offset, grip.Orientation);
-            var normal = Vector3.Transform(Vector3.UnitZ, pose.Orientation);
-            var toHead = head.Position - pose.Position;
+            panel.PanelOrientation = grip.Orientation * Quaternion.CreateFromAxisAngle(Vector3.Up, yaw);
+            panel.PanelPosition = grip.Position + Vector3.Transform(offset, grip.Orientation);
+            var normal = Vector3.Transform(Vector3.UnitZ, panel.PanelOrientation);
+            var toHead = head.Position - panel.PanelPosition;
             var distance = toHead.Length();
             facing = distance > 1e-3f && distance < 0.9f && Vector3.Dot(normal, toHead / distance) > 0.55f; // turned towards your eyes
             return mode == VRWristMode.Always || facing;
         }
 
-        /// <summary>Redraws the displays (every few frames). Call outside the main draw (render target switches).</summary>
-        public void Render(GraphicsDevice gd, VRHudData data)
+        public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
         {
-            if (!(WatchVisible || NeedsVisible) || data == null || !data.Valid) return;
-            if (RenderCountdown-- > 0 && Watch != null) return;
-            RenderCountdown = 5;
+            Watch.Submit(runtime, ref submission);
+            Needs.Submit(runtime, ref submission);
+        }
 
-            Batch ??= new SpriteBatch(gd);
-            if (White == null)
+        public void Destroy()
+        {
+            Watch.Destroy();
+            Needs.Destroy();
+        }
+    }
+
+    /// <summary>
+    /// The watch on your right wrist: Simitone's clock (its pill, time and current speed icon) and money display, and a
+    /// line for messages waiting to be read (look at the watch and pull that hand's trigger).
+    /// </summary>
+    public class VRWatchPanel : VRUIPanel
+    {
+        private const float FaceScale = 1.4f;
+        private readonly UIImage InnerBg;
+        private readonly UILabel TimeLabel, TimeShadow, MoneyLabel, MessageLabel, MessageHint;
+        private readonly UIVRSprite SpeedIcon;
+        private readonly UIDiagonalStripe MessageStripe;
+        private int LastSpeed = -2;
+
+        public VRWatchPanel() : base((int)(228 * FaceScale), (int)(136 * FaceScale), 0.075f)
+        {
+            var face = new UIContainer { ScaleX = FaceScale, ScaleY = FaceScale };
+            Add(face);
+
+            // the clock, as UIClockPanel draws it when folded up
+            var outer = new UIImage(VRUI.CustomUI("clockbg.png")).With9Slice(25, 25, 0, 0);
+            outer.SetSize(196, 50);
+            face.Add(outer);
+            InnerBg = new UIImage(VRUI.CustomUI("clockinbg.png")).With9Slice(19, 19, 0, 0);
+            InnerBg.SetSize(133, 38);
+            InnerBg.Position = new Vector2(10, 6);
+            face.Add(InnerBg);
+            TimeShadow = VRUI.Label("", 15, Color.Black * 0.25f, TextAlignment.Middle | TextAlignment.Center);
+            TimeShadow.Size = new Vector2(133, 38);
+            TimeShadow.Position = InnerBg.Position + new Vector2(2);
+            face.Add(TimeShadow);
+            TimeLabel = VRUI.Label("", 15, Color.White, TextAlignment.Middle | TextAlignment.Center);
+            TimeLabel.Size = new Vector2(133, 38);
+            TimeLabel.Position = InnerBg.Position;
+            face.Add(TimeLabel);
+            SpeedIcon = new UIVRSprite { Position = new Vector2(151, 6), DrawSize = new Vector2(37, 40) };
+            face.Add(SpeedIcon);
+
+            // the money, as UIMoneyPanel draws it
+            var money = new UIVRMoneyPill { Position = new Vector2(34, 60) };
+            face.Add(money);
+            MoneyLabel = VRUI.Label("", 15, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Middle);
+            MoneyLabel.Size = new Vector2(128, 24);
+            MoneyLabel.Position = money.Position;
+            face.Add(MoneyLabel);
+
+            // messages waiting
+            MessageStripe = new UIDiagonalStripe(new Point(196, 44), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg) { Position = new Vector2(0, 92) };
+            face.Add(MessageStripe);
+            MessageLabel = VRUI.Label("", 15, UIStyle.Current.NegMoney);
+            MessageLabel.Position = new Vector2(10, 94);
+            face.Add(MessageLabel);
+            MessageHint = VRUI.Label("Pull the trigger to read", 12, UIStyle.Current.SecondaryText);
+            MessageHint.Position = new Vector2(10, 116);
+            face.Add(MessageHint);
+        }
+
+        protected override void Refresh(UpdateState state)
+        {
+            var data = SimitoneVR.HudProvider?.Invoke();
+            if (data == null || !data.Valid) return;
+            var hour = data.Hour % 12 == 0 ? 12 : data.Hour % 12;
+            var time = $"{hour}:{data.Minute:00} {(data.Hour > 11 ? "PM" : "AM")}";
+            if (TimeLabel.Caption != time) TimeLabel.Caption = TimeShadow.Caption = time;
+
+            // speed: the clock panel's own speed pictures (1, 2, 3, and 4 = paused)
+            var speed = data.Speed;
+            if (speed != LastSpeed)
             {
-                White = new Texture2D(gd, 1, 1);
-                White.SetData(new[] { Color.White });
-            }
-            Watch ??= new RenderTarget2D(gd, WatchWidth, WatchHeight, false, SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
-            Needs ??= new RenderTarget2D(gd, NeedsWidth, NeedsHeight, false, SurfaceFormat.Color, DepthFormat.None, 0, RenderTargetUsage.PreserveContents);
-
-            var bg = new Color(16, 20, 28) * 0.88f;
-            var frame = new Color(90, 200, 255);
-            var lcd = new Color(140, 255, 190);
-            var amber = new Color(255, 200, 90);
-
-            // ---- watch
-            gd.SetRenderTarget(Watch);
-            gd.Clear(Color.Transparent);
-            Batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.PointClamp, DepthStencilState.None, RasterizerState.CullNone);
-            Panel(new Rectangle(0, 0, WatchWidth, WatchHeight), bg, data.Messages > 0 ? amber : frame);
-            var hour12 = data.Hour % 12 == 0 ? 12 : data.Hour % 12;
-            var time = $"{hour12}:{data.Minute:00}";
-            var big = 7;
-            VRPixelFont.Draw(Batch, White, time, new Vector2((WatchWidth - VRPixelFont.Measure(time, big)) / 2 - 18, 14), big, lcd);
-            VRPixelFont.Draw(Batch, White, data.Hour < 12 ? "AM" : "PM", new Vector2(WatchWidth - 40, 22), 3, lcd);
-            var speed = data.Speed switch { 0 => "||", 1 => ">", 2 => ">>", 3 => ">>>", _ => "--" };
-            VRPixelFont.Draw(Batch, White, speed, new Vector2(14, 82), 3, data.Speed == 0 ? amber : lcd);
-            var money = "$" + data.Money.ToString("N0");
-            VRPixelFont.Draw(Batch, White, money, new Vector2(WatchWidth - 14 - VRPixelFont.Measure(money, 3), 82), 3, lcd);
-            if (data.Messages > 0)
-            {
-                var title = (data.Messages > 1 ? "! " + data.Messages + " " : "! ") + VRPixelFont.Fit(data.MessageTitle, 2, WatchWidth - 40);
-                VRPixelFont.Draw(Batch, White, VRPixelFont.Fit(title, 2, WatchWidth - 28), new Vector2(14, 114), 2, amber);
-                VRPixelFont.Draw(Batch, White, "TRIGGER: READ", new Vector2(14, 136), 2, amber * 0.6f);
-            }
-            Batch.End();
-
-            // ---- needs, with the action queue
-            gd.SetRenderTarget(Needs);
-            gd.Clear(Color.Transparent);
-            Batch.Begin(SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp, DepthStencilState.None, RasterizerState.CullNone);
-            Panel(new Rectangle(0, 0, NeedsWidth, NeedsHeight), bg, NeedsHover >= PointedAtDisplay ? Color.White : frame);
-            VRPixelFont.Draw(Batch, White, VRPixelFont.Fit((data.SimName ?? "").ToUpperInvariant(), 2, NeedsWidth - 24), new Vector2(12, 8), 2, frame);
-
-            for (int i = 0; i < VRHudData.MaxQueue; i++)
-            {
-                var slot = new Rectangle(QueueLeft + i * QueueStride, QueueTop, QueueSlot, QueueSlot);
-                Batch.Draw(White, slot, Color.Black * 0.45f);
-                if (i >= data.QueueCount) continue;
-                var item = data.Queue[i];
-                if (item.Icon != null)
+                LastSpeed = speed;
+                var picture = speed switch { 0 => 4, 1 => 1, 2 => 2, 3 => 3, _ => 0 };
+                SpeedIcon.Visible = picture > 0;
+                if (picture > 0)
                 {
-                    // like the game's queue: wide icons hold two pictures side by side; use the first
-                    var source = item.Icon.Width / (float)item.Icon.Height < 1.1f
-                        ? new Rectangle(0, 0, item.Icon.Width, item.Icon.Height)
-                        : new Rectangle(0, 0, item.Icon.Width / 2, item.Icon.Height);
-                    Batch.Draw(item.Icon, slot, source, item.Cancelled ? Color.White * 0.35f : Color.White);
+                    SpeedIcon.Texture = VRUI.CustomUI($"speedbtn_{picture}.png");
+                    SpeedIcon.Source = new Rectangle(0, 0, SpeedIcon.Texture.Width / 2, SpeedIcon.Texture.Height);
                 }
-                if (item.Cancelled)
-                {
-                    // a red bar across: being cancelled
-                    Batch.Draw(White, new Rectangle(slot.X, slot.Center.Y - 2, slot.Width, 4), new Color(230, 60, 50));
-                }
-                var border = i == NeedsHover ? Color.White : item.Active ? frame : Color.White * 0.25f;
-                Border(slot, border, i == NeedsHover || item.Active ? 2 : 1);
+                InnerBg.Texture = VRUI.CustomUI(speed == 0 ? "clockinbg_pause.png" : "clockinbg.png");
             }
-            var current = data.QueueCount > 0 ? data.Queue[0].Name : "";
-            var hovered = NeedsHover >= 0 && NeedsHover < data.QueueCount ? data.Queue[NeedsHover] : null;
-            var label = hovered != null ? "CANCEL " + hovered.Name : current.Length > 0 ? current : "NOTHING QUEUED";
-            VRPixelFont.Draw(Batch, White, VRPixelFont.Fit(label.ToUpperInvariant(), 2, NeedsWidth - 24), new Vector2(12, 78), 2,
-                hovered != null ? new Color(255, 120, 110) : current.Length > 0 ? lcd : Color.White * 0.4f);
+            var money = "§" + data.Money.ToString("##,#0");
+            if (MoneyLabel.Caption != money) MoneyLabel.Caption = money;
+
+            var messages = data.Messages > 0;
+            MessageStripe.Visible = MessageLabel.Visible = MessageHint.Visible = messages;
+            if (messages)
+            {
+                var text = MessageLabel.CaptionStyle.TruncateToWidth(data.MessageTitle ?? "", 176);
+                if (MessageLabel.Caption != text) MessageLabel.Caption = text;
+                var hint = data.Messages > 1 ? $"{data.Messages} waiting: pull the trigger" : "Pull the trigger to read";
+                if (MessageHint.Caption != hint) MessageHint.Caption = hint;
+            }
+        }
+    }
+
+    /// <summary>The money display's pill (money_bg.png in three slices, tinted like the game's).</summary>
+    public class UIVRMoneyPill : UIElement
+    {
+        public override void Draw(UISpriteBatch batch)
+        {
+            if (!Visible) return;
+            var bg = VRUI.CustomUI("money_bg.png");
+            var tint = UIStyle.Current.Bg;
+            DrawLocalTexture(batch, bg, new Rectangle(0, 0, 12, 24), Vector2.Zero, Vector2.One, tint);
+            DrawLocalTexture(batch, bg, new Rectangle(12, 0, 12, 24), new Vector2(12, 0), new Vector2(8.666667f, 1), tint);
+            DrawLocalTexture(batch, bg, new Rectangle(24, 0, 12, 24), new Vector2(116, 0), Vector2.One, tint);
+        }
+    }
+
+    /// <summary>
+    /// The display on your left wrist: the selected Sim's name, their action queue (the game's own queue icons: point at
+    /// one and pull the trigger to cancel it), their needs (the game's need bars, in two columns as in The Sims) and a
+    /// button for the VR options.
+    /// </summary>
+    public class VRNeedsPanel : VRUIPanel
+    {
+        private const int QueueTop = 34, MotivesTop = 250, RowHeight = 58;
+        private const int PanelWidth = 420, PanelHeight = MotivesTop + 4 * RowHeight + 80;
+        private static readonly string[] MotiveNames = { "Hunger", "Comfort", "Hygiene", "Bladder", "Energy", "Fun", "Social", "Room" };
+
+        private readonly UILabel NameLabel, ActionLabel;
+        private readonly UIContainer QueueArea;
+        private readonly List<(ushort uid, UIInteraction ui, bool cancelled)> QueueUI = new List<(ushort, UIInteraction, bool)>();
+        private readonly UIMotiveBar[] Bars = new UIMotiveBar[8];
+
+        public VRNeedsPanel() : base(PanelWidth, PanelHeight, 0.09f)
+        {
+            Add(new UIDiagonalStripe(new Point(PanelWidth - 32, PanelHeight), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg));
+            NameLabel = VRUI.Label("", 19, UIStyle.Current.Text);
+            NameLabel.Position = new Vector2(16, 6);
+            Add(NameLabel);
+
+            QueueArea = new UIContainer { Position = new Vector2(0, QueueTop) };
+            Add(QueueArea);
+            ActionLabel = VRUI.Label("", 15, UIStyle.Current.SecondaryText);
+            ActionLabel.Position = new Vector2(16, QueueTop + 140);
+            Add(ActionLabel);
+            var hint = VRUI.Label("Point and pull the trigger to cancel", 12, UIStyle.Current.Text * 0.6f);
+            hint.Position = new Vector2(16, QueueTop + 164);
+            Add(hint);
 
             for (int i = 0; i < 8; i++)
             {
-                var y = MotivesTop + i * 27;
-                VRPixelFont.Draw(Batch, White, MotiveNames[i], new Vector2(12, y + 4), 2, Color.White * 0.9f);
-                var bar = new Rectangle(104, y, NeedsWidth - 116, 20);
-                Batch.Draw(White, bar, new Color(0, 0, 0) * 0.6f);
-                var fraction = MathHelper.Clamp((data.Motives[i] + 100f) / 200f, 0, 1);
-                var fill = new Rectangle(bar.X + 2, bar.Y + 2, (int)((bar.Width - 4) * fraction), bar.Height - 4);
-                Batch.Draw(White, fill, MotiveColour(fraction));
+                // the game's layout: Hunger, Comfort, Hygiene, Bladder in the first column; Energy, Fun, Social, Room in the second
+                var x = 18 + (i / 4) * 190;
+                var y = MotivesTop + (i % 4) * RowHeight;
+                var label = VRUI.Label(VRText.Get("f102", (i + 1).ToString(), MotiveNames[i]), 15, UIStyle.Current.Text, TextAlignment.Bottom);
+                label.Size = new Vector2(1);
+                label.Position = new Vector2(x, y - 6);
+                Add(label);
+                Bars[i] = new UIMotiveBar { Position = new Vector2(x, y) };
+                Add(Bars[i]);
             }
-            var hint = NeedsHover >= 0 ? "TRIGGER: CANCEL IT" : "TRIGGER: VR MENU";
-            VRPixelFont.Draw(Batch, White, hint, new Vector2(12, NeedsHeight - 22), 2, NeedsHover >= PointedAtDisplay ? Color.White : frame * 0.6f);
-            Batch.End();
-            gd.SetRenderTarget(null);
-        }
 
-        private void Panel(Rectangle r, Color fill, Color border)
-        {
-            Batch.Draw(White, r, fill);
-            Border(r, border, 3);
-        }
-
-        private void Border(Rectangle r, Color colour, int thickness)
-        {
-            Batch.Draw(White, new Rectangle(r.X, r.Y, r.Width, thickness), colour);
-            Batch.Draw(White, new Rectangle(r.X, r.Bottom - thickness, r.Width, thickness), colour);
-            Batch.Draw(White, new Rectangle(r.X, r.Y, thickness, r.Height), colour);
-            Batch.Draw(White, new Rectangle(r.Right - thickness, r.Y, thickness, r.Height), colour);
-        }
-
-        private static Color MotiveColour(float fraction)
-        {
-            // red (empty) -> yellow -> green (full), like the game's own need bars
-            if (fraction < 0.5f) return Color.Lerp(new Color(230, 50, 40), new Color(240, 210, 60), fraction * 2);
-            return Color.Lerp(new Color(240, 210, 60), new Color(90, 220, 80), (fraction - 0.5f) * 2);
-        }
-
-        /// <summary>Copies the displays into their swapchains and adds them to the frame.</summary>
-        public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
-        {
-            if (Watch == null) return;
-            if (WatchVisible) AddQuad(runtime, ref submission, Watch, ref WatchChain, WatchPose, WatchMetres);
-            if (NeedsVisible) AddQuad(runtime, ref submission, Needs, ref NeedsChain, NeedsPose, NeedsMetres);
-        }
-
-        private static void AddQuad(VRRuntime runtime, ref VRFrameSubmission submission, RenderTarget2D target,
-            ref VRSwapchain chain, XrPoseCache pose, float widthMetres)
-        {
-            chain ??= runtime.CreateSwapchain(target.Width, target.Height);
-            var image = chain.Acquire();
-            GLInterop.BlitTexture(GLInterop.GetTextureHandle(target), target.Width, target.Height, image, 0, 0, chain.Width, chain.Height, flipY: true);
-            chain.Release();
-            submission.AddQuad(new VRQuad
+            var menuButton = new UICatButton(VRUI.Headset(GameFacade.GraphicsDevice))
             {
-                Swapchain = chain,
-                Pose = VRMath.Pose(pose.Position, pose.Orientation),
-                Width = widthMetres,
-                Height = widthMetres * target.Height / target.Width,
-                Transparent = true
-            });
+                Position = new Vector2(16, MotivesTop + 4 * RowHeight - 10)
+            };
+            menuButton.OnButtonClick += _ => SimitoneVR.RequestMenu();
+            Add(menuButton);
+            var menuLabel = VRUI.Label("VR Options", 19, UIStyle.Current.Text, TextAlignment.Left | TextAlignment.Middle);
+            menuLabel.Size = new Vector2(200, 75);
+            menuLabel.Position = new Vector2(100, MotivesTop + 4 * RowHeight - 10);
+            Add(menuLabel);
         }
 
-        public void Dispose()
+        protected override void Refresh(UpdateState state)
         {
-            WatchChain?.Dispose();
-            NeedsChain?.Dispose();
-            Watch?.Dispose();
-            Needs?.Dispose();
-            White?.Dispose();
-            Batch?.Dispose();
-            WatchChain = NeedsChain = null;
+            var data = SimitoneVR.HudProvider?.Invoke();
+            if (data == null || !data.Valid) return;
+            if (NameLabel.Caption != data.SimName) NameLabel.Caption = data.SimName ?? "";
+            for (int i = 0; i < 8; i++) Bars[i].MotiveValue = (int)data.Motives[i];
+            var action = data.QueueCount > 0 ? data.Queue[0].Name : "";
+            if (ActionLabel.Caption != action) ActionLabel.Caption = action;
+            RefreshQueue(data);
+        }
+
+        /// <summary>The queue icons, placed as the game's queue places them (the running action big, the rest in a row).</summary>
+        private void RefreshQueue(VRHudData data)
+        {
+            var same = QueueUI.Count == data.QueueCount;
+            for (int i = 0; same && i < data.QueueCount; i++) same = QueueUI[i].uid == data.Queue[i].UID;
+            if (!same)
+            {
+                foreach (var entry in QueueUI) QueueArea.Remove(entry.ui);
+                QueueUI.Clear();
+                for (int i = 0; i < data.QueueCount; i++)
+                {
+                    var item = data.Queue[i];
+                    var ui = new UIInteraction(i == 0) { Icon = item.Icon };
+                    ui.Position = i == 0 ? new Vector2(73, 73) : new Vector2(37 + 68 + i * 60, 41.5f);
+                    var uid = item.UID;
+                    ui.OnMouseEvent += _ => SimitoneVR.RequestQueueCancel(uid);
+                    QueueArea.Add(ui);
+                    QueueUI.Add((uid, ui, false));
+                }
+            }
+            for (int i = 0; i < QueueUI.Count; i++)
+            {
+                var (uid, ui, cancelled) = QueueUI[i];
+                if (ui.Icon != data.Queue[i].Icon) ui.Icon = data.Queue[i].Icon;
+                if (data.Queue[i].Cancelled && !cancelled)
+                {
+                    ui.SetCancelled();
+                    QueueUI[i] = (uid, ui, true);
+                }
+            }
         }
     }
 }

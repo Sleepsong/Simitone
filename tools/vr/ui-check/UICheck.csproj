@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Renders the VR panels (wrist displays, VR menu, comfort setup, keyboard) with Simitone's real UI (fonts, art,
+    controls) to PNG files, without The Sims installed: only Simitone's own Content folder is needed.
+    Run with run.sh, which points it at a published Simitone build.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RollForward>Major</RollForward>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors></WarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4" />
+    <ProjectReference Include="../../../Client/Simitone/Simitone.Client/Simitone.Client.csproj" />
+  </ItemGroup>
+</Project>
