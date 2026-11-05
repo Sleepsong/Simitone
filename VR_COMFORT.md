@@ -261,13 +261,13 @@ Keep it for experienced players, but harden it:
 | Idea | Seen in | Fit for Simitone | Status |
 |---|---|---|---|
 | Snap / smooth turn | Most VR games, Meta guidance | Turning in all modes | Done |
-| Teleport locomotion (arc) | Vivecraft, Skyrim VR, HL2 VR | Observer mode, as an alternative to smooth movement; reuse the build-mode arc | Idea |
-| "Go Here" by arc, then follow by blink | Trover (warp pads) | Sim mode: point the arc at the floor, the Sim walks there, you blink after them. A comfortable way to cross a big lot | Idea |
+| Teleport locomotion (arc) | Vivecraft, Skyrim VR, HL2 VR | Observer mode, as an alternative to smooth movement; reuse the build-mode arc | **Chosen**: offer alongside smooth walking |
+| "Go Here" by arc, then follow by blink | Trover (warp pads) | Sim mode: point the arc at the floor, the Sim walks there, you blink after them. A comfortable way to cross a big lot | **Chosen**: offer alongside stick walking |
 | Seated mode, artificial crouch | Vivecraft, Road to VR checklist | Seated eye height (we have `HeightOffset`); add a preset | Partly done |
 | Swappable movement hand, one-handed play | Road to VR checklist | Left-handed players; controller remapping (SteamVR binding UI helps) | Idea |
 | Vignette with strength setting | Vivecraft, Skyrim VR, HL2 VR | All movement, especially Sim actions | Idea (high priority) |
 | Third-person view for vehicles and sequences | RE4 VR, HL2 VR | Sim actions ([section 6](#6-proposed-design-comfort-modes-for-sim-actions)), carpools and leaving the lot | Idea (high priority) |
-| Hand-grab world move / rotate / zoom (tabletop) | Little Cities, Townsmen VR, Demeo | A "dollhouse" view of the lot, for build mode or just watching: small `WorldScale`, no locomotion, both grips to move, turn and scale the lot | Idea |
+| Hand-grab world move / rotate / zoom (tabletop) | Little Cities, Townsmen VR, Demeo | A "dollhouse" view of the lot, for build mode or just watching: small `WorldScale`, no locomotion, both grips to move, turn and scale the lot | Later, secondary to first person |
 | Gravity-gun pick-up, placement arc | Half-Life: Alyx, teleport arcs | Buy/build mode | Done (first version) |
 | Wrist displays and menus | Many VR games | Clock and needs | Done; a wrist catalogue tablet is next |
 | Physical climbing and pulling | Vivecraft ladders, ViveMonkeCraft | Not a fit for Sims | No |
@@ -278,15 +278,31 @@ comfortable possible camera (no locomotion), and it suits watching a household g
 plus a small `WorldScale` gets most of the way there already. What's missing is two-handed grab-to-move, rotate and
 scale, and a pointer that works at that scale.
 
-## 8. Next steps, in order
+## 8. Decisions and next steps
 
+Decided (November 2026):
+- **Movement:**
+  - full stick walking stays;
+  - **arc movement** (point the arc at the floor: your Sim walks there and you follow by blinks) and **teleport
+    movement** (blink to where the arc lands, in observer mode) are added as options alongside it.
+- **Comfort tiers in game:** the three `SimActionView` tiers (Comfortable / Moderate / Intense) and the other
+  comfort options are changed **in the game, while playing, without restarting**. Today they live in `vr.ini`,
+  read at start-up.
+  - **Where:** a VR options page that works in the headset: a quick menu on the wrist or floating panel,
+    mirrored in the game's own Options panel. The first-run wizard is the same page.
+  - **How:** changes apply immediately and are saved back to `vr.ini` (`VRSettings.Save` already exists).
+- **Dollhouse view:** later, and secondary to first person.
+
+Next steps, in order:
 1. **Comfortable `SimActionView`:** detach on yield, blink-follow, blink back.
 2. **Vignette** for any motion the player didn't drive (and optionally while steering).
-3. **Posture blinks** (sit, lie, stand) and the "step out" for sleeping and bathing.
-4. **Remove head-bone bob:** anchor horizontally on the Sim's position.
-5. **Comfort presets and a first-run wizard.**
-6. **Measure** Sim walk and run speeds in VR and tune them (or blink).
-7. **Dollhouse view** (two-hand grab and scale) as an alternative to first person and for building.
+3. **In-game VR options:** comfort tier, vignette, movement type (stick / arc / teleport), snap or smooth turn,
+   seated height. Changes apply live and are saved to `vr.ini`.
+4. **Arc movement** (Sim mode) and **teleport movement** (observer), reusing the build-mode arc and the blink.
+5. **Posture blinks** (sit, lie, stand) and the "step out" for sleeping and bathing.
+6. **Remove head-bone bob:** anchor horizontally on the Sim's position.
+7. **Measure** Sim walk and run speeds in VR and tune them (or blink).
+8. Later: **dollhouse view** (two-hand grab and scale).
 
 ## References
 
