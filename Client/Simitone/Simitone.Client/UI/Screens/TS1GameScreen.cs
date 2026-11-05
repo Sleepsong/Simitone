@@ -311,7 +311,10 @@ namespace Simitone.Client.UI.Screens
         {
             var family = vm?.TS1State?.CurrentFamily;
             if (vm == null || !vm.Ready || family == null) return;
-            var present = vm.Context.ObjectQueries.Avatars.Any(x => !x.Dead && family.RuntimeSubset.Contains(x.Object.OBJ.GUID));
+            //household Sims who aren't on the lot (at work or school) are kept as objects out of the world (as
+            //VMTS1LotState creates absent members), so only Sims in the world count as home
+            var present = vm.Context.ObjectQueries.Avatars.Any(x => !x.Dead && family.RuntimeSubset.Contains(x.Object.OBJ.GUID)
+                && x.Position != FSO.LotView.Model.LotTilePos.OUT_OF_WORLD);
 
             if (present) AutoFastForwardDeclined = false;
 
