@@ -305,6 +305,8 @@ Design choices:
   - The wrist display offsets are estimates and may need tuning per controller.
 - **Riding along.** While your Sim walks to and carries out a queued action, the view goes with them; you can
   look around but not steer until they finish, which can be uncomfortable for some people.
+  [VR_COMFORT.md](VR_COMFORT.md) has the research and a proposed fix: step out and follow by blinks, or a
+  third-person view during actions, plus a vignette.
 - **Pie menus** float in front of you rather than at the object. They are the regular 2D menus.
 - **Observer mode:** stairs aren't walked up (use right stick up/down at the stairs), and objects don't
   collide.
