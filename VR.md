@@ -119,8 +119,11 @@ panel's VR button.
 - **stairs:** walk onto them and you blink to the other end, on the other floor;
 - **teleport:** hold the left trigger, aim the arc and let go to blink there;
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game;
-- simple controllers in your hands, with Simitone's green band (also when you've stepped out of your Sim).
-  `ControllerModels=False` hides them.
+- **your controllers in your hands** (also when you've stepped out of your Sim): the real ones, as the headset's
+  software models them, with their sticks, triggers and buttons moving as you use them. That's SteamVR, on the
+  Steam Frame and on a PC, so the Frame's own controllers, Index, Vive or Touch controllers. Where the runtime
+  can't provide models, Simitone draws a simple controller with its green band. `ControllerModels=False` hides
+  them.
 
 **Wrist displays.** Turn your wrist to look at it:
 - **right wrist:** a watch made of the game's clock (time and speed) and money display, plus any messages
@@ -261,7 +264,7 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 | `RunAtFullTilt` | False | Playing as your Sim, a fully pushed stick runs. `False`: walk, and run after clicking the stick |
 | `NormalSpeedWhenSteering` | True | Walking your Sim at game speed 2 or 3 drops the game to speed 1 until you've let go for 2 s |
 | `SimHands` | True | While you walk your Sim, their arms reach for your controllers. `False`: their arms always animate as usual |
-| `ControllerModels` | True | Show simple controllers in your hands when you're not in your Sim's body |
+| `ControllerModels` | True | Show your controllers in your hands when you're not in your Sim's body (the runtime's own models when it has them, else a simple one) |
 | `ComfortSetupDone` | False | The first-run comfort setup has been done; set `False` to see it again |
 | `RenderScale` | 1.0 (Frame: 0.75) | Multiplier on the headset's recommended per-eye resolution |
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
@@ -499,13 +502,27 @@ Design choices:
 - **Observer collision.** Furniture is the game's own footprints for objects that don't let people through, as
   FreeSO's direct control decides it, except doors and stairs. Stairs are a multitile object with portal parts on
   two floors.
+- **Controller models (`VRRenderModels`, `GltfModel`, `VRControllerRenderer`).** With `XR_EXT_render_model` and
+  `XR_EXT_interaction_render_model` (Valve's recommended way to show the Steam Frame's controllers), the runtime
+  lists the devices you hold, each with a glTF model:
+  - when the runtime reports the devices changed (an event during `xrSyncActions`, and once after the first sync),
+    the models are enumerated, and each one's GLB and the names of its moving parts are read once, by asset UUID;
+  - every frame each model's space is located (only drawn when position and orientation are tracked), its moving
+    parts' poses and visibility are read, and `xrGetRenderModelPoseTopLevelUserPathEXT` says which hand it's in;
+  - the GLB is parsed on a worker thread (`System.Text.Json`, in .NET) and put on the GPU on the game thread: base
+    colour factor and texture, embedded images through MonoGame's `Texture2D.FromStream`, the node tree, and
+    the runtime's node poses replacing those nodes' own transforms, as the extension specifies;
+  - a hand without a runtime model gets the built-in one at the grip pose.
+
+  The extensions are newer than OpenXR 1.0.20, so the layout check needs newer Khronos headers for them (below).
 - **Panels on the headset.** Projection layer plus up to eight quads: the two wrist displays, the floating panel,
   the tip, the keyboard, the menu and the setup.
 
 ### Tests
 
 - `tools/vr/layout-check/run.sh` compares every hand-written OpenXR struct's size and field offsets with the
-  Khronos C headers (165 checks).
+  Khronos C headers (165 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
+  `include`, 1.1.4x or later) it also checks the render model structs (201 checks).
 - `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
   - the picking camera reproduces the controller ray;
@@ -519,13 +536,20 @@ Design choices:
   - the VR menu;
   - two comfort setup pages;
   - the keyboard and the placement tip;
-  - the controller model, from the side and from above.
+  - the built-in controller model, from the side and from above.
 
   It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (18 checks): the wrist reaches a
   target in reach and points at one out of reach, bones keep their lengths, the hand points the way the controller
   does, the elbow bends down and out, folding and blending behave, and a skeleton without arms is left alone
-  (`--arms-only` runs just these). It needs only Simitone's own `Content` folder from a published build, not
-  The Sims.
+  (`--arms-only` runs just these).
+
+  And it checks the glTF loader used for the runtime's controller models (10 checks) on a small model made in
+  code: nodes, scene, meshes, materials, embedded image, transforms, a bad file rejected, and that a node pose
+  moves a part and a hidden node isn't drawn. With `UICHECK_GLB_DIR` pointing at a folder of real controller
+  models laid out like the webxr-input-profiles assets' `profiles` folder (MIT; not included), it also draws
+  Index, Touch, Touch Plus and Vive models with their trigger pulled through the same node-pose mechanism.
+
+  It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
@@ -556,7 +580,11 @@ Design choices:
   bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
   The hand points the way yours does but doesn't copy its roll, the fingers keep their animation, and the arms
   only follow you while you walk your Sim (during an action they do the action).
-- **Controllers** are one simple model for every headset, not each maker's own.
+- **Controller models from the runtime** are untested against a runtime that provides them: Monado 21 (used for
+  the tests here) doesn't. The loader is tested on real controller models, and the bindings against the Khronos
+  headers. Valve's own OpenXR utilities show the Steam Frame's controllers through the same two extensions
+  (`ValveSoftware/Unity`, `ValveOpenXRRenderModelFeature`); runtimes without them (e.g. Monado 21) get the
+  simple built-in controller.
 - **Sound** is the game's stereo panning by direction and distance, not 3D (HRTF) audio.
 - **Observer stairs** take you from end to end in a blink; you don't climb them.
 - **Performance:**

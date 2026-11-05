@@ -18,6 +18,7 @@ static class Program
     static int Main(string[] args)
     {
         var armFailures = ArmCheck.Run();
+        GltfCheck.ParseOnly();
         if (args.Length > 0 && args[0] == "--arms-only") return armFailures == 0 ? 0 : 1;
         // args: <published Simitone dir> <output dir>
         var simitoneDir = Path.GetFullPath(args[0]);
@@ -173,6 +174,7 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             if (Shot >= Shots.Count)
             {
                 RenderController();
+                if (GltfCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("glTF checks failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();
@@ -337,6 +339,204 @@ static class ArmCheck
             foreach (var bone in bare.Bones) bone.Children = Array.FindAll(bare.Bones, b => b.ParentName == bone.Name);
             Check("a skeleton with no arms (a pet) is left alone", !new VRSimArms().Solve(bare, Matrices(bare), 1,
                 Vector3.Zero, forward, Vector3.Zero, forward), "Solve returns false");
+        }
+        return Failures;
+    }
+}
+
+// The glTF loader used for the runtime's controller models (Simitone.VR.Graphics.GltfModel): a small model made here
+// (a textured body with a red "stick" node the runtime would animate) is parsed, drawn, posed and hidden; then, if
+// UICHECK_GLB_DIR names a folder of real controller models (e.g. the webxr-input-profiles assets' "profiles" folder),
+// a few are drawn, with the trigger pulled through the same node-pose mechanism the runtime uses.
+static class GltfCheck
+{
+    static int Failures;
+
+    static void Check(string name, bool ok, string detail)
+    {
+        Console.WriteLine($"{(ok ? "ok  " : "FAIL")} glTF: {name}: {detail}");
+        if (!ok) Failures++;
+    }
+
+    // ---- a GLB built by hand: node 0 "body" (a white textured cube), child node 1 "stick" (a small red cube above it)
+    static byte[] MakeGlb(byte[] png)
+    {
+        var positions = new List<float>(); var normals = new List<float>(); var uvs = new List<float>(); var indices = new List<ushort>();
+        var faces = new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ };
+        foreach (var n in faces)
+        {
+            var u = Math.Abs(n.Y) > 0.5f ? Vector3.UnitX : Vector3.UnitY;
+            var v = Vector3.Cross(n, u);
+            var b = (ushort)(positions.Count / 3);
+            foreach (var (du, dv) in new[] { (-1, -1), (1, -1), (1, 1), (-1, 1) })
+            {
+                var p = (n + u * du + v * dv) * 0.05f; // a 10 cm cube
+                positions.AddRange(new[] { p.X, p.Y, p.Z }); normals.AddRange(new[] { n.X, n.Y, n.Z });
+                uvs.AddRange(new[] { (du + 1) / 2f, (dv + 1) / 2f });
+            }
+            indices.AddRange(new[] { b, (ushort)(b + 1), (ushort)(b + 2), b, (ushort)(b + 2), (ushort)(b + 3) });
+        }
+        var bin = new MemoryStream();
+        int Add(byte[] bytes) { var at = (int)bin.Length; bin.Write(bytes, 0, bytes.Length); while (bin.Length % 4 != 0) bin.WriteByte(0); return at; }
+        byte[] F(List<float> f) { var b = new byte[f.Count * 4]; Buffer.BlockCopy(f.ToArray(), 0, b, 0, b.Length); return b; }
+        byte[] U(List<ushort> f) { var b = new byte[f.Count * 2]; Buffer.BlockCopy(f.ToArray(), 0, b, 0, b.Length); return b; }
+        int pAt = Add(F(positions)), nAt = Add(F(normals)), tAt = Add(F(uvs)), iAt = Add(U(indices)), imgAt = Add(png);
+        var count = positions.Count / 3;
+        var json = $@"{{""asset"":{{""version"":""2.0""}},""scene"":0,""scenes"":[{{""nodes"":[0]}}],
+""nodes"":[{{""name"":""body"",""mesh"":0,""children"":[1]}},{{""name"":""stick"",""mesh"":1,""translation"":[0,0.08,0],""scale"":[0.3,0.3,0.3]}}],
+""meshes"":[{{""primitives"":[{{""attributes"":{{""POSITION"":0,""NORMAL"":1,""TEXCOORD_0"":2}},""indices"":3,""material"":0}}]}},
+            {{""primitives"":[{{""attributes"":{{""POSITION"":0,""NORMAL"":1}},""indices"":3,""material"":1}}]}}],
+""materials"":[{{""pbrMetallicRoughness"":{{""baseColorTexture"":{{""index"":0}}}}}},{{""pbrMetallicRoughness"":{{""baseColorFactor"":[1,0,0,1]}},""emissiveFactor"":[0.6,0,0]}}],
+""textures"":[{{""source"":0}}],""images"":[{{""bufferView"":4,""mimeType"":""image/png""}}],
+""accessors"":[{{""bufferView"":0,""componentType"":5126,""count"":{count},""type"":""VEC3"",""min"":[-0.05,-0.05,-0.05],""max"":[0.05,0.05,0.05]}},
+               {{""bufferView"":1,""componentType"":5126,""count"":{count},""type"":""VEC3""}},
+               {{""bufferView"":2,""componentType"":5126,""count"":{count},""type"":""VEC2""}},
+               {{""bufferView"":3,""componentType"":5123,""count"":{indices.Count},""type"":""SCALAR""}}],
+""bufferViews"":[{{""buffer"":0,""byteOffset"":{pAt},""byteLength"":{positions.Count * 4}}},{{""buffer"":0,""byteOffset"":{nAt},""byteLength"":{normals.Count * 4}}},
+                 {{""buffer"":0,""byteOffset"":{tAt},""byteLength"":{uvs.Count * 4}}},{{""buffer"":0,""byteOffset"":{iAt},""byteLength"":{indices.Count * 2}}},
+                 {{""buffer"":0,""byteOffset"":{imgAt},""byteLength"":{png.Length}}}],
+""buffers"":[{{""byteLength"":{bin.Length}}}]}}";
+        var jsonBytes = System.Text.Encoding.UTF8.GetBytes(json);
+        var jsonPadded = new byte[(jsonBytes.Length + 3) & ~3];
+        for (int i = 0; i < jsonPadded.Length; i++) jsonPadded[i] = i < jsonBytes.Length ? jsonBytes[i] : (byte)' ';
+        var binBytes = bin.ToArray();
+        var glb = new MemoryStream();
+        var w = new BinaryWriter(glb);
+        w.Write(0x46546C67u); w.Write(2u); w.Write((uint)(12 + 8 + jsonPadded.Length + 8 + binBytes.Length));
+        w.Write((uint)jsonPadded.Length); w.Write(0x4E4F534Au); w.Write(jsonPadded);
+        w.Write((uint)binBytes.Length); w.Write(0x004E4942u); w.Write(binBytes);
+        return glb.ToArray();
+    }
+
+    static byte[] TinyPng()
+    {
+        // a 2x2 blue and white checker, as PNG
+        return Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAE0lEQVR4nGPQCLjz//9/BiAGsgA7FAijjt680AAAAABJRU5ErkJggg==");
+    }
+
+    /// <summary>The parsing part, with no graphics device (runs with --arms-only too).</summary>
+    public static void ParseOnly()
+    {
+        var asset = Simitone.VR.Graphics.GltfAsset.Parse(MakeGlb(TinyPng()));
+        Check("parse: nodes and names", asset.Nodes.Length == 2 && asset.Nodes[0].Name == "body" && asset.Nodes[1].Name == "stick",
+            $"{asset.Nodes.Length} nodes");
+        Check("parse: scene root and child", asset.Roots.Length == 1 && asset.Roots[0] == 0 && asset.Nodes[0].Children.Length == 1, "body > stick");
+        Check("parse: meshes (24 vertices, 12 triangles each)", asset.Meshes.Length == 2 && asset.Meshes[0][0].Vertices.Length == 24
+            && asset.Meshes[0][0].Indices.Length == 36, "two cubes");
+        Check("parse: materials", asset.Materials.Length == 2 && asset.Materials[0].Image == 0 && asset.Materials[1].BaseColor == new Vector4(1, 0, 0, 1),
+            "textured, and red");
+        Check("parse: embedded image", asset.Images.Length == 1 && asset.Images[0] != null && asset.Images[0][1] == (byte)'P', "PNG bytes");
+        var stick = asset.Nodes[1].Local;
+        Check("parse: node transform (scale then translate)", Math.Abs(stick.M11 - 0.3f) < 1e-6f && Math.Abs(stick.M42 - 0.08f) < 1e-6f,
+            $"scale {stick.M11}, y {stick.M42}");
+        try
+        {
+            Simitone.VR.Graphics.GltfAsset.Parse(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20 });
+            Check("parse: rejects a non-glTF file", false, "no error");
+        }
+        catch (InvalidDataException) { Check("parse: rejects a non-glTF file", true, "InvalidDataException"); }
+    }
+
+    static (int count, Vector2 centre) RedPixels(Color[] pixels, int width)
+    {
+        int count = 0; var sum = Vector2.Zero;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            var c = pixels[i];
+            if (c.R > 150 && c.G < 80 && c.B < 80) { count++; sum += new Vector2(i % width, i / width); }
+        }
+        return (count, count > 0 ? sum / count : Vector2.Zero);
+    }
+
+    public static int Run(GraphicsDevice gd, string outDir)
+    {
+        // ---- the made-up model: drawn, then with the stick moved, then with it hidden (as the runtime would)
+        var asset = Simitone.VR.Graphics.GltfAsset.Parse(MakeGlb(TinyPng()));
+        using (var model = new Simitone.VR.Graphics.GltfModel(gd, asset))
+        using (var target = new RenderTarget2D(gd, 256, 256, false, SurfaceFormat.Color, DepthFormat.Depth24))
+        {
+            model.SetAnimatedNodes(new[] { "stick" });
+            var view = Matrix.CreateLookAt(new Vector3(0, 0.03f, 0.4f), new Vector3(0, 0.03f, 0), Vector3.Up);
+            var projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(40), 1, 0.01f, 10);
+            Color[] Render(Matrix[] poses, bool[] visible)
+            {
+                gd.SetRenderTarget(target);
+                gd.Clear(Color.Black);
+                model.Draw(gd, Matrix.Identity, view, projection, poses, visible);
+                gd.SetRenderTarget(null);
+                var data = new Color[256 * 256];
+                target.GetData(data);
+                return data;
+            }
+            var rest = RedPixels(Render(null, null), 256);
+            var moved = RedPixels(Render(new[] { Matrix.CreateScale(0.3f) * Matrix.CreateTranslation(0.08f, 0.08f, 0) }, new[] { true }), 256);
+            var hidden = RedPixels(Render(new[] { Matrix.Identity }, new[] { false }), 256);
+            Check("draw: the model draws (red stick visible)", rest.count > 50, $"{rest.count} red pixels");
+            Check("draw: a node pose replaces the node's own transform", moved.count > 50 && moved.centre.X - rest.centre.X > 20,
+                $"stick moved right by {moved.centre.X - rest.centre.X:0} px");
+            Check("draw: a hidden node isn't drawn", hidden.count == 0, $"{hidden.count} red pixels");
+            using (var file = File.Create(Path.Combine(outDir, "gltf-test.png"))) { Render(null, null); target.SaveAsPng(file, 256, 256); }
+        }
+
+        // ---- real controller models, if a folder of them is given
+        var dir = Environment.GetEnvironmentVariable("UICHECK_GLB_DIR");
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+        {
+            Console.WriteLine("     glTF: real controller models skipped (set UICHECK_GLB_DIR to a folder of them)");
+            return Failures;
+        }
+        var files = new[] { "valve-index/right.glb", "oculus-touch-v3/left.glb", "meta-quest-touch-plus/right.glb", "htc-vive/none.glb" };
+        const int cell = 300;
+        using (var target = new RenderTarget2D(gd, cell * files.Length, cell * 2, false, SurfaceFormat.Color, DepthFormat.Depth24, 0,
+            RenderTargetUsage.PreserveContents)) // (read back between cells)
+        {
+            gd.SetRenderTarget(target);
+            gd.Clear(new Color(150, 170, 190));
+            for (int i = 0; i < files.Length; i++)
+            {
+                var path = Path.Combine(dir, files[i]);
+                if (!File.Exists(path)) { Check("real model " + files[i], false, "missing"); continue; }
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var real = Simitone.VR.Graphics.GltfAsset.Parse(File.ReadAllBytes(path));
+                var parseMs = watch.ElapsedMilliseconds;
+                using (var model = new Simitone.VR.Graphics.GltfModel(gd, real))
+                {
+                    var b = model.Bounds;
+                    Check("real model " + files[i], b.Radius > 0.03f && b.Radius < 0.3f,
+                        $"{real.Nodes.Length} nodes, {b.Radius * 200:0} cm across, parsed in {parseMs} ms");
+                    // the trigger pulled, the way the runtime animates a part: its node's pose replaced
+                    int Find(string name) => Array.FindIndex(real.Nodes, n => n.Name == name);
+                    var valueNode = Find("xr_standard_trigger_pressed_value");
+                    var maxNode = Find("xr_standard_trigger_pressed_max");
+                    var rows = new Color[2][];
+                    for (int row = 0; row < 2; row++)
+                    {
+                        gd.Viewport = new Viewport(i * cell, row * cell, cell, cell);
+                        // from the side and a little below, where the trigger is
+                        var eye = b.Center + new Vector3(b.Radius * 2.9f, -b.Radius * 0.5f, b.Radius * 0.6f);
+                        var view = Matrix.CreateLookAt(eye, b.Center, Vector3.Up);
+                        var projection = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(40), 1, 0.005f, 10);
+                        Matrix[] poses = null;
+                        if (row == 1 && valueNode >= 0 && maxNode >= 0)
+                        {
+                            model.SetAnimatedNodes(new[] { real.Nodes[valueNode].Name });
+                            poses = new[] { real.Nodes[maxNode].Local };
+                        }
+                        else model.SetAnimatedNodes(null);
+                        model.Draw(gd, Matrix.Identity, view, projection, poses, null);
+                        gd.SetRenderTarget(null);
+                        rows[row] = new Color[cell * cell];
+                        target.GetData(0, new Rectangle(i * cell, row * cell, cell, cell), rows[row], 0, cell * cell);
+                        gd.SetRenderTarget(target);
+                    }
+                    int changed = 0;
+                    for (int k = 0; k < cell * cell; k++) if (rows[0][k] != rows[1][k]) changed++;
+                    if (valueNode >= 0 && maxNode >= 0)
+                        Check("real model " + files[i] + ": the trigger moves when its node is posed", changed > 30, $"{changed} pixels changed");
+                }
+            }
+            gd.SetRenderTarget(null);
+            using (var file = File.Create(Path.Combine(outDir, "controllers-real.png"))) target.SaveAsPng(file, target.Width, target.Height);
         }
         return Failures;
     }

@@ -27,7 +27,7 @@ namespace Simitone.Client.VR
         private SpriteBatch MirrorBatch;
         private BasicEffect BeamEffect;
         private VRComfortOverlay ComfortOverlay;
-        private VRControllerModel ControllerModel;
+        private VRControllerRenderer Controllers;
         private readonly VRSimArms Arms = new VRSimArms();
         private BasicEffect IconEffect;
         private Texture2D BubbleBg, BubbleRim, BubbleCancel;
@@ -55,7 +55,7 @@ namespace Simitone.Client.VR
             MirrorBatch = new SpriteBatch(layer.Device);
             BeamEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
             ComfortOverlay = new VRComfortOverlay(layer.Device);
-            ControllerModel = new VRControllerModel(layer.Device);
+            Controllers = new VRControllerRenderer(layer.Device);
             IconEffect = new BasicEffect(layer.Device) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = true };
         }
 
@@ -174,6 +174,7 @@ namespace Simitone.Client.VR
             cameras.DisableTransitions = true; // never blend another camera into an eye matrix
             // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
             if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
+            Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime?.RenderModels);
 
             for (int eye = 0; eye < 2; eye++)
             {
@@ -206,13 +207,7 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>The controllers in your hands, when you're not in your Sim's body (where their hands are yours).</summary>
-        private void DrawControllers(GraphicsDevice device, VREyeCamera cam)
-        {
-            var vr = VRCamera;
-            if (ControllerModel == null || !vr.ShowControllers) return;
-            if (vr.LeftHandValid) ControllerModel.Draw(device, vr.LeftGripWorld, cam.View, cam.Projection);
-            if (vr.RightHandValid) ControllerModel.Draw(device, vr.RightGripWorld, cam.View, cam.Projection);
-        }
+        private void DrawControllers(GraphicsDevice device, VREyeCamera cam) => Controllers?.Draw(device, VRCamera, cam.View, cam.Projection);
 
         /// <summary>
         /// The laser from the controller: a thin strip facing the eye with a dot where it ends. While placing
@@ -402,7 +397,7 @@ namespace Simitone.Client.VR
             MirrorBatch?.Dispose();
             BeamEffect?.Dispose();
             ComfortOverlay?.Dispose();
-            ControllerModel?.Dispose();
+            Controllers?.Dispose();
             IconEffect?.Dispose();
             base.Dispose();
         }

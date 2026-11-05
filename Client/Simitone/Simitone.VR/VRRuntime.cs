@@ -144,6 +144,8 @@ namespace Simitone.VR
         public HashSet<string> EnabledExtensions { get; } = new HashSet<string>();
 
         public VRInput Input { get; private set; }
+        /// <summary>The controllers as the runtime models them, or null if it can't (see <see cref="VRRenderModels"/>).</summary>
+        public VRRenderModels RenderModels { get; private set; }
 
         // per frame
         public bool FrameInProgress { get; private set; }
@@ -205,6 +207,12 @@ namespace Simitone.VR
             }
             foreach (var optional in new[] { "XR_EXT_local_floor", VRInput.FrameControllerExtension })
                 if (available.Contains(optional)) wanted.Add(optional);
+            // the controllers' own models (SteamVR, including on the Steam Frame), when the runtime offers them
+            if (available.Contains(XrRenderModelApi.RenderModelExtension) && available.Contains(XrRenderModelApi.InteractionRenderModelExtension))
+            {
+                wanted.Add(XrRenderModelApi.RenderModelExtension);
+                wanted.Add(XrRenderModelApi.InteractionRenderModelExtension);
+            }
 
             // ---- instance
             var namePtrs = wanted.Select(s => System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(s)).ToArray();
@@ -286,6 +294,13 @@ namespace Simitone.VR
             CreateSession();
             Input.Attach(Session);
             CreateAppSpace();
+            if (EnabledExtensions.Contains(XrRenderModelApi.InteractionRenderModelExtension))
+            {
+                var rm = XrRenderModelApi.Load(Api, Instance);
+                if (rm != null) RenderModels = new VRRenderModels(Api, rm, Log);
+                Log(rm != null ? "OpenXR: controller models will come from the runtime" : "OpenXR: render model functions missing; using built-in controller models");
+            }
+            else Log("OpenXR: the runtime doesn't offer controller models (XR_EXT_interaction_render_model); using built-in ones");
 
             // ---- swapchain format: sRGB storage for MonoGame's gamma-space output (copied without conversion).
             uint formatCount;
@@ -448,6 +463,9 @@ namespace Simitone.VR
                     case XrStructureType.EventDataInteractionProfileChanged:
                         Log("OpenXR: interaction profile changed");
                         break;
+                    case XrStructureType.EventDataInteractionRenderModelsChangedEXT:
+                        if (RenderModels != null) RenderModels.NeedsEnumerate = true;
+                        break;
                 }
             }
         }
@@ -511,8 +529,16 @@ namespace Simitone.VR
             ViewsValid = false;
             if (ShouldRender) LocateViews();
 
-            if (Focused) Input.Sync(Session, AppSpace, PredictedDisplayTime, deadZone);
-            else Input.Clear();
+            if (Focused)
+            {
+                Input.Sync(Session, AppSpace, PredictedDisplayTime, deadZone);
+                RenderModels?.Update(Session, AppSpace, PredictedDisplayTime);
+            }
+            else
+            {
+                Input.Clear();
+                RenderModels?.Untrack();
+            }
             return true;
         }
 
@@ -621,6 +647,8 @@ namespace Simitone.VR
             if (Api == null) return;
             try
             {
+                RenderModels?.Dispose();
+                RenderModels = null;
                 Input?.Dispose();
                 Input = null;
                 if (AppSpace != 0) Api.DestroySpace(AppSpace);

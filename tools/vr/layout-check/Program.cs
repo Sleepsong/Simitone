@@ -12,6 +12,7 @@ static class Program
         string line;
         while ((line = Console.ReadLine()) != null)
         {
+            if (line.StartsWith("#")) { Console.WriteLine(line); continue; }
             var parts = line.Split(' ');
             if (parts.Length < 2) continue;
             var expected = long.Parse(parts[parts.Length - 1]);

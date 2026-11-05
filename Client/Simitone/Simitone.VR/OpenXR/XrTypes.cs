@@ -65,6 +65,11 @@ namespace Simitone.VR.OpenXR
         ErrorLocalizedNameInvalid = -49,
         ErrorGraphicsRequirementsCallMissing = -50,
         ErrorRuntimeUnavailable = -51,
+        // XR_EXT_render_model / XR_EXT_interaction_render_model
+        ErrorRenderModelIdInvalidEXT = -1000300000,
+        ErrorRenderModelAssetUnavailableEXT = -1000300001,
+        ErrorRenderModelGltfExtensionRequiredEXT = -1000300002,
+        ErrorNotInteractionRenderModelEXT = -1000301000,
     }
 
     public enum XrStructureType : int
@@ -118,6 +123,23 @@ namespace Simitone.VR.OpenXR
         SwapchainImageOpenGLKHR = 1000023004,
         GraphicsRequirementsOpenGLKHR = 1000023005,
         GraphicsBindingEglMNDX = 1000048004,
+        // XR_EXT_render_model
+        RenderModelCreateInfoEXT = 1000300000,
+        RenderModelPropertiesGetInfoEXT = 1000300001,
+        RenderModelPropertiesEXT = 1000300002,
+        RenderModelSpaceCreateInfoEXT = 1000300003,
+        RenderModelStateGetInfoEXT = 1000300004,
+        RenderModelStateEXT = 1000300005,
+        RenderModelAssetCreateInfoEXT = 1000300006,
+        RenderModelAssetDataGetInfoEXT = 1000300007,
+        RenderModelAssetDataEXT = 1000300008,
+        RenderModelAssetPropertiesGetInfoEXT = 1000300009,
+        RenderModelAssetPropertiesEXT = 1000300010,
+        // XR_EXT_interaction_render_model
+        InteractionRenderModelIdsEnumerateInfoEXT = 1000301000,
+        InteractionRenderModelSubactionPathInfoEXT = 1000301001,
+        EventDataInteractionRenderModelsChangedEXT = 1000301002,
+        InteractionRenderModelTopLevelUserPathGetInfoEXT = 1000301003,
     }
 
     public enum XrSessionState : int
@@ -165,6 +187,8 @@ namespace Simitone.VR.OpenXR
         public const ulong ViewStatePositionValid = 0x2;
         public const ulong SpaceLocationOrientationValid = 0x1;
         public const ulong SpaceLocationPositionValid = 0x2;
+        public const ulong SpaceLocationOrientationTracked = 0x4;
+        public const ulong SpaceLocationPositionTracked = 0x8;
 
         public const ulong CompositionLayerBlendTextureSourceAlpha = 0x2;
 

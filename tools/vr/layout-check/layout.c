@@ -1,5 +1,6 @@
 /* Prints sizeof/offsetof for every OpenXR struct Simitone.VR binds by hand.
- * Compared against the C# side by run.sh. Needs the Khronos OpenXR headers (libopenxr-dev) and GL/EGL/X11 headers. */
+ * Compared against the C# side by run.sh. Needs the Khronos OpenXR headers (libopenxr-dev, or OPENXR_INCLUDE for newer ones)
+ * and GL/EGL/X11 headers. */
 #include <stdio.h>
 #include <stddef.h>
 #include <X11/Xlib.h>
@@ -57,5 +58,27 @@ int main(void) {
   S(XrActionStatePose) O(XrActionStatePose, isActive)
   S(XrHapticActionInfo) O(XrHapticActionInfo, action) O(XrHapticActionInfo, subactionPath)
   S(XrHapticVibration) O(XrHapticVibration, duration) O(XrHapticVibration, frequency) O(XrHapticVibration, amplitude)
+#ifdef XR_EXT_render_model
+  /* XR_EXT_render_model / XR_EXT_interaction_render_model (OpenXR headers 1.1.4x and later) */
+  S(XrUuidEXT)
+  S(XrRenderModelCreateInfoEXT) O(XrRenderModelCreateInfoEXT, renderModelId) O(XrRenderModelCreateInfoEXT, gltfExtensionCount) O(XrRenderModelCreateInfoEXT, gltfExtensions)
+  S(XrRenderModelPropertiesGetInfoEXT)
+  S(XrRenderModelPropertiesEXT) O(XrRenderModelPropertiesEXT, cacheId) O(XrRenderModelPropertiesEXT, animatableNodeCount)
+  S(XrRenderModelSpaceCreateInfoEXT) O(XrRenderModelSpaceCreateInfoEXT, renderModel)
+  S(XrRenderModelStateGetInfoEXT) O(XrRenderModelStateGetInfoEXT, displayTime)
+  S(XrRenderModelNodeStateEXT) O(XrRenderModelNodeStateEXT, nodePose) O(XrRenderModelNodeStateEXT, isVisible)
+  S(XrRenderModelStateEXT) O(XrRenderModelStateEXT, nodeStateCount) O(XrRenderModelStateEXT, nodeStates)
+  S(XrRenderModelAssetCreateInfoEXT) O(XrRenderModelAssetCreateInfoEXT, cacheId)
+  S(XrRenderModelAssetDataGetInfoEXT)
+  S(XrRenderModelAssetDataEXT) O(XrRenderModelAssetDataEXT, bufferCapacityInput) O(XrRenderModelAssetDataEXT, bufferCountOutput) O(XrRenderModelAssetDataEXT, buffer)
+  S(XrRenderModelAssetPropertiesGetInfoEXT)
+  S(XrRenderModelAssetNodePropertiesEXT) O(XrRenderModelAssetNodePropertiesEXT, uniqueName)
+  S(XrRenderModelAssetPropertiesEXT) O(XrRenderModelAssetPropertiesEXT, nodePropertyCount) O(XrRenderModelAssetPropertiesEXT, nodeProperties)
+  S(XrInteractionRenderModelIdsEnumerateInfoEXT)
+  S(XrInteractionRenderModelTopLevelUserPathGetInfoEXT) O(XrInteractionRenderModelTopLevelUserPathGetInfoEXT, topLevelUserPathCount) O(XrInteractionRenderModelTopLevelUserPathGetInfoEXT, topLevelUserPaths)
+  printf("# render model structs checked\n");
+#else
+  printf("# these headers predate XR_EXT_render_model: its structs were not checked (set OPENXR_INCLUDE to newer headers)\n");
+#endif
   return 0;
 }

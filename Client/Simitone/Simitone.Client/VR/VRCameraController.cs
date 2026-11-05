@@ -439,6 +439,11 @@ namespace Simitone.Client.VR
         /// <summary>Tracking space (metres) to world units.</summary>
         public Vector3 TrackingToWorld(Vector3 tracking) => RigPosition + RotateYaw(tracking * Scale, RigYaw);
 
+        /// <summary>A pose in tracking space as a world matrix for something modelled in metres (e.g. a controller).</summary>
+        public Matrix PoseToWorld(VRPose pose) => Matrix.CreateScale(Scale)
+            * Matrix.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(Vector3.Up, RigYaw) * pose.Orientation)
+            * Matrix.CreateTranslation(TrackingToWorld(pose.Position));
+
         /// <summary>World units to tracking space (metres).</summary>
         public Vector3 WorldToTracking(Vector3 world) => RotateYaw(world - RigPosition, -RigYaw) / Scale;
 
@@ -573,7 +578,6 @@ namespace Simitone.Client.VR
             var active = input != null && input.Active;
             LeftHandValid = active && input.LeftGrip.Valid;
             RightHandValid = active && input.RightGrip.Valid;
-            var rig = Quaternion.CreateFromAxisAngle(Vector3.Up, RigYaw);
             void Hand(VRPose grip, VRPose aim, bool valid, ref Vector3 wrist, ref Vector3 point, ref Matrix model)
             {
                 if (!valid) return;
@@ -582,7 +586,7 @@ namespace Simitone.Client.VR
                 var forward = Vector3.Transform(-Vector3.UnitZ, (aim.Valid ? aim : grip).Orientation);
                 wrist = TrackingToWorld(grip.Position - forward * 0.08f);
                 point = Vector3.Normalize(RotateYaw(forward, RigYaw));
-                model = Matrix.CreateScale(Scale) * Matrix.CreateFromQuaternion(rig * grip.Orientation) * Matrix.CreateTranslation(TrackingToWorld(grip.Position));
+                model = PoseToWorld(grip);
             }
             if (active)
             {
