@@ -51,15 +51,14 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
   your view does meanwhile is up to the comfort setting (below).
 - **Questions** (phone calls, job offers, Yes/No) appear on their own on the floating panel at eye level, with a
   buzz in both hands and a sound. If you're mid-blink they wait until it's over.
-- **Messages that need no answer** don't pop up in front of you: your right wrist buzzes and the watch shows a
-  "!" with the title. Look at the watch and pull that hand's trigger to read the oldest one. Unread messages clear
-  after two minutes, and all of them are shown as normal dialogs if you leave first person. `WatchMessages=False`
-  pops them up instead.
+- **Messages that need no answer** don't pop up in front of you: the watch (on your pointing hand's wrist) buzzes
+  and shows a "!" with the title. Look at the watch and pull that hand's trigger to read the oldest one. None is
+  ever lost: one left unread for two minutes, or a sixth while five are waiting, pops up as it would have, and all
+  of them do if you leave first person. `WatchMessages=False` pops them up straight away.
 - **Typing:** whenever a text box is waiting for you (naming a baby or pet, Create-A-Sim names), a keyboard
   appears below you. Point and pull the trigger on the keys.
   - Each word starts with a capital; SHIFT changes the next letter. Hold DEL to keep deleting.
   - HIDE puts the keyboard away until another text box needs it.
-  - Name boxes in dialogs start with the current name, so OK on its own keeps it.
 - **Free will** needs no special handling. Direct control re-queues itself every tick, so the Sim you're playing
   always has something queued and free will (which only runs when a Sim's queue is empty) leaves them alone. The
   gamepad work established this approach and confirmed it on hardware.
@@ -251,9 +250,11 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 
 ## Settings (`vr.ini`)
 
-`vr.ini` is written with every option and its default on first run, in the Simitone user folder (on Linux
-`~/Documents/Simitone/`, or `~/Simitone/` if there is no Documents folder; on Windows `Documents\Simitone\`). A
-`vr.defaults.ini` next to the executable, if present, is applied first; the Steam Frame package ships one.
+`vr.ini` is in the Simitone user folder (on Linux `~/Documents/Simitone/`, or `~/Simitone/` if there is no
+Documents folder; on Windows `Documents\Simitone\`). It lists every option; the ones at their default are
+commented out (`# Key=Value`), so they follow the defaults if a later version changes them, and only what you've
+changed (in the file, or in the VR menu) is set. Remove the `#` to set one by hand. A `vr.defaults.ini` next to the
+executable, if present, supplies defaults of its own; the Steam Frame package ships one.
 
 | Key | Default | Meaning |
 |---|---|---|

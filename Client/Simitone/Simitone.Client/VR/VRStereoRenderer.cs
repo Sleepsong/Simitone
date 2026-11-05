@@ -24,14 +24,14 @@ namespace Simitone.Client.VR
         private readonly GraphicsDevice GD;
         private GLMultiview Multiview;
         private bool MultiviewTried, MultiviewBroken;
-        private int FramesSinceScan;
-        private bool ScanNow;
+        private int ScannedResources = -1;
         private readonly Dictionary<Point, GLMultiview.Target> Targets = new Dictionary<Point, GLMultiview.Target>();
         private readonly RenderTarget2D[] Periphery = new RenderTarget2D[2], Inset = new RenderTarget2D[2];
         private SpriteBatch Batch;
         private Texture2D Mask;
         private readonly Vector2[] GazeTangent = new Vector2[2];
         private float GazeLostFor = 10;
+        private const float GazeSmoothing = 50, GazeReturn = 9; // per second
         private string LastMode;
 
         private static readonly BlendState WriteAlphaOnly = new BlendState
@@ -170,22 +170,27 @@ namespace Simitone.Client.VR
         /// <summary>Where each eye looks, as tangents (smoothed); the middle without eye tracking. True while tracked.</summary>
         private bool UpdateGaze(Vector3? gazePoint, in VRMath.ViewFrustum left, in VRMath.ViewFrustum right)
         {
+            var dt = SimitoneVR.FrameDelta;
             if (gazePoint != null)
             {
                 GazeLostFor = 0;
                 var point = gazePoint.Value;
+                var follow = 1 - (float)Math.Exp(-GazeSmoothing * dt); // (a little smoothing of tracker noise)
                 for (int i = 0; i < 2; i++)
                 {
                     var eye = i == 0 ? left : right;
                     var t = VRMath.Tangents(eye, point - eye.Position);
-                    if (t != null) GazeTangent[i] = Vector2.Lerp(GazeTangent[i], t.Value, 0.6f); // (a little smoothing of tracker noise)
+                    if (t != null) GazeTangent[i] = Vector2.Lerp(GazeTangent[i], t.Value, follow);
                 }
                 return true;
             }
             // a blink or a moment's tracking loss keeps the last spot; after that, ease back to the middle
-            GazeLostFor += 1 / 90f;
+            GazeLostFor += dt;
             if (GazeLostFor > 0.4f)
-                for (int i = 0; i < 2; i++) GazeTangent[i] = Vector2.Lerp(GazeTangent[i], Vector2.Zero, 0.1f);
+            {
+                var back = 1 - (float)Math.Exp(-GazeReturn * dt);
+                for (int i = 0; i < 2; i++) GazeTangent[i] = Vector2.Lerp(GazeTangent[i], Vector2.Zero, back);
+            }
             return false;
         }
 
@@ -203,13 +208,14 @@ namespace Simitone.Client.VR
                     SimitoneVR.Log("single-pass stereo unavailable: " + GLMultiview.Unavailable + "; drawing each eye separately");
                     return null;
                 }
-                ScanNow = true;
             }
-            // every vertex shader MonoGame has needs its stereo variant (new effects can appear while playing)
-            if (ScanNow || ++FramesSinceScan > 120)
+            // Every vertex shader MonoGame has needs its stereo variant before the pass (a program without one can't draw
+            // into the two-layer target). New effects can appear while playing; they add GPU resources, so look again
+            // whenever the count changes.
+            var resources = Multiview.ResourceCount;
+            if (resources != ScannedResources)
             {
-                ScanNow = false;
-                FramesSinceScan = 0;
+                ScannedResources = resources;
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 if (!Multiview.PrepareShaders(out var made, out var problem))
                 {

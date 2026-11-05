@@ -82,17 +82,9 @@ namespace Simitone.Client.VR
             pixel = Vector2.Zero;
             distance = 0;
             if (!Shown || !aim.Valid) return false;
-            var normal = Vector3.Transform(Vector3.UnitZ, PanelOrientation);
-            var denom = Vector3.Dot(aim.Forward, normal);
-            if (Math.Abs(denom) < 1e-4f) return false;
-            var t = Vector3.Dot(PanelPosition - aim.Position, normal) / denom;
-            if (t <= 0) return false;
-            var local = Vector3.Transform(aim.Position + aim.Forward * t - PanelPosition, Quaternion.Inverse(PanelOrientation));
-            var heightMetres = WidthMetres * Height / Width;
-            var u = local.X / WidthMetres + 0.5f;
-            var v = 0.5f - local.Y / heightMetres;
-            if (u < 0 || u > 1 || v < 0 || v > 1) return false;
-            pixel = new Vector2(u * Width, v * Height);
+            if (!VRMath.RayPlane(aim.Position, aim.Forward, PanelPosition, PanelOrientation, WidthMetres, WidthMetres * Height / Width,
+                out var uv, out var t) || !VRMath.Inside(uv)) return false;
+            pixel = new Vector2(uv.X * Width, uv.Y * Height);
             distance = t;
             return true;
         }

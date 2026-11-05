@@ -163,12 +163,18 @@ namespace Simitone.VR
         /// Loads settings: built-in defaults, then vr.defaults.ini next to the executable (platform packages such
         /// as the Steam Frame build ship one), then the user's vr.ini.
         /// </summary>
+        /// <summary>What the settings are when vr.ini doesn't say (built in, then vr.defaults.ini).</summary>
+        private static VRSettings Defaults;
+
         public static VRSettings Load(string userDir, Action<string> log = null)
         {
             var settings = new VRSettings();
             FilePath = Path.Combine(userDir ?? AppContext.BaseDirectory, "vr.ini");
             try
             {
+                var defaults = new VRSettings();
+                Apply(defaults, Path.Combine(AppContext.BaseDirectory, "vr.defaults.ini"), log);
+                Defaults = defaults;
                 Apply(settings, Path.Combine(AppContext.BaseDirectory, "vr.defaults.ini"), log);
                 Apply(settings, FilePath, log);
                 settings.Save();
@@ -217,17 +223,20 @@ namespace Simitone.VR
             {
                 var lines = new List<string>
                 {
-                    "# Simitone VR settings. Delete a line to restore its default.",
+                    "# Simitone VR settings. Lines starting with # are defaults (built in, or from vr.defaults.ini next to the",
+                    "# executable) and follow them if they change; remove the # to set one yourself, or add it back to undo.",
                     "# Options: PlayMode = Sim|Observer, TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand,",
                     "#          WristDisplays = Auto|Always|Off, MirrorEye = Left|Right|None,",
                     "#          SimActionView = Comfortable|Moderate|Intense, Vignette / VignetteWhenMoving = Off|Low|Medium|High,",
-                    "#          Movement = StickAndArc|Stick|Arc",
-                    "# Most of these can also be changed in the headset: open the VR menu (left menu button, or point at your",
-                    "# left wrist and pull the trigger).",
+                    "#          Movement = StickAndArc|Stick|Arc, Foveation = Off|Light|Strong",
+                    "# Most of these can also be changed in the headset: open the VR menu (the menu button, or point at the VR",
+                    "# options button on your wrist and pull the trigger).",
                 };
                 foreach (var field in typeof(VRSettings).GetFields(BindingFlags.Public | BindingFlags.Instance))
                 {
-                    lines.Add(field.Name + "=" + Convert.ToString(field.GetValue(this), CultureInfo.InvariantCulture));
+                    var value = Convert.ToString(field.GetValue(this), CultureInfo.InvariantCulture);
+                    var byDefault = Defaults != null && value == Convert.ToString(field.GetValue(Defaults), CultureInfo.InvariantCulture);
+                    lines.Add((byDefault ? "# " : "") + field.Name + "=" + value);
                 }
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllLines(FilePath, lines);

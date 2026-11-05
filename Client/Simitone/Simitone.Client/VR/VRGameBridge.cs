@@ -84,6 +84,8 @@ namespace Simitone.Client.VR
         private int SpeedBeforePause = 1;
         private readonly VRHudData Hud = new VRHudData();
         private readonly Func<Vector2, sbyte, int> RoomAtFunc;
+        private static readonly VMMotive[] HudMotives = { VMMotive.Hunger, VMMotive.Comfort, VMMotive.Hygiene, VMMotive.Bladder,
+            VMMotive.Energy, VMMotive.Fun, VMMotive.Social, VMMotive.Room };
         private readonly Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level)?> StairsAtFunc;
         private readonly Func<Vector2, sbyte, float, bool> ObjectBlocksFunc;
 
@@ -133,6 +135,8 @@ namespace Simitone.Client.VR
                 DirectAvatar = null;
                 Hud.Valid = false;
                 SimitoneVR.UIPanelWanted = false;
+                SimitoneVR.PieMenuOpen = false;
+                SimitoneVR.OpenPie = null;
                 return;
             }
             var camera = world.VRCamera;
@@ -140,7 +144,6 @@ namespace Simitone.Client.VR
 
             UpdateHud(vm, lc);
             HandleButtons(vm, lc, camera, immersive);
-            SimitoneVR.PieMenuOpen = lc.PieMenuOpen;
             SimitoneVR.UpdateMessages(immersive);
             if (SimitoneVR.ConsumeQueueCancel(out var cancelUID) && lc.ActiveEntity is VMAvatar queueOwner)
                 CancelAction(vm, queueOwner, cancelUID);
@@ -208,7 +211,9 @@ namespace Simitone.Client.VR
 
             // ---- pointing at things
             UpdatePointer(world, camera, vm, lc, state, immersive);
+            // (published together, after pointing may have opened a pie menu, so the next frame shows it as one)
             SimitoneVR.PickerOpen = immersive && picker;
+            SimitoneVR.PieMenuOpen = lc.PieMenuOpen;
             SimitoneVR.OpenPie = lc.OpenPie;
             SimitoneVR.UIPanelWanted = immersive && (lc.PieMenuOpen || SimitoneVR.DialogOpen() || SimitoneVR.BuildMode || picker);
         }
@@ -940,9 +945,7 @@ namespace Simitone.Client.VR
             Hud.SimName = sim?.Name ?? "";
             if (sim != null)
             {
-                var motives = new[] { VMMotive.Hunger, VMMotive.Comfort, VMMotive.Hygiene, VMMotive.Bladder,
-                    VMMotive.Energy, VMMotive.Fun, VMMotive.Social, VMMotive.Room };
-                for (int i = 0; i < 8; i++) Hud.Motives[i] = sim.GetMotiveData(motives[i]);
+                for (int i = 0; i < 8; i++) Hud.Motives[i] = sim.GetMotiveData(HudMotives[i]);
             }
 
             // the action queue, as the game's queue display shows it

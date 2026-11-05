@@ -68,33 +68,32 @@ namespace Simitone.VR
             var centre = (a.Position + b.Position) / 2;
             var toLocal = Quaternion.Inverse(orientation);
             var result = new ViewFrustum { Orientation = orientation, Left = float.MaxValue, Down = float.MaxValue, Right = float.MinValue, Up = float.MinValue };
-            void Corners(in ViewFrustum f, ref ViewFrustum r)
+            static void Corner(float x, float y, Quaternion orientation, Quaternion toLocal, ref ViewFrustum r)
             {
-                foreach (var x in new[] { f.Left, f.Right })
-                    foreach (var y in new[] { f.Down, f.Up })
-                    {
-                        var dir = Vector3.Transform(Vector3.Transform(new Vector3(x, y, -1), f.Orientation), toLocal);
-                        var depth = Math.Max(-dir.Z, 1e-3f); // (eyes face within 90 degrees of each other)
-                        r.Left = Math.Min(r.Left, dir.X / depth);
-                        r.Right = Math.Max(r.Right, dir.X / depth);
-                        r.Down = Math.Min(r.Down, dir.Y / depth);
-                        r.Up = Math.Max(r.Up, dir.Y / depth);
-                    }
+                var dir = Vector3.Transform(Vector3.Transform(new Vector3(x, y, -1), orientation), toLocal);
+                var depth = Math.Max(-dir.Z, 1e-3f); // (eyes face within 90 degrees of each other)
+                r.Left = Math.Min(r.Left, dir.X / depth);
+                r.Right = Math.Max(r.Right, dir.X / depth);
+                r.Down = Math.Min(r.Down, dir.Y / depth);
+                r.Up = Math.Max(r.Up, dir.Y / depth);
             }
-            Corners(a, ref result);
-            Corners(b, ref result);
+            // (unrolled: this runs every frame, so nothing is allocated)
+            Corner(a.Left, a.Down, a.Orientation, toLocal, ref result); Corner(a.Right, a.Down, a.Orientation, toLocal, ref result);
+            Corner(a.Left, a.Up, a.Orientation, toLocal, ref result); Corner(a.Right, a.Up, a.Orientation, toLocal, ref result);
+            Corner(b.Left, b.Down, b.Orientation, toLocal, ref result); Corner(b.Right, b.Down, b.Orientation, toLocal, ref result);
+            Corner(b.Left, b.Up, b.Orientation, toLocal, ref result); Corner(b.Right, b.Up, b.Orientation, toLocal, ref result);
             // how far back the viewpoint must go for both eyes' viewpoints to be inside: for an eye offset o (local),
             // the depth to it from a viewpoint d behind the centre is d - o.z, and it must see o.x and o.y within the
             // field of view
-            float back = 0;
-            foreach (var eye in new[] { a.Position, b.Position })
+            static float Back(Vector3 eye, Vector3 centre, Quaternion toLocal, in ViewFrustum r)
             {
                 var o = Vector3.Transform(eye - centre, toLocal);
                 float need = 0;
-                if (o.X > 0) need = Math.Max(need, o.X / result.Right); else if (o.X < 0) need = Math.Max(need, o.X / result.Left);
-                if (o.Y > 0) need = Math.Max(need, o.Y / result.Up); else if (o.Y < 0) need = Math.Max(need, o.Y / result.Down);
-                back = Math.Max(back, need + o.Z);
+                if (o.X > 0) need = Math.Max(need, o.X / r.Right); else if (o.X < 0) need = Math.Max(need, o.X / r.Left);
+                if (o.Y > 0) need = Math.Max(need, o.Y / r.Up); else if (o.Y < 0) need = Math.Max(need, o.Y / r.Down);
+                return need + o.Z;
             }
+            var back = Math.Max(0, Math.Max(Back(a.Position, centre, toLocal, result), Back(b.Position, centre, toLocal, result)));
             back *= 1.01f;
             result.Position = centre + Vector3.Transform(new Vector3(0, 0, back), orientation);
             return result;
@@ -169,6 +168,30 @@ namespace Simitone.VR
             };
             return (new Rectangle(x, y, w, h), view);
         }
+
+        /// <summary>
+        /// Where a ray meets a flat rectangle (a floating panel) of <paramref name="width"/> x <paramref name="height"/>,
+        /// centred at <paramref name="position"/> and facing +Z of <paramref name="orientation"/>: the hit as
+        /// <paramref name="uv"/> (0..1 across from the left, 0..1 down from the top; outside that range when it misses
+        /// the rectangle) and the distance along the ray. False if the ray is parallel or the plane is behind it.
+        /// </summary>
+        public static bool RayPlane(Vector3 origin, Vector3 direction, Vector3 position, Quaternion orientation, float width, float height,
+            out Vector2 uv, out float distance)
+        {
+            uv = default;
+            distance = 0;
+            var normal = Vector3.Transform(Vector3.UnitZ, orientation);
+            var denom = Vector3.Dot(direction, normal);
+            if (Math.Abs(denom) < 1e-4f) return false;
+            var t = Vector3.Dot(position - origin, normal) / denom;
+            if (t <= 0) return false;
+            var local = Vector3.Transform(origin + direction * t - position, Quaternion.Inverse(orientation));
+            uv = new Vector2(local.X / width + 0.5f, 0.5f - local.Y / height);
+            distance = t;
+            return true;
+        }
+
+        public static bool Inside(Vector2 uv) => uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1;
 
         /// <summary>A direction's tangents in a view (x / -z, y / -z); null if it points behind.</summary>
         public static Vector2? Tangents(in ViewFrustum view, Vector3 worldDirection)

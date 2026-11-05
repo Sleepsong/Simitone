@@ -303,9 +303,6 @@ namespace Simitone.Client.UI.Panels
             }
 
             var alert = new UIMobileAlert(options);
-            // VR: a name box starts with the current name (OK on its own keeps it), as typing in a headset is slow
-            if (options.TextEntry && SimitoneVR.SessionRunning)
-                alert.ResponseText = info.Caller?.Thread?.Stack.LastOrDefault()?.StackObject?.Name ?? "";
             // VR first person: a message that needs no answer goes to the watch instead of popping up in front of you
             var toWatch = !info.Block && SimitoneVR.WatchTakesMessages;
 
@@ -1060,9 +1057,7 @@ namespace Simitone.Client.UI.Panels
                     // ESC cancels floor/wallpaper/wall tools
                     if (state.KeyboardState.IsKeyDown(Keys.Escape))
                     {
-                        CustomControl.Release();
-                        CustomControl = null;
-                        OnCustomControlReleased?.Invoke();
+                        ReleaseCustomControl();
                     }
                     else
                     {

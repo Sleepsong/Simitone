@@ -576,6 +576,18 @@ namespace Simitone.VR.Graphics
 
         public uint LastError() => glGetError();
 
+        /// <summary>
+        /// How many GPU resources MonoGame has: when it changes, new shaders may have appeared, so
+        /// <see cref="PrepareShaders"/> should run before the next stereo pass.
+        /// </summary>
+        public int ResourceCount
+        {
+            get
+            {
+                lock (ResourcesLock.GetValue(Device)) return ((List<WeakReference>)ResourcesField.GetValue(Device)).Count;
+            }
+        }
+
         public void Dispose()
         {
             End();

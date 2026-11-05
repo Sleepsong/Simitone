@@ -275,13 +275,18 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>The panels the controller can point at now: a modal one (setup, menu) alone, else keyboard and wrist.</summary>
-        private static System.Collections.Generic.IEnumerable<VRUIPanel> PointablePanels(bool immersive)
+        private static void PointablePanels(bool immersive, System.Collections.Generic.List<VRUIPanel> into)
         {
-            if (SetupOpen) { yield return Setup; yield break; }
-            if (MenuOpen) { yield return Menu; yield break; }
-            if (Keyboard?.Shown == true) yield return Keyboard;
-            if (immersive && Wrists?.Needs.Shown == true) yield return Wrists.Needs;
+            into.Clear();
+            if (SetupOpen) { into.Add(Setup); return; }
+            if (MenuOpen) { into.Add(Menu); return; }
+            if (Keyboard?.Shown == true) into.Add(Keyboard);
+            if (immersive && Wrists?.Needs.Shown == true) into.Add(Wrists.Needs);
         }
+
+        // (kept, not made every frame)
+        private static readonly System.Collections.Generic.List<VRUIPanel> Pointable = new System.Collections.Generic.List<VRUIPanel>();
+        private static readonly VRUIPanel[] MousePanels = new VRUIPanel[5];
 
         public static void Shutdown()
         {
@@ -481,7 +486,8 @@ namespace Simitone.Client.VR
             var pointedPixel = Vector2.Zero;
             var pointedDistance = float.MaxValue;
             var aim = inputActive ? (input.AnyPointerAim) : default;
-            var panels = new System.Collections.Generic.List<VRUIPanel>(PointablePanels(immersive));
+            PointablePanels(immersive, Pointable);
+            var panels = Pointable;
             foreach (var panel in panels)
             {
                 if (panel.Hit(aim, out var pixel, out var distance) && distance < pointedDistance)
@@ -494,7 +500,8 @@ namespace Simitone.Client.VR
             var buttonsDown = inputActive && (input.Select.Down || input.Secondary.Down);
             if (!buttonsDown) PanelPressArmed = true;
             else if (pointed == null) PanelPressArmed = false;
-            foreach (var panel in new VRUIPanel[] { Setup, Menu, Keyboard, Wrists?.Needs, Wrists?.Watch })
+            MousePanels[0] = Setup; MousePanels[1] = Menu; MousePanels[2] = Keyboard; MousePanels[3] = Wrists?.Needs; MousePanels[4] = Wrists?.Watch;
+            foreach (var panel in MousePanels)
             {
                 if (panel == null) continue;
                 if (panel == pointed) panel.SetMouse(pointedPixel, PanelPressArmed && input.Select.Down, PanelPressArmed && input.Secondary.Down);
@@ -813,14 +820,8 @@ namespace Simitone.Client.VR
         private static bool HitsSurface(VRInput input, Vector3 position, Quaternion orientation, float width, float aspect)
         {
             var aim = input.AnyPointerAim;
-            if (!aim.Valid) return false;
-            var normal = Vector3.Transform(Vector3.UnitZ, orientation);
-            var denom = Vector3.Dot(aim.Forward, normal);
-            if (Math.Abs(denom) < 1e-4f) return false;
-            var t = Vector3.Dot(position - aim.Position, normal) / denom;
-            if (t <= 0) return false;
-            var local = Vector3.Transform(aim.Position + aim.Forward * t - position, Quaternion.Inverse(orientation));
-            return Math.Abs(local.X) <= width / 2 && Math.Abs(local.Y) <= width * aspect / 2;
+            return aim.Valid && VRMath.RayPlane(aim.Position, aim.Forward, position, orientation, width, width * aspect, out var uv, out _)
+                && VRMath.Inside(uv);
         }
 
         /// <summary>Points the controller's ray at a flat surface; when it hits, the hit drives the mouse.</summary>
@@ -828,23 +829,11 @@ namespace Simitone.Client.VR
             float width, float aspect, bool armed, Rectangle region)
         {
             var aim = input.AnyPointerAim;
-            if (!aim.Valid) return;
-
-            var normal = Vector3.Transform(Vector3.UnitZ, orientation);
-            var dir = aim.Forward;
-            var denom = Vector3.Dot(dir, normal);
-            if (Math.Abs(denom) < 1e-4f) return;
-            var t = Vector3.Dot(position - aim.Position, normal) / denom;
-            if (t <= 0) return;
+            if (!aim.Valid || !VRMath.RayPlane(aim.Position, aim.Forward, position, orientation, width, width * aspect, out var uv, out var t)) return;
             PanelPointerDistance = t;
-            var hit = aim.Position + dir * t;
-            var local = Vector3.Transform(hit - position, Quaternion.Inverse(orientation));
-            float height = width * aspect;
-            float u = local.X / width + 0.5f;
-            float v = 0.5f - local.Y / height;
-            if (u < 0 || u > 1 || v < 0 || v > 1) return;
+            if (!VRMath.Inside(uv)) return;
 
-            PointerPixel = new Point(region.X + (int)(u * region.Width), region.Y + (int)(v * region.Height));
+            PointerPixel = new Point(region.X + (int)(uv.X * region.Width), region.Y + (int)(uv.Y * region.Height));
             PointerLeft = armed && input.Select.Down;
             PointerRight = armed && input.Secondary.Down;
             ScrollAccumulator += input.Turn.Y * 900f * FrameDelta;
@@ -989,6 +978,7 @@ namespace Simitone.Client.VR
         private static readonly System.Collections.Generic.List<VRMessage> Messages = new System.Collections.Generic.List<VRMessage>();
         private const int MaxMessages = 5;
         private const long MessageLifetimeMs = 120000;
+        // (a message is never lost: if it waits too long, or too many are waiting, it pops up as it would have)
 
         /// <summary>
         /// Messages that need no answer go to the watch instead of popping up, while you're in first person with the
@@ -1001,7 +991,7 @@ namespace Simitone.Client.VR
         public static void PostMessage(FSO.Client.UI.Framework.UIElement alert, string title)
         {
             Messages.Add(new VRMessage { Alert = alert, Title = title ?? "", Posted = Environment.TickCount64 });
-            while (Messages.Count > MaxMessages) Messages.RemoveAt(0);
+            while (Messages.Count > MaxMessages) ShowOldestMessage();
             Runtime?.Haptic(true, 0.5f, 0.12f);
             FSO.HIT.HITVM.Get()?.PlaySoundEvent(FSO.Client.UI.Model.UISounds.Whoosh);
             Log("message on the watch: " + title);
@@ -1019,12 +1009,13 @@ namespace Simitone.Client.VR
             FSO.Client.UI.Framework.UIScreen.GlobalShowDialog(message.Alert, true);
         }
 
-        /// <summary>Called every update by the bridge: old messages expire; outside first person they're all shown.</summary>
+        /// <summary>
+        /// Called every update by the bridge: a message unread for two minutes pops up; outside first person they all do.
+        /// </summary>
         public static void UpdateMessages(bool immersive)
         {
             var now = Environment.TickCount64;
-            Messages.RemoveAll(m => now - m.Posted > MessageLifetimeMs);
-            if (!immersive) while (Messages.Count > 0) ShowOldestMessage();
+            while (Messages.Count > 0 && (!immersive || now - Messages[0].Posted > MessageLifetimeMs)) ShowOldestMessage();
         }
 
         /// <summary>The lot is gone: so are its messages.</summary>

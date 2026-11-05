@@ -174,9 +174,6 @@ namespace Simitone.Client.VR
             var cameras = State.Cameras;
             var oldTransitions = cameras.DisableTransitions;
             cameras.DisableTransitions = true; // never blend another camera into an eye matrix
-            // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
-            if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
-            Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime?.RenderModels);
 
             // The lot (single pass or one per eye, foveated or not). Per-frame animation that FreeSO advances while
             // drawing (avatars easing their tilt to the ground, Mario) uses State.FramePerDraw, worked out once per frame
@@ -185,26 +182,33 @@ namespace Simitone.Client.VR
             var framePerDraw = State.FramePerDraw;
             try
             {
+                // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
+                if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
+                Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime?.RenderModels);
                 Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
                     base.InternalDraw(device);
                 });
-            }
-            finally { State.FramePerDraw = framePerDraw; }
 
-            // then what's drawn over it, per eye
-            for (int eye = 0; eye < 2; eye++)
-            {
-                cam.Eye = eye;
-                PPXDepthEngine.SetPPXTarget(targets[eye], null, false);
-                DrawControllers(device, cam);
-                DrawPointerBeam(device, cam);
-                DrawActionBubble(device, cam);
-                ComfortOverlay?.Draw(device, cam.Projection, cam.NearPlane, VRCamera.VignetteAmount, VRCamera.FadeAlpha);
+                // then what's drawn over it, per eye
+                for (int eye = 0; eye < 2; eye++)
+                {
+                    cam.Eye = eye;
+                    PPXDepthEngine.SetPPXTarget(targets[eye], null, false);
+                    DrawControllers(device, cam);
+                    DrawPointerBeam(device, cam);
+                    DrawActionBubble(device, cam);
+                    ComfortOverlay?.Draw(device, cam.Projection, cam.NearPlane, VRCamera.VignetteAmount, VRCamera.FadeAlpha);
+                }
             }
-            cam.Eye = VREyeCamera.MonoEye;
-            cameras.DisableTransitions = oldTransitions;
+            finally
+            {
+                // (whatever happened, the camera goes back to normal: picking and transitions use it)
+                State.FramePerDraw = framePerDraw;
+                cam.Eye = VREyeCamera.MonoEye;
+                cameras.DisableTransitions = oldTransitions;
+            }
             SimitoneVR.EyesRendered = true;
 
             // Desktop mirror: crop one eye to the window (World.Draw then presents the PPX backbuffer).
