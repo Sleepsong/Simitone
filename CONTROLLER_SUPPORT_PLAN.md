@@ -434,7 +434,7 @@ With `auto`, the lot's layout switches as the player changes device (4 November)
   - no mode selection;
   - the cheat box isn't open;
   - the pad isn't in one of the lot's menus (the mode menu, the tab fan, the action queue, or a panel).
-- **How:** the frontend is rebuilt in the new layout where the old one was. It comes back in the same mode (live, buy, build or options), with the panel open if it was. Walls mode and the rest live in the lot control and carry over.
+- **How:** the frontend is rebuilt in the new layout where the old one was. It comes back in the same mode (live, buy, build or options), with the panel open on the same tab if it was open. Walls mode and the rest live in the lot control and carry over. Opening the panel alone doesn't fill it, which is why the first version brought the needs tab back empty (found on hardware, 5 November).
 - **Elsewhere:** the neighbourhood and CAS screens have one layout, so nothing changes there.
 
 ### Code
@@ -600,6 +600,7 @@ Engine commits `b28765a` and `6167223` on `simitone/controller-phase4`. Simitone
 - **Camera:** follows the Sim's position with light smoothing, and follows them up and down stairs. The right stick still zooms and rotates.
 - **A:** opens the menu of what the Sim is facing: in their room, within 1.25 tiles and 35° of their facing, the best by distance plus angle. The marker shows what that is. With nothing there, A does nothing (there's no "go here" in direct control). Choosing an interaction queues it as usual; the Sim walks over and does it, then direct control resumes.
 - **While the Sim carries out a queued action** (direct control has yielded to it): the marker stays on the action's object, such as the fridge they're walking to or the Sim they're talking to, or is hidden if there isn't one. A opens that object's menu. Before, the marker kept picking whatever the Sim faced as they turned along the route, so it flashed from object to object (found on hardware, 4 November). The stick steers again once direct control resumes.
+- **A seated Sim:** direct control only comes back when the Sim is standing (`VMThread.EnsureDirectControlAction` checks the posture). A Sim left sitting couldn't be walked until free will got them up, for example one woken from a nap on a loveseat (found on hardware, 5 November). Holding the stick for a quarter second now sends them a step that way with the floor's "Go Here", as clicking the floor does. Routing runs the seat's stand-up first, and direct control returns once they're up. Like a click, it interrupts what they're doing in the seat. The prompt bar shows "Stand up" for the stick while they're seated.
 - **Everything else** (LB/RB, Y, LT/RT, D-pad, Start, Back) works as in cursor mode. Direct control follows the active Sim: switching Sims hands it to the new one and releases the old one.
 - It's switched off (and the Sim stops) in buy/build/options mode and when the camera goes 2D, and comes back when they return, until X turns it off. Leaving it in live mode puts the selector on the Sim.
 

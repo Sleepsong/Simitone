@@ -941,6 +941,7 @@ namespace Simitone.Client.UI.Screens
             var old = Frontend;
             var mode = old.MainPanel.Mode;
             var wasOpen = old.MainPanel.PanelActive;
+            var category = old.MainPanel.Switcher.ActiveCategory;
             var children = GetChildren();
             var index = children.IndexOf(old);
             var next = (index >= 0 && index + 1 < children.Count) ? children[index + 1] : null;
@@ -953,7 +954,13 @@ namespace Simitone.Client.UI.Screens
 
             //the new frontend starts in live mode (or buy, for a lot that asks for it): put it back as it was
             if (Frontend.MainPanel.Mode != mode) Frontend.SetModeDirect(mode);
-            if (wasOpen && !Frontend.MainPanel.PanelActive) Frontend.MainPanel.Open();
+            if (wasOpen)
+            {
+                //opening the panel doesn't fill it (the expand button selects the tab too): without this the needs
+                //tab came back empty, its bars gone until the panel was closed and opened again
+                if (!Frontend.MainPanel.PanelActive) Frontend.MainPanel.Open();
+                Frontend.MainPanel.Switcher.Select(category);
+            }
         }
 
         public void ShowLoadErrors(List<VMLoadError> errors, bool verbose)
