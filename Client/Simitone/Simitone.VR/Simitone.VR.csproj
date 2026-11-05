@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Simitone.VR - native OpenXR support for Simitone's 3D mode.
+
+    Deliberately dependency-free: the OpenXR bindings are hand written (no Silk.NET / OpenXR.Loader
+    NuGet packages) and the runtime can be loaded either through the Khronos loader, when one is
+    installed, or directly from the active runtime manifest. That keeps the linux-arm64 build for the
+    Steam Frame free of extra native libraries.
+
+    The only package reference is MonoGame.Framework.DesktopGL, the same version the FreeSO projects
+    already use, for the XNA math types.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <OutputType>Library</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Simitone.VR</RootNamespace>
+    <AssemblyName>Simitone.VR</AssemblyName>
+    <!-- Registry access is only used on Windows and is guarded at runtime. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4" />
+  </ItemGroup>
+
+</Project>

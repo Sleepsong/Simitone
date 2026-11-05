@@ -119,6 +119,11 @@ namespace Simitone.Windows
                             case "3d":
                                 FSOEnvironment.Enable3D = true;
                                 break;
+                            case "vr":
+                                // OpenXR VR (needs 3D mode and OpenGL). See VR.md.
+                                FSOEnvironment.Enable3D = true;
+                                Simitone.Client.VR.SimitoneVR.Requested = true;
+                                break;
                             case "aa":
                                 aa = true;
                                 break;

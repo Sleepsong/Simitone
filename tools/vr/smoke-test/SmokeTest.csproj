@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Headless OpenXR smoke test for Simitone.VR: opens a MonoGame DesktopGL window, starts an OpenXR session on
+    MonoGame's GL context, renders both eyes + a virtual screen quad and checks pixel orientation.
+    Run with tools/vr/smoke-test/run-monado.sh (Monado + Xvfb) or against any real runtime.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4" />
+    <ProjectReference Include="../../../Client/Simitone/Simitone.VR/Simitone.VR.csproj" />
+  </ItemGroup>
+</Project>

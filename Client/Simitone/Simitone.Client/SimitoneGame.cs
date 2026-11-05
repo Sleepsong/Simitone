@@ -25,6 +25,7 @@ using FSO.LotView.Model;
 using Simitone.Client.UI.Panels;
 using System.IO;
 using Simitone.Client.Utils;
+using Simitone.Client.VR;
 
 namespace Simitone.Client
 {
@@ -150,6 +151,9 @@ namespace Simitone.Client
             VM.FreeWillEnabled = GlobalSettings.Default.TS1FreeWill;
             
             base.Initialize();
+
+            // -vr: start OpenXR on MonoGame's OpenGL context (falls back to desktop if no runtime/headset).
+            SimitoneVR.Initialize(this, Graphics);
 
             GameFacade.GameThread = Thread.CurrentThread;
 
@@ -353,8 +357,10 @@ namespace Simitone.Client
         /// </summary>
         protected override void Draw(GameTime gameTime)
         {
+            SimitoneVR.BeginDraw(GraphicsDevice); // waits for the headset's frame timing when VR is active
             base.Draw(gameTime);
             TestMode.AfterDraw(GraphicsDevice);
+            SimitoneVR.EndDraw(GraphicsDevice);   // hands the eyes / virtual screen to the headset
         }
 
         protected override void UnloadContent()
@@ -369,6 +375,7 @@ namespace Simitone.Client
             base.OnExiting(sender, args);
             GameThread.SetKilled();
             args.Cancel = !TestMode.Quitting && !(GameFacade.Screens.CurrentUIScreen?.CloseAttempt() ?? true);
+            if (!args.Cancel) SimitoneVR.Shutdown();
         }
 
         /// <summary>

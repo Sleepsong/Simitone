@@ -694,6 +694,7 @@
     <ProjectReference Include="..\..\..\FreeSO\TSOClient\tso.vitaboy.engine\FSO.Vitaboy.Engine.csproj" />
     <ProjectReference Include="..\..\..\FreeSO\TSOClient\tso.vitaboy.model\FSO.Vitaboy.csproj" />
     <ProjectReference Include="..\..\..\FreeSO\TSOClient\tso.world\FSO.LotView.csproj" />
+    <ProjectReference Include="..\Simitone.VR\Simitone.VR.csproj" />
   </ItemGroup>
 
   <ItemGroup>

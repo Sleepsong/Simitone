@@ -38,6 +38,7 @@
     <ProjectReference Include="..\..\..\FreeSO\TSOClient\tso.world\FSO.LotView.csproj" />
     <ProjectReference Include="..\Simitone.Client\Simitone.Client.csproj" />
     <ProjectReference Include="..\Simitone.Shared\Simitone.Shared.csproj" />
+    <ProjectReference Include="..\Simitone.VR\Simitone.VR.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
