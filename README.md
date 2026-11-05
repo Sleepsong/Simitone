@@ -291,6 +291,8 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 ```
 `crash.log` is always written when the game crashes, since a crash leaves no other record.
 
+**Remesh packs (3D mode):** put the pack's `.fsom` meshes and `_TEX_` textures in `Content/MeshReplace`, next to the game's other content (in a release: `lib/Content/MeshReplace`), or in a `MeshReplace` folder in your user data folder, which takes priority. File names can be in any case, so packs made on Windows also work on Linux. If a replacement mesh's textures are missing, the object keeps its normal look rather than turning invisible. With `-logs`, `simantics-errors.log` says which mesh was missing which texture.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.
