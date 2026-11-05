@@ -223,6 +223,15 @@ Design choices:
 - **No in-world interaction yet.** You can't point at objects or Sims to open the pie menu in first person.
   Use the virtual screen (A). This is the most important next step: a controller ray into
   `GetObjectIDAtScreenPos` plus a world-space pie menu.
+- **You are an observer, not a Sim.** The VR camera roams freely and doesn't control anyone, so free will
+  needs no special handling. A "play as your Sim" mode (camera on the Sim's head, the stick walking them)
+  would build on the gamepad work's TS1 direct control (`VM.AllowDirectControl`, `VMDirectControlFrame.TS1Routine`
+  on Sleepsong/FreeSO `simitone/controller-phase4`+, driven from `UILotControlPadHelper` on the Simitone
+  controller branch). That branch doesn't switch free will off for the controlled Sim. It relies on the
+  direct-control action being re-queued every tick, so the Sim's queue is never empty and TS1's idle-loop free
+  will never fires. That was confirmed on hardware ("the Sim stays put"). This branch is based on
+  `simitone-forked`, so it would also need the FreeSO submodule moved to that branch (it already merges the
+  current pin, `d8a3c175`).
 - **Stairs** aren't walked up; use right stick up/down at the stairs. Objects don't collide.
 - **The game UI isn't shown in first person**, apart from the automatic switch for modal dialogs. A HUD
   (needs, time, money) as a quad layer would be next.
