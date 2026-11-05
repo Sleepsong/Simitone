@@ -332,7 +332,16 @@ namespace Simitone.Client.UI.Panels
                 HandleLiveButtons(pad, frontend, is3D);
                 if (!PanelFocus)
                 {
-                    if (direct) DriveDirect(pad.LeftStick);
+                    if (direct)
+                    {
+                        DriveDirect(pad.LeftStick);
+                        if (!DirectSteering) StandUpForStick(active, pad.LeftStick, dt, now);
+                        else
+                        {
+                            DirectSeated = false;
+                            StandUpHeldFor = 0;
+                        }
+                    }
                     else MoveSelector(pad.LeftStick, dt, now);
                 }
             }
@@ -428,7 +437,7 @@ namespace Simitone.Client.UI.Panels
         private void SetLivePrompts(bool direct, bool is3D, UIMainPanel panel)
         {
             var items = new System.Collections.Generic.List<PadPrompt>();
-            items.Add(PadPrompt.For(PadStick.Left, direct ? "Walk" : "Move"));
+            items.Add(PadPrompt.For(PadStick.Left, !direct ? "Move" : DirectSeated ? "Stand up" : "Walk"));
             if (FishEye) items.Add(PadPrompt.For(PadStick.Right, "Look"));
             if (Target != null) items.Add(PadPrompt.Of(PadAction.Confirm, "Interact"));
             else if (!direct) items.Add(PadPrompt.Of(PadAction.Confirm, "Go here"));
@@ -1291,6 +1300,85 @@ namespace Simitone.Client.UI.Panels
                 TargetHasInteractions = Target != null && Target.GetPieMenu(Master.vm, active, false, true).Count > 0;
                 TargetCheckedFor = active;
             }
+        }
+
+        private const float StandUpStick = 0.5f; //how far the stick is pushed to stand a seated Sim up
+        private const float StandUpHold = 0.25f; //seconds it's held there first, so a bump doesn't end a meal
+        private const double StandUpRetry = 1.5; //seconds before asking again, if they didn't get up
+        private const uint DestinationGUID = 0x000007C4; //"Go Here"'s object (VMNetGotoCmd)
+        private float StandUpHeldFor;
+        private double StandUpSentAt = double.MinValue;
+        private bool DirectSeated;
+
+        /// <summary>
+        /// Direct control comes back only when the Sim stands (VMThread.EnsureDirectControlAction checks the posture), so
+        /// a Sim left sitting (woken from a nap on a loveseat, then just sitting) couldn't be walked until free will got
+        /// them up. Holding the stick then sends them a step that way with the floor's "Go Here", as clicking the floor
+        /// does: routing first runs the seat's own stand-up (VMRoutingFrame, STAND_FUNC), and direct control returns once
+        /// they're on their feet. Like a click, it interrupts what they're doing in the seat.
+        /// </summary>
+        private void StandUpForStick(VMEntity active, Vector2 stick, float dt, double now)
+        {
+            var avatar = active as VMAvatar;
+            DirectSeated = avatar != null && avatar.GetPersonData(FSO.SimAntics.Model.VMPersonDataVariable.Posture) == 1;
+            if (!DirectSeated || stick.Length() < StandUpStick)
+            {
+                StandUpHeldFor = 0;
+                return;
+            }
+            StandUpHeldFor += dt;
+            if (StandUpHeldFor < StandUpHold || now - StandUpSentAt < StandUpRetry) return;
+            var queue = avatar.Thread?.Queue;
+            if (queue == null || queue.Any(x => x.Callee?.Object?.OBJ?.GUID == DestinationGUID)) return; //already on their way
+            var goTo = Master.GotoObject;
+            if (goTo == null) return;
+
+            var tile = FreeTileToward(avatar, World.Transform(new Vector2(stick.X, -stick.Y)));
+            if (tile == null) return;
+            goTo.SetPosition(tile.Value, Direction.NORTH, Master.vm.Context);
+            if (goTo.Position == LotTilePos.OUT_OF_WORLD) return;
+            var entry = goTo.GetPieMenu(Master.vm, avatar, false, true).FirstOrDefault(); //"Go Here", as the floor's menu
+            if (entry == null) return;
+            Master.vm.SendCommand(new VMNetGotoCmd
+            {
+                Interaction = entry.ID,
+                Param0 = entry.Param0,
+                ActorUID = avatar.PersistID,
+                x = tile.Value.x,
+                y = tile.Value.y,
+                level = tile.Value.Level
+            });
+            StandUpSentAt = now;
+            StandUpHeldFor = 0;
+        }
+
+        /// <summary>The free tile next to the Sim closest to <paramref name="direction"/> (tiles), or null.</summary>
+        private LotTilePos? FreeTileToward(VMAvatar avatar, Vector2 direction)
+        {
+            if (direction == Vector2.Zero) return null;
+            direction.Normalize();
+            var pos = avatar.Position;
+            var context = Master.vm.Context;
+            LotTilePos? best = null;
+            var bestDot = float.MinValue;
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    var tile = LotTilePos.FromBigTile((short)(pos.TileX + dx), (short)(pos.TileY + dy), pos.Level);
+                    if (context.IsOutOfBounds(tile) || context.SolidToAvatars(tile).Solid) continue;
+                    var offset = new Vector2(dx, dy);
+                    offset.Normalize();
+                    var dot = Vector2.Dot(offset, direction);
+                    if (dot > bestDot)
+                    {
+                        bestDot = dot;
+                        best = tile;
+                    }
+                }
+            }
+            return best;
         }
 
         /// <summary>
