@@ -39,6 +39,25 @@ static class Program
         return map;
     }
 
+    /// <summary>The area (tiles) of the up-facing quads at a height (world units), each counted once.</summary>
+    static float UpArea(TerrainParallaxVertex[] verts, float height)
+    {
+        float area = 0;
+        for (int q = 0; q < verts.Length; q += 4)
+        {
+            if (verts[q].Normal.Y < 0.5f || !Enumerable.Range(q, 4).All(i => Near(verts[i].Position.Y, height))) continue;
+            float quad = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                var a = verts[q + i].Position / 3;
+                var b = verts[q + (i + 1) % 4].Position / 3;
+                quad += a.X * b.Z - b.X * a.Z;
+            }
+            area += Math.Abs(quad) / 2;
+        }
+        return area;
+    }
+
     static int Main()
     {
         var map = Sample();
@@ -89,6 +108,15 @@ static class Program
         loaded.SetFoundations(back);
         Check("saved and loaded", loaded.Foundations.Any && loaded.Foundations.Raise.SequenceEqual(map.Raise)
             && loaded.Foundations.Steps.SequenceEqual(map.Steps) && loaded.Foundations.Pattern.SequenceEqual(map.Pattern), $"{saved.Length} bytes");
+        using (var r = new BinaryReader(new MemoryStream(saved)))
+            Check("older builds still see foundations", saved[0] == VMArchitectureTerrain.FoundationsRevision && r.ReadBoolean(), $"first byte {saved[0]}");
+        // saves from before the concrete look: the tool put a brick covering on every foundation, so it goes
+        var old = (byte[])saved.Clone();
+        old[0] = 1;
+        FoundationMap oldBack;
+        using (var r = new BinaryReader(new MemoryStream(old))) oldBack = VMArchitectureTerrain.ReadFoundations(r);
+        Check("older foundations lose the tool's brick", oldBack.Raise.SequenceEqual(map.Raise) && oldBack.Steps.SequenceEqual(map.Steps)
+            && oldBack.Pattern.All(p => p == 0), $"{oldBack.Pattern.Count(p => p != 0)} covered tiles");
         using (var mem = new MemoryStream())
         {
             using (var w = new BinaryWriter(mem)) VMArchitectureTerrain.WriteFoundations(w, new FoundationMap(12, 12));
@@ -118,24 +146,54 @@ static class Program
             bp.Altitude = new short[12 * 12];
             bp.AltitudeCenters = new short[12 * 12];
             bp.Foundations = map;
-            var model = new TestFoundation(bp, 7);
-            var verts = model.Build();
+            Check("groups: the concrete, and the covered sides", Modelled3DFoundation.Groups(map).OrderBy(p => p).SequenceEqual(new ushort[] { 0, 7 }), "0, 7");
             var top = H * bp.TerrainFactor * 3;
+            var cap = Modelled3DFoundation.CapHeight * 3;
+            const float O = Modelled3DFoundation.CapOverhang;
+
+            // the covered sides: 12 round the outside, less the one behind the steps, from the ground up to the cap
+            var sides = new TestFoundation(bp, 7).Build();
+            Check("covered sides", sides.Length == 11 * 4, $"{sides.Length / 4} quads");
+            Check("covered sides stop under the cap", sides.All(v => v.Position.Y >= -1e-4f && v.Position.Y <= top - cap + 1e-4f), $"0..{top - cap}");
+            Check("covered sides on tile edges", sides.Where(v => Math.Abs(v.Normal.X) > 0.5f).All(v => Near(v.Position.X % 3, 0))
+                && sides.Where(v => Math.Abs(v.Normal.Z) > 0.5f).All(v => Near(v.Position.Z % 3, 0)), "x and y edges");
+
+            // the concrete: 9 bare tops; a cap on each of the 11 sides (face, top, underside); an end on the two caps
+            // that stop at the steps; the steps (3 risers, 3 treads, 6 sides, 1 last riser)
+            var verts = new TestFoundation(bp, 0).Build();
             var ys = verts.Select(v => v.Position.Y).ToList();
-            Check("model made", verts.Length > 0, $"{verts.Length} vertices");
             Check("heights between the ground and the top", ys.All(y => y >= -1e-4f && y <= top + 1e-4f), $"0..{top}");
-            // 9 bare tops + 11 sides (12 round the outside, less the one behind the steps) = 20 quads, and the steps:
-            // 3 risers, 3 treads, 6 sides, 1 last riser = 13 quads; 4 vertices a quad
-            Check("quads", verts.Length == (20 + 13) * 4, $"{verts.Length / 4} quads");
-            var sides = verts.Where(v => Math.Abs(v.Normal.Y) < 0.5f).ToList();
-            Check("sides on tile edges", sides.Where(v => Math.Abs(v.Normal.X) > 0.5f).All(v => Near(v.Position.X % 3, 0)), "x edges");
-            var stepTop = verts.Where(v => v.Position.Z >= 7 * 3 - 1e-3f && v.Position.Z <= 8 * 3 + 1e-3f).Max(v => v.Position.Y);
-            Check("steps reach the foundation", Near(stepTop, top), $"{stepTop} of {top}");
-            Check("nothing on the open ground", verts.All(v => v.Position.X >= 4 * 3 - 1e-3f && v.Position.X <= 7 * 3 + 1e-3f && v.Position.Z >= 4 * 3 - 1e-3f && v.Position.Z <= 8 * 3 + 1e-3f), "inside x 4..7, y 4..8");
+            Check("concrete quads", verts.Length == (9 + 11 * 3 + 2 + 13) * 4, $"{verts.Length / 4} quads");
+            // the last riser (facing down the steps, +y) goes up to the foundation's edge, across the steps' tile
+            Check("steps reach the foundation", new[] { 5, 6 }.All(x => verts.Any(v => Near(v.Position.X, x * 3) && Near(v.Position.Z, 7 * 3)
+                && Near(v.Position.Y, top) && v.Normal.Z > 0.5f)), $"riser to {top}");
+            Check("nothing on the open ground but the cap", verts.All(v => v.Position.X >= (4 - O) * 3 - 1e-3f && v.Position.X <= (7 + O) * 3 + 1e-3f
+                && v.Position.Z >= (4 - O) * 3 - 1e-3f && v.Position.Z <= 8 * 3 + 1e-3f), $"inside x 4..7 and y 4..8, and {O} round");
+            Check("caps meet round the corners", new[] { new Vector2(4 - O, 4 - O), new Vector2(7 + O, 4 - O), new Vector2(7 + O, 7 + O), new Vector2(4 - O, 7 + O) }
+                .All(c => verts.Count(v => Near(v.Position.X, c.X * 3) && Near(v.Position.Z, c.Y * 3) && Near(v.Position.Y, top)) >= 2), "all four");
+            // the caps' tops (all up-facing concrete above the bare tops' area) cover the band round the outside once:
+            // 11 sides of the outline, and the four corner squares
+            var capTops = UpArea(verts, top) - 9;
+            Check("caps' tops cover the outline once", Near(capTops, 11 * O + 4 * O * O), $"{capTops} (want {11 * O + 4 * O * O})");
 
             bp.Floors[0][5 * 12 + 5].Pattern = 12; // floor laid on the middle: its top is the floor's
-            verts = new TestFoundation(bp, 7).Build();
-            Check("floored tile has no bare top", verts.Length == (19 + 13) * 4, $"{verts.Length / 4} quads");
+            verts = new TestFoundation(bp, 0).Build();
+            Check("floored tile has no bare top", verts.Length == (8 + 11 * 3 + 2 + 13) * 4, $"{verts.Length / 4} quads");
+
+            // an L: x 4..6 on y 4, and x 6 on y 5..6: one inside corner, at (6, 5)
+            var l = new FoundationMap(12, 12);
+            foreach (var t in new[] { new Point(4, 4), new Point(5, 4), new Point(6, 4), new Point(6, 5), new Point(6, 6) })
+                l.Raise[t.Y * 12 + t.X] = FoundationMap.DefaultHeight;
+            l.Refresh();
+            bp.Foundations = l;
+            bp.Floors[0][5 * 12 + 5].Pattern = 0;
+            verts = new TestFoundation(bp, 0).Build();
+            Check("inside corner", Modelled3DFoundation.EndOf(l, 5, 4, 2, false) == Modelled3DFoundation.CapEnd.Concave
+                && Modelled3DFoundation.EndOf(l, 6, 5, 3, true) == Modelled3DFoundation.CapEnd.Concave, "both caps see it");
+            // the outline is 12 sides long, with 5 outside corners and 1 inside one
+            var lTops = UpArea(verts, top) - 5;
+            Check("caps' tops cover an L's outline once", Near(lTops, 12 * O + 5 * O * O - O * O), $"{lTops} (want {12 * O + 4 * O * O})");
+            bp.Foundations = map;
 
             var heightAt = bp.InterpAltitude(new Vector3(5.5f, 7.5f, 0));
             Check("Sims walk up the steps", Near(heightAt, H / 2f * bp.TerrainFactor), $"{heightAt}");
