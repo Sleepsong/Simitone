@@ -211,7 +211,21 @@ namespace Simitone.Client.VR
                 && !sim.Dead && sim.Position != LotTilePos.OUT_OF_WORLD && sim.PersistID == vm.MyUID)
                 wanted = sim;
             SyncDirectControl(wanted);
-            camera.SimAvatar = DirectAvatar?.WorldUI as AvatarComponent;
+            // buy/build while playing as your Sim: you stay in their head (paused, they stand still) with their hands
+            // following yours, until you fly (VRCameraController.FreeFlight)
+            VMAvatar buildSim = null;
+            if (immersive && SimitoneVR.PlayMode == VRPlayMode.Sim && !lc.LiveMode && !camera.InDollhouse && lc.ActiveEntity is VMAvatar builder
+                && !builder.Dead && builder.Position != LotTilePos.OUT_OF_WORLD && builder.PersistID == vm.MyUID)
+                buildSim = builder;
+            camera.BuildFromSim = buildSim != null;
+            // the dollhouse puts your selected Sim in front of you
+            camera.DollhouseAnchorTile = lc.ActiveEntity is VMAvatar anchor && !anchor.Dead && anchor.Position != LotTilePos.OUT_OF_WORLD
+                ? new Vector2(anchor.Position.x / 16f, anchor.Position.y / 16f) : (Vector2?)null;
+            // the dollhouse giant is your selected Sim
+            world.GiantSim = inDollhouse && SimitoneVR.Settings.DollhouseBody && lc.ActiveEntity is VMAvatar giant && !giant.Dead
+                ? giant.WorldUI as AvatarComponent : null;
+            camera.SimAvatar = DirectAvatar?.WorldUI as AvatarComponent
+                ?? (buildSim != null && !camera.FreeFlight ? buildSim.WorldUI as AvatarComponent : null);
             camera.SimSteering = DirectAvatar != null && Steering;
             camera.SimStandingUp = DirectAvatar != null && Now - StandUpSentAt < 3.0;
             camera.SimInPortal = DirectAvatar != null && !Steering && InPortal;

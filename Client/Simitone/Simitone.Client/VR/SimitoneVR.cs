@@ -514,7 +514,7 @@ namespace Simitone.Client.VR
             }
             else if (Tablet?.Shown == true) Tablet.Hide();
             if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays, needsAllowed: !tabletWanted,
-                otherSide: Settings.WristOtherSide != WristFlippedByController(), size: Settings.WristDisplaySize);
+                otherSide: Settings.WristOtherSide, size: Settings.WristDisplaySize);
             else Wrists?.HideAll();
             // the VR pie menu, over what you pointed at
             if (vrPie && LastHead.Valid)
@@ -739,15 +739,6 @@ namespace Simitone.Client.VR
         private static bool PanelsRecentre;
         private static float ToggleHeldFor;
 
-        /// <summary>
-        /// The controllers in use put the back of the hand on the other side from the OpenXR rule, as SteamVR's Steam
-        /// Frame controllers do (the wrist displays were on the inside of the wrist).
-        /// </summary>
-        private static bool WristFlippedByController()
-        {
-            var profiles = Runtime?.HandProfiles;
-            return profiles != null && (profiles[0].Contains("/valve/frame_controller") || profiles[1].Contains("/valve/frame_controller"));
-        }
         private static float PointerHitDistance; // (metres to what the pointer's on: a panel or the screen; 0 for nothing)
         private static VRControllerRenderer HandsRenderer;
         private static BasicEffect HandsEffect;

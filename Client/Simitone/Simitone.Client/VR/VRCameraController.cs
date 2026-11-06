@@ -145,6 +145,16 @@ namespace Simitone.Client.VR
         // a cursor camera that maps exactly that pixel onto where you aim (the arc's landing point while placing,
         // along the controller's ray while picking things up).
         public bool BuildMode;
+        /// <summary>
+        /// Set by the bridge: buy/build mode while playing as your Sim. You stay in their head (the game's paused, so they
+        /// stand still), with their arms following your hands as you place things, until <see cref="FreeFlight"/>.
+        /// </summary>
+        public bool BuildFromSim;
+        /// <summary>
+        /// Buy/build while playing as your Sim: you've left their head to fly about the lot (the walking stick's click,
+        /// or changing floors); the bridge then stops putting you in their head. Ends with buy/build mode.
+        /// </summary>
+        public bool FreeFlight;
         /// <summary>Holding an object or using a build tool: aim with the arc. Otherwise the straight pointer picks.</summary>
         public bool PlacementMode;
         public bool PlacementValid = true;
@@ -252,7 +262,9 @@ namespace Simitone.Client.VR
         /// <summary>0 = the Sim's arms animate as usual, 1 = they follow the controllers (blended in and out).</summary>
         public float ArmWeight { get; private set; }
         /// <summary>Show controller models: when you're not in a Sim's body.</summary>
-        public bool ShowControllers => Settings.ControllerModels && (SimAvatar == null || SimView != VRSimView.Anchored);
+        public bool ShowControllers => Settings.ControllerModels && (SimAvatar == null || SimView != VRSimView.Anchored) && !GiantShown;
+        /// <summary>Set by the lot world each frame: the dollhouse giant is drawn (its hands are where the controllers are).</summary>
+        public bool GiantShown;
 
         // ---- movement arc (left trigger): your Sim walks to where it lands, or you teleport there as an observer
         public readonly Vector3[] MoveArcPoints = new Vector3[64];
@@ -578,6 +590,7 @@ namespace Simitone.Client.VR
             }
             if (yawDelta != 0) RotateRigAroundHead(head, yawDelta);
             UpdateDollhouseSwitch(world, headTrack);
+            UpdateFreeFlightSwitch(world, input);
 
             bool driven = smoothTurn; // the player is moving the view (vignette: VignetteWhenMoving rather than Vignette)
             if (InDollhouse)
@@ -604,7 +617,8 @@ namespace Simitone.Client.VR
                 }
                 if (!BlinkFadingOut) SetHiddenHead(null); // (not while we're still in their head, fading out)
                 SimHeadInitialised = false;
-                if (!BlinkFadingOut) driven |= UpdateObserverRig(world, head, headTrack, input, turnX, dt);
+                if (!BlinkFadingOut) driven |= BuildMode && FreeFlight ? UpdateFlight(world, head, headTrack, input, dt)
+                    : UpdateObserverRig(world, head, headTrack, input, turnX, dt);
             }
             if (!InDollhouse) UpdateMoveArc(world, input);
             else MoveArcCount = 0;
@@ -671,8 +685,9 @@ namespace Simitone.Client.VR
             }
             // While you steer your Sim from their head, their arms follow your hands; during an action, or when you're
             // not in their head, they animate as usual (blended over a fifth of a second).
+            // (and in buy/build from their head: their hands reach for what you place)
             var want = Settings.SimHands && SimAvatar != null && SimView == VRSimView.Anchored && !BlinkFadingOut
-                && (SimSteering || SimInPortal) && (LeftHandValid || RightHandValid);
+                && (SimSteering || SimInPortal || BuildMode) && (LeftHandValid || RightHandValid);
             ArmWeight = MathHelper.Clamp(ArmWeight + (want ? 5f : -5f) * dt, 0, 1);
         }
 
@@ -1271,6 +1286,108 @@ namespace Simitone.Client.VR
                 if ((i % 5 == 4 || landed) && count < points.Length) points[count++] = pos;
             }
             return pos;
+        }
+
+        /// <summary>
+        /// Buy/build as your Sim: the walking stick's click takes you out of their head to fly, and back in; so does
+        /// changing floors from their head (the right stick, or the tablet's or the game's floor buttons), which you can
+        /// only do flying (their floor is where they stand).
+        /// </summary>
+        private void UpdateFreeFlightSwitch(World world, VRInput input)
+        {
+            if (!BuildMode || !BuildFromSim)
+            {
+                if (FreeFlight) SimitoneVR.Log("free flight over");
+                FreeFlight = false;
+                FlightLatched = false;
+                return;
+            }
+            var active = input != null && input.Active;
+            if (active && input.Sprint.Pressed && !BlinkFadingOut)
+            {
+                FreeFlight = !FreeFlight;
+                SimitoneVR.Runtime?.Haptic(false, 0.35f, 0.03f);
+                SimitoneVR.Log(FreeFlight ? "free flight" : "back in your Sim");
+                return;
+            }
+            if (FreeFlight || SimAvatar == null) return;
+            // from their head: a floor change means flying there
+            var turnY = active && !PlacementMode ? input.Turn.Y : 0;
+            if (!FlightLatched && Math.Abs(turnY) > 0.8f)
+            {
+                FlightLatched = true;
+                KeyboardLevel = Math.Sign(turnY);
+            }
+            else if (Math.Abs(turnY) < 0.3f) FlightLatched = false;
+            var gameChanged = BuildLevelSet > 0 && world.State.Level != BuildLevelSet;
+            if (KeyboardLevel != 0 || gameChanged)
+            {
+                FreeFlight = true;
+                SimitoneVR.Log("free flight (to change floors)");
+            }
+        }
+        private bool FlightLatched;
+
+        /// <summary>
+        /// Flying in buy/build: the left stick moves you the way you look (look up and push forward to rise), the right
+        /// stick up and down too (not while placing, when it's the arc's reach); through walls, anywhere over the lot from
+        /// just above the ground to above the top floor. The floor shown is the one you're over.
+        /// </summary>
+        private bool UpdateFlight(World world, VRPose head, Vector3 headTrack, VRInput input, float dt)
+        {
+            var settings = Settings;
+            Ride = null;
+            HeadWorld = TrackingToWorld(headTrack);
+            var active = input != null && input.Active;
+            var move = MoveIntent;
+            var rise = active && !PlacementMode ? input.Turn.Y : 0;
+            if (Math.Abs(rise) < 0.25f) rise = 0;
+            var look = head.Valid ? TrackingDirectionToWorld(Vector3.Transform(-Vector3.UnitZ, head.Orientation)) : Vector3.Forward;
+            if (look.LengthSquared() > 1e-6f) look.Normalize();
+            var yaw = MoveYaw;
+            var right = new Vector3((float)Math.Cos(yaw), 0, -(float)Math.Sin(yaw));
+            var forward = settings.MoveDirection == VRMoveDirection.LeftHand
+                ? new Vector3(-(float)Math.Sin(yaw), 0, -(float)Math.Cos(yaw)) : look;
+            var fly = forward * move.Y + right * move.X + Vector3.Up * rise;
+            var driven = false;
+            if (fly.LengthSquared() > 1e-6f)
+            {
+                var sprint = (active && input.Sprint.Down) || IsShiftDown();
+                var speed = settings.MoveSpeed * 1.5f * (sprint ? settings.SprintMultiplier : 1f);
+                var delta = fly * speed * dt * Scale;
+                var tile = ClampToLot(world, new Vector2(HeadWorld.X + delta.X, HeadWorld.Z + delta.Z) / TileUnits);
+                var ground = FloorHeight(world, tile, 1);
+                var top = ground + (Stories + 0.5f) * LevelHeightTiles * TileUnits;
+                var eyeY = MathHelper.Clamp(HeadWorld.Y + delta.Y, ground + 0.3f * Scale, top);
+                RigPosition += new Vector3(tile.X * TileUnits - HeadWorld.X, eyeY - HeadWorld.Y, tile.Y * TileUnits - HeadWorld.Z);
+                HeadWorld = TrackingToWorld(headTrack);
+                driven = true;
+            }
+            // the floor shown: the one you're over (eyes above its floor)
+            var headTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
+            var levelHeight = LevelHeightTiles * TileUnits;
+            var height = HeadWorld.Y - FloorHeight(world, headTile, 1);
+            var level = (sbyte)MathHelper.Clamp((int)Math.Floor(height / levelHeight) + 1, 1, Math.Max(1, Stories));
+            // a floor asked for (the right stick from your Sim's head, the tablet's or the game's floor buttons): up or
+            // down to the same height over it, behind a blink
+            var asked = KeyboardLevel != 0 ? level + KeyboardLevel
+                : BuildLevelSet > 0 && world.State.Level != BuildLevelSet ? world.State.Level : level;
+            asked = MathHelper.Clamp(asked, 1, Math.Max(1, Stories));
+            if (asked != level && !BlinkFadingOut)
+            {
+                var climb = (asked - level) * levelHeight;
+                Blink(() => RigPosition.Y += climb);
+                level = (sbyte)asked;
+                SimitoneVR.Runtime?.Haptic(true, 0.5f, 0.05f);
+            }
+            if (level != PlayerLevel)
+            {
+                PlayerLevel = level;
+                FloorsUsedRefresh = 0;
+            }
+            KeyboardLevel = 0;
+            FloorY = HeadWorld.Y - 1.6f * Scale; // (for the vignette's sense of the floor and when you land)
+            return driven;
         }
 
         /// <summary>Observer mode: smooth locomotion, wall collision, floors. Returns true while the stick moves you.</summary>

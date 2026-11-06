@@ -72,7 +72,7 @@ namespace Simitone.Client.VR
         /// <summary>Places and shows (or hides) the displays from the hand and head poses (tracking space). Once per frame.</summary>
         /// <param name="needsAllowed">False hides the needs display (the catalogue tablet is in that hand).</param>
         /// <param name="otherSide">Put them on the other side of the wrist from where the grip pose says the back of the
-        /// hand is (a runtime or controller with that axis the other way round).</param>
+        /// hand is (a runtime or controller with that axis the other way round from OpenXR's).</param>
         /// <param name="size">How big they are, against their first size (a 7.5 cm watch, a 9 cm needs display).</param>
         public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true, bool otherSide = false, float size = 1)
         {
@@ -80,22 +80,30 @@ namespace Simitone.Client.VR
             bool watch = false, needs = false;
             if (mode != VRWristMode.Off && input != null && input.Active && head.Valid)
             {
-                // grip space: -Z towards the fingers, +X away from the left palm / into the right palm.
-                // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
+                // Grip space (OpenXR): -Z towards the fingers, +Y up out of the top of the fist, +X to your right on
+                // either hand: the back of the right hand is +X, of the left -X. The display sits on the back of the
+                // wrist, a little behind the grip, upright as you turn the wrist to look at it, reading along the forearm.
                 // The watch is on the pointing hand's wrist and the needs (which you point at) on the other: right and
                 // left, swapped when left-handed.
                 // Bigger ones reach further back along the forearm, so their front edge stays clear of the hand.
-                var side = otherSide ? -1f : 1f;
                 size = MathHelper.Clamp(size, 0.5f, 2.5f);
                 Watch.WidthMetres = WatchWidth * size;
                 Needs.WidthMetres = NeedsWidth * size;
                 (Vector3 offset, float yaw) Wrist(bool right, float width) =>
-                    (new Vector3((right ? -0.035f : 0.035f) * side, 0.005f, 0.085f + (width - width / size) / 2),
-                     (right ? -MathHelper.PiOver2 : MathHelper.PiOver2) * side);
+                    (new Vector3(right ? -0.035f : 0.035f, 0.005f, 0.085f + (width - width / size) / 2),
+                     right ? -MathHelper.PiOver2 : MathHelper.PiOver2);
                 var watchSide = Wrist(!input.LeftHanded, Watch.WidthMetres);
                 var needsSide = Wrist(input.LeftHanded, Needs.WidthMetres);
-                watch = Place(Watch, input.PointerGrip, head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);
-                needs = needsAllowed && Place(Needs, input.WalkGrip, head, needsSide.offset, needsSide.yaw, mode, out _);
+                // (placed in the grip turned half round its forearm axis: that puts them on the back of the wrist, the right
+                // way up; otherSide leaves the grip as it is, for a controller that has the back of the hand the other way)
+                VRPose Turned(VRPose grip) => otherSide || !grip.Valid ? grip : new VRPose
+                {
+                    Valid = true,
+                    Position = grip.Position,
+                    Orientation = grip.Orientation * Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathHelper.Pi)
+                };
+                watch = Place(Watch, Turned(input.PointerGrip), head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);
+                needs = needsAllowed && Place(Needs, Turned(input.WalkGrip), head, needsSide.offset, needsSide.yaw, mode, out _);
                 WatchFacing = watchFacing;
             }
             SetShown(Watch, watch);

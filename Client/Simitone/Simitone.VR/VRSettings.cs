@@ -114,10 +114,14 @@ namespace Simitone.VR
         public VRWristMode WristDisplays = VRWristMode.Auto;
         /// <summary>
         /// The wrist displays go on the other side of the wrist from where the controller's grip pose says the back of the
-        /// hand is (the OpenXR rule): for runtimes and controllers that have it the other way round. (The Steam Frame's
-        /// controllers are known to, and are turned round already; this turns them round again.)
+        /// hand is (OpenXR's rule): for a runtime or controller that has it the other way round.
         /// </summary>
         public bool WristOtherSide = false;
+        /// <summary>
+        /// In the dollhouse you're a giant of your selected Sim, standing in the lot: their body leans with you and their
+        /// arms reach for your hands. False: just the controllers.
+        /// </summary>
+        public bool DollhouseBody = true;
         /// <summary>How big the wrist displays are: 1 (a 7.5 cm watch and a 9 cm needs display), 1.3 or 1.6 (*Wrist display size*).</summary>
         public float WristDisplaySize = 1.3f;
         /// <summary>

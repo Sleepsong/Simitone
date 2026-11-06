@@ -235,10 +235,10 @@ static class Program
             var close = Vector3.Normalize(right0 - left0) * 0.06f;
             var (clamped, _) = VRMath.TwoHandHold(right0 - left0, unitsPerMetre, yaw, close, 10, 400);
             Check("dollhouse: it can't be made smaller than the limit", clamped == 400, $"{clamped} units per metre (limit 400)");
-            // a 64-tile lot fitted to 1.3 m (VRCameraController.FitScale)
-            var fit = MathHelper.Clamp(3f * 64 / 1.3f, 3f / 0.25f, 3f / 0.0075f);
-            Check("dollhouse: a 64-tile lot fits about 1.3 m (a tile about 2 cm)", Math.Abs(64 * 3f / fit - 1.3f) < 1e-3f,
-                $"a tile is {3f / fit * 100:0.00} cm");
+            // the giant's scale (VRCameraController.GiantScale): a tile 10 cm across, inside the resize limits
+            var giant = 3f / 0.10f;
+            Check("dollhouse: you start a giant ten times a Sim's size (a tile 10 cm)", Math.Abs(3f / giant - 0.10f) < 1e-6f
+                && giant >= 3f / 0.25f && giant <= 3f / 0.0075f, $"{giant} units per metre, a tile {3f / giant * 100:0.0} cm");
         }
 
         // ---- the dollhouse lid: a plane in the world, as the clip plane of a view (VRMath.ClipPlane), for a view moved

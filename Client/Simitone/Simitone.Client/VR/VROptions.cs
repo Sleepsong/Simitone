@@ -70,6 +70,7 @@ namespace Simitone.Client.VR
             Add("3D sound", () => !Settings.Sound3D ? "Off" : VRAudio.HrtfStatus == "On" ? "On (HRTF)" : "On, " + VRAudio.HrtfStatus,
                 d => { Settings.Sound3D = !Settings.Sound3D; SimitoneVR.ApplySound(); });
             Add("Stairs (observer)", () => Name(Settings.ObserverStairs), d => Settings.ObserverStairs = Cycle(Settings.ObserverStairs, d));
+            Add("Dollhouse body", () => Settings.DollhouseBody ? "Your Sim, giant" : "Controllers", d => Settings.DollhouseBody = !Settings.DollhouseBody);
             list.Add(new VROption { Label = "Dollhouse", Value = () => "Fit it to me", Change = d => SimitoneVR.RequestDollhouseRefit(), IsAction = true });
             Add("Walls in buy/build", () => Settings.BuildWalls == VRWallView.Cutaway ? "Cut away" : Name(Settings.BuildWalls),
                 d => Settings.BuildWalls = Cycle(Settings.BuildWalls, d));

@@ -20,7 +20,7 @@ namespace Simitone.Client.VR
     /// </summary>
     public class VRSimArms
     {
-        private static readonly FieldInfo SkelBonesField =
+        internal static readonly FieldInfo SkelBonesField =
             typeof(Avatar).GetField("SkelBones", BindingFlags.NonPublic | BindingFlags.Instance);
 
         private class Arm
@@ -290,7 +290,7 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>Turns a set of bones by <paramref name="turn"/> about <paramref name="pivot"/> (skeleton space).</summary>
-        private static void Rotate(Matrix[] bones, Skeleton skeleton, int[] set, Vector3 pivot, Quaternion turn)
+        internal static void Rotate(Matrix[] bones, Skeleton skeleton, int[] set, Vector3 pivot, Quaternion turn)
         {
             if (turn == Quaternion.Identity) return;
             var m = Matrix.CreateTranslation(-pivot) * Matrix.CreateFromQuaternion(turn) * Matrix.CreateTranslation(pivot);
@@ -304,7 +304,7 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>The smallest rotation taking direction <paramref name="from"/> to direction <paramref name="to"/>.</summary>
-        private static Quaternion Between(Vector3 from, Vector3 to)
+        internal static Quaternion Between(Vector3 from, Vector3 to)
         {
             if (from.LengthSquared() < 1e-10f || to.LengthSquared() < 1e-10f) return Quaternion.Identity;
             from.Normalize();
@@ -391,7 +391,7 @@ namespace Simitone.Client.VR
         private static Bone Parent(Skeleton skeleton, Bone bone)
             => string.IsNullOrEmpty(bone.ParentName) || bone.ParentName == "NULL" ? null : skeleton.GetBone(bone.ParentName);
 
-        private static int[] Below(Bone top, Dictionary<Bone, int> index)
+        internal static int[] Below(Bone top, Dictionary<Bone, int> index)
         {
             var result = new List<int>();
             var stack = new Stack<Bone>();

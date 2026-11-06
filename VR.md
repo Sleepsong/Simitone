@@ -4,8 +4,8 @@
 > runtime, but it has **not yet been run on a real headset** (including the Steam Frame) or with a real lot
 > loaded. Expect rough edges; see [Known limitations](#known-limitations-and-next-steps).
 
-Simitone can be played in VR through OpenXR. **In a lot the house is a dollhouse on a table in front of you**
-(by default): you're a giant who moves furniture and Sims about with your hands. Or **be your Sim**: see through
+Simitone can be played in VR through OpenXR. **In a lot you're a giant** (by default): your Sim many times their
+size, standing in the lot with the house at your knees, moving furniture and Sims about with your hands. Or **be your Sim**: see through
 their eyes, walk them around with the thumbstick, and point at things to use them. The clock is on your right
 wrist and your needs and the game's speed are on your left.
 
@@ -14,13 +14,14 @@ view never slides or bobs about by default: you step out, watch, and follow with
 levels, a vignette, stick or arc movement and the other options can all be changed in the headset, from the
 **VR menu**.
 
-In **buy and build mode** you stay where you are and place things remotely. The catalogue is a tablet in your hand
-with the objects in 3D; a beam picks objects up from a distance, and a teleport-style arc shows where they'll land.
+In **buy and build mode** you stay in your Sim's eyes, their hands following yours, and place things from there,
+or fly about the lot. The catalogue is a tablet in your hand with the objects in 3D; a beam picks objects up from a
+distance, and a teleport-style arc shows where they'll land.
 
-In the **dollhouse** you're a giant: the lot is a model on a table in front of you. You move furniture with your
-hands (straight off the catalogue, too), pick Sims up and put them down somewhere else, tap them for their pie
-menus, lift a floor off like a lid to see the one below, and walk round the table with the walls facing you cut
-away. Bring a Sim up to your face to become them.
+In the **dollhouse** you're a giant of your Sim, standing in the lot: their body leans in with you, their arms reach
+with yours. You move furniture with your hands (straight off the catalogue, too), pick Sims up and put them down
+somewhere else, tap them for their pie menus, lift a floor off like a lid to see the one below, and walk round the
+house with the walls facing you cut away. Bring a Sim up to your face to become them.
 
 Everything that isn't the 3D lot (loading screens, the neighbourhood, CAS, options) appears on a flat virtual
 screen floating in front of you.
@@ -133,11 +134,16 @@ goes back), and START at the end saves it (`ComfortSetupDone=True`). Run it agai
 panel's VR button.
 
 <a id="dollhouse"></a>**Dollhouse** (the default when a lot loads; B from the observer; B again goes back to your Sim; or *Play as*
-in the VR menu). The lot shrinks to a model about 1.3 m across, its ground a little below your hands, in front of
-you; floors above the one shown and the roof are hidden, as in the game. Walk around the table to see it from any
-side: the walls facing you are cut away room by room as you go, as the game cuts them (or they're all down, or
-all up: the tablet's wall button in buy mode, or *Walls in buy/build* in the VR menu). If it ends up too high or
-too low (you sat down), *Dollhouse: Fit it to me* in the VR menu puts it in front of you again.
+in the VR menu). You're a giant: the lot's ground is your floor, a tile 10 cm across (walls up to your knees), and your
+Sim half a metre in front of you; floors above the one shown and the roof are hidden, as in the game. Walk around
+the house to see it from any side: the walls facing you are cut away room by room as you go, as the game cuts them
+(or they're all down, or all up: the tablet's wall button in buy mode, or *Walls in buy/build* in the VR menu).
+*Dollhouse: Fit it to me* in the VR menu puts it back around you that way.
+- **Your body** is your selected Sim's, at your size: look down and it's there, standing on the lot. Lean in and it
+  bends forward at the spine with its feet where they were (walk further and they step after you); crouch and it
+  sinks; its arms reach where your hands are, and its hands are what pick things up. Its head isn't drawn (you look
+  out of it). The real Sim goes on living in the house. *Dollhouse body* in the VR menu (`DollhouseBody`) swaps it
+  for just the controllers.
 - **Pointing** works as everywhere: point at a Sim or an object and pull the trigger for its pie menu, or at the
   floor for "Go Here".
 - **Touching:** tap a Sim or an object with the tip of your pointing hand (in and straight back out, quickly) for
@@ -148,9 +154,10 @@ too low (you sat down), *Dollhouse: Fit it to me* in the VR menu puts it in fron
   furniture in buy mode, which pauses it: during live play it goes into buy mode while you carry something and
   back to live when you've put it down.
 - **Sims:** put your hand on a Sim and squeeze to pick them up; they dangle from your hand. Let go over the floor
-  where you want them: they stop what they were doing and the game moves them there (The Sims' own way of moving a
-  Sim, as its "moveobjects" cheat does). One Sim at a time; not in buy or build mode, where the game is paused.
-  They kick their legs while they dangle.
+  where you want them: they're put there at once, on the tile under your hand or the nearest free one, and what
+  they were doing is dropped, as when you move a Sim in The Sims (its "moveobjects" cheat), so they stay put rather
+  than walking back to it. If nowhere near is free, they stay where they were. One Sim at a time; not in buy or
+  build mode, where the game is paused. They kick their legs while they dangle.
 - **Becoming a Sim:** bring the Sim you're holding up to your face and you're them: one of your family becomes
   the selected Sim and you play as them, in first person; anyone else, and you're the observer standing beside
   them. Or put your head into a room of the floor shown (below its ceiling) for half a second, and you're the
@@ -161,12 +168,12 @@ too low (you sat down), *Dollhouse: Fit it to me* in the VR menu puts it in fron
 - **Lifting a floor off:** take hold of the edge of the floor shown (round its outside, where the walls below it
   end) with a grip and lift: the whole floor comes off like a dollhouse lid, with its walls, furniture and Sims,
   and you see the floor below, which is now the one you play on. Let go of it near its place and it drops back
-  on; anywhere else (beside the house, on the table) it stays there until you take it again. Changing floors puts
+  on; anywhere else (beside the house, on the ground) it stays there until you take it again. Changing floors puts
   it back. (Seeing the lifted floor needs single-pass stereo, which most PC drivers have; without it the floor
   is hidden while it's off.)
 - **The model itself:** squeeze a grip in empty space and it moves with your hand (up and down too); with both
   hands, turn them to turn it and move them apart or together to make it bigger or smaller (a tile from 0.75 cm to
-  25 cm). The left stick slides it, the right stick turns it (as turning does elsewhere) and right stick up/down
+  25 cm; you, and your giant, stay your size). The left stick slides it, the right stick turns it (as turning does elsewhere) and right stick up/down
   shows a floor up or down.
 - **Buy and build:** the walking hand's stick click goes live → buy → build → live (the grips grab here). The
   catalogue tablet works as usual; what you take from it is placed along a straight beam, not an arc.
@@ -204,7 +211,13 @@ too low (you sat down), *Dollhouse: Fit it to me* in the VR menu puts it in fron
 game's queue icon. Point at it and pull the trigger to cancel it. `ActionBubble=False` turns it off.
 
 **Buy and build mode** (left grip cycles live → buy → build → live, or pick the mode on the flat screen). You
-stay in first person, where you were standing. The game pauses, as usual, and you build on the floor you're on.
+stay in first person. The game pauses, as usual, and you build on the floor you're on.
+- **As your Sim**, you stay in their eyes (they stand still while the game's paused) and their arms follow your
+  hands as you place things. Click the walking stick to **fly**: you blink out of them and the left stick takes you
+  the way you look (look up and push to rise), the right stick up and down too, through walls, over the whole lot,
+  the floor shown being the one you're over. Click it again to blink back into your Sim. Changing floors from their
+  eyes (the right stick, or the tablet's or the game's floor buttons) takes you flying, to that floor.
+- **As the observer** you stay where you were standing and move about as usual.
 - **The catalogue** is a tablet in your walking hand (the left, or the right when left-handed), in Simitone's look:
   - at the top, Live / Buy / Build tabs and your money; then the categories, and the subcategories with their names;
   - then the items, eight to a page, each with its price (red if you can't afford it). Objects are shown in 3D,
@@ -300,7 +313,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Input | First person: Sim | First person: observer | Buy / build (first person) | Flat screen |
 |---|---|---|---|---|
 | Left stick | Walk your Sim | Move | (observer: move) | n/a |
-| Left stick click | Run (until you let go of the stick) | Sprint (hold) | (observer: sprint) | n/a |
+| Left stick click | Run (until you let go of the stick) | Sprint (hold) | As your Sim: fly / back into them; observer: sprint | n/a |
 | Left grip | Buy mode | Buy mode | Next mode (buy → build → live); the catalogue tablet's tabs do the same | Next mode |
 | Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
 | Left menu button (Touch); left trackpad squeeze (Index); VR Options on the left wrist | VR menu | VR menu | VR menu | VR menu |
@@ -406,8 +419,9 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `VRPieMenus` | True | Pie menus drawn for VR (the game's buttons and your Sim's head, sized for a headset). `False` shows the game's 2D pie menu on a panel |
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
-| `WristOtherSide` | False | Put the wrist displays on the other side of the wrist (*Wrist side* in the VR menu): for a controller whose grip pose has the back of the hand the other way round from the OpenXR rule. The Steam Frame's controllers are turned round already |
+| `WristOtherSide` | False | Put the wrist displays on the other side of the wrist (*Wrist side* in the VR menu): for a controller whose grip pose has the back of the hand the other way round from the OpenXR rule |
 | `WristDisplaySize` | 1.3 | How big the wrist displays are: `1` (a 7.5 cm watch, a 9 cm needs display), `1.3` or `1.6` (*Wrist display size* in the VR menu: Small, Medium, Large). Bigger ones reach further back along the forearm |
+| `DollhouseBody` | True | In the dollhouse you're a giant of your selected Sim, standing in the lot (*Dollhouse body* in the VR menu). `False`: just the controllers |
 | `SimHeadSmoothing` | 20 | How quickly the view follows your Sim's position (per second) while they move on their own; while you steer them it follows exactly. Lower is smoother but laggier |
 | `LeanLimit` | 0.3 | How far (m) you can lean away from your Sim's head before the view drags along |
 | `MirrorEye` | Left (Frame: None) | Eye shown in the desktop window: `Left`, `Right`, `None` |
@@ -651,6 +665,21 @@ instead of 3, so a tile is about 2 cm and the eyes' separation, the controllers 
   the dollhouse's near plane, and it sits 0.02 units under the floor). `GL_CLIP_DISTANCE0` is on only for that
   draw. What a hand holds below the lid (a Sim, furniture) is hidden from it.
 - **The speed dial** asks the bridge for a speed, which sets it as the game's speed buttons do.
+- **The giant** (`VRGiant`) is the selected Sim's own avatar drawn a second time inside the lot's draw (so in every
+  stereo pass), with its skinning matrices swapped for the giant's for that draw (`AvatarComponent.DrawAvatarMesh`
+  with the game's avatar effect) and the head meshes left out. Its pose is its own: a copy of the avatar's rest
+  skeleton (`Avatar.BaseSkeleton`), scaled so the head bone is a little under your eyes at your standing height; the
+  bones above the pelvis turn about the base of the spine just far enough to put the head over yours (80 degrees at
+  most) and the whole body sinks if your head's lower than that; then `VRSimArms.Solve` bends its arms to your hands.
+  Its feet stay put within 30 cm of being under you, and its facing eases towards yours. The controllers aren't drawn
+  while it is.
+- **Putting a Sim down** finds a free tile (the game's own `PositionValid` for them, under the hand first, then within
+  two tiles), resets the Sim (`VMEntity.Reset`: their action stack and queue cleared, as moving a Sim does in The
+  Sims; Simitone runs the game on this thread, between its ticks) and moves them there with `VMNetMoveObjectCmd`.
+- **Buy/build as your Sim**: the bridge keeps the selected Sim as the camera's Sim (`BuildFromSim`), so you stay
+  anchored in their head and `VRSimArms` keeps their arms on your hands; `FreeFlight` (the walking stick's click, or a
+  floor change) drops that, and the camera's flight rig moves you along your gaze without collision, with the floor
+  shown worked out from your height.
 
 Design choices:
 
@@ -798,8 +827,8 @@ Design choices:
   - foveation: the sharp square follows the gaze, slides back inside the view at the edges, and its pixels line
     up with the eye's;
   - the dollhouse: what one hand holds stays in it as it moves; turning two hands turns the world and what each
-    holds stays in it; moving them twice as far apart makes it twice the size; the size limit holds; a 64-tile lot
-    fits 1.3 m; the lid's clip plane, for the dollhouse's view moved with the lid, keeps what's above the lifted
+    holds stays in it; moving them twice as far apart makes it twice the size; the size limit holds; you start ten
+    times a Sim's size (a tile 10 cm); the lid's clip plane, for the dollhouse's view moved with the lid, keeps what's above the lifted
     floor (to within a thousandth of a unit).
 - `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
   field of view, to a PNG file under Xvfb.
@@ -815,8 +844,10 @@ Design choices:
   - the VR pie menu's top level (with a stand-in for the Sim's head) and a category of eleven choices;
   - the built-in controller model, from the side and from above.
 
-  It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (23 checks): a lifted Sim's feet
-  swing opposite ways from hips that stay put; the wrist reaches a
+  It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (27 checks): the dollhouse giant, ten
+  times its size, stands with its head where yours is and its soles on the ground, leans in bending at the spine with
+  its feet still, sinks upright when you crouch, and reaches your hands; a lifted Sim's feet swing opposite ways from
+  hips that stay put; the wrist reaches a
   target in reach and points at one out of reach, bones keep their lengths, the hand points the way the controller
   does, the elbow bends down and out, folding and blending behave, a skeleton without arms is left alone, and a
   controller's roll is measured about the way it points and turns the hand about that line without moving the
@@ -892,9 +923,12 @@ Design choices:
 - **The dollhouse** is tested in its maths and builds, not yet in a headset with a real lot (that needs The Sims):
   - picking up furniture relies on the game's picking finding the same object as the hand test, and on its object
     holder behaving with a mouse the same in VR as on the desktop (it already drives VR buy mode);
-  - moving Sims uses the command the game uses for moving objects, which in The Sims 1 moves Sims too; whether the
-    game accepts every spot (and how a Sim takes being moved mid-action, before they've wound down) is untested;
-  - the lot's surroundings and sky are drawn as in first person, so the table stands in the neighbourhood;
+  - moving Sims resets them and uses the command the game uses for moving objects, which in The Sims 1 moves Sims
+    too; how a Sim takes being reset mid-action (carrying something, say) is untested;
+  - the giant is posed from the game's rest skeleton, assumed to be a standing pose (untested against the game's own:
+    if it isn't, its legs will show it);
+    it has no hand gestures, and its size follows your standing height from the headset (`FallbackEyeHeight` without
+    a floor-level tracking space);
   - only one Sim and one piece of furniture can be carried at a time;
   - the lifted floor (the lid) is drawn by drawing the lot a second time, so it costs about that much more while a
     floor is off; it isn't drawn at all without single-pass stereo; its lights are as they were when it came off;
@@ -904,7 +938,7 @@ Design choices:
 - **Your Sim's hands** are untested with the game's own skeletons (they need The Sims). They rely on the hand
   bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
   The hand poses are the game's three (open, fist, pointing), not each finger, and the arms only follow you while
-  you walk your Sim (during an action they do the action).
+  you walk your Sim or build as them (during an action they do the action).
 - **Controller models from the runtime** are untested against a runtime that provides them: Monado 21 (used for
   the tests here) doesn't. The loader is tested on real controller models, and the bindings against the Khronos
   headers. Valve's own OpenXR utilities show the Steam Frame's controllers through the same two extensions

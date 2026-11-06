@@ -441,6 +441,41 @@ static class ArmCheck
                 $"left foot {left.Z:0.00}, right foot {right.Z:0.00} units forward; leg {legLength:0.000} long (was {restLength:0.000}); the rest moved {rest:0.0000}");
         }
 
+        // ---- the dollhouse giant (VRGiant.Pose): the same skeleton ten times its size, facing -Z; standing, leaning in,
+        // crouching and reaching
+        {
+            var giant = new VRGiant();
+            var prepared = giant.PrepareFor(MakeSkeleton());
+            const float k = 10f;
+            var restHead = giant.RestHeadHeight * k;
+            float Soles() => Math.Min(giant.BonePosition("L_TOE0").Y, giant.BonePosition("R_TOE0").Y);
+
+            var upright = new Vector3(0, restHead, 0);
+            giant.Pose(Vector3.Zero, 0, k, upright, null, Vector3.Zero, null, Vector3.Zero);
+            var head = giant.BonePosition("HEAD");
+            Check("the giant stands: its head where yours is, its soles on the ground", prepared && Vector3.Distance(head, upright) < 0.05f
+                && Math.Abs(Soles()) < 0.05f, $"head {Vector3.Distance(head, upright):0.000} units off, soles at {Soles():0.000}");
+
+            var leanTarget = new Vector3(0, restHead - 1.5f, -4f);
+            giant.Pose(Vector3.Zero, 0, k, leanTarget, null, Vector3.Zero, null, Vector3.Zero);
+            head = giant.BonePosition("HEAD");
+            var across = Vector2.Distance(new Vector2(head.X, head.Z), new Vector2(leanTarget.X, leanTarget.Z));
+            Check("leaning in, it bends forward at the spine and its feet stay put", across < 0.05f && Math.Abs(head.Y - leanTarget.Y) < 0.1f
+                && Math.Abs(Soles()) < 0.05f && head.Z < -3.9f, $"head {across:0.000} across and {head.Y - leanTarget.Y:0.000} up from where you lean, soles at {Soles():0.000}");
+
+            var crouch = new Vector3(0, restHead - 15f, 0);
+            giant.Pose(Vector3.Zero, 0, k, crouch, null, Vector3.Zero, null, Vector3.Zero);
+            head = giant.BonePosition("HEAD");
+            Check("crouching, it sinks upright (no bend)", Vector3.Distance(head, crouch) < 0.05f && Math.Abs(Soles() + 15f) < 0.05f,
+                $"head {Vector3.Distance(head, crouch):0.000} units off, soles at {Soles():0.00} (15 down)");
+
+            giant.Pose(Vector3.Zero, 0, k, upright, null, Vector3.Zero, null, Vector3.Zero);
+            var reachFor = giant.BonePosition("R_ARM1") + new Vector3(0, -6f, -10f); // (in front and below, within the arm's 17)
+            giant.Pose(Vector3.Zero, 0, k, upright, null, Vector3.Zero, reachFor, new Vector3(0, 0, -1));
+            var hand = giant.BonePosition("R_HAND");
+            Check("its hands reach for yours", Vector3.Distance(hand, reachFor) < 0.3f, $"right hand {Vector3.Distance(hand, reachFor):0.000} units off");
+        }
+
         // ---- a skeleton without arms is left alone
         {
             var s = MakeSkeleton();

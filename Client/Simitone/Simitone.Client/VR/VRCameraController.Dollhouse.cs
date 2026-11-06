@@ -7,10 +7,11 @@ using Simitone.VR;
 namespace Simitone.Client.VR
 {
     /// <summary>
-    /// Dollhouse mode: the lot is a model on a table in front of you and you're a giant over it. It's the same camera
-    /// with a much bigger scale (world units per metre: a tile is a few centimetres, not a metre) and a rig that stays
-    /// put instead of following a Sim or your stick:
-    ///  - on entering, the lot is fitted to about 1.3 m across, its ground a little below your hands, in front of you;
+    /// Dollhouse mode: you're a giant standing in the lot, its ground your real floor, a tile 10 cm across, so the walls
+    /// come up to your knees, leaning in over the house with your Sim's giant body and hands (<see cref="VRGiant"/>).
+    /// It's the same camera with a much bigger scale (world units per metre: a tile is centimetres, not a metre) and a rig
+    /// that stays put instead of following a Sim or your stick:
+    ///  - on entering, your Sim (or where you were) is half a metre in front of you, on the floor;
     ///  - squeezing a grip in empty space holds the model: it moves with that hand (up and down too); with both hands it
     ///    also turns with them and grows or shrinks as they move apart or together (a tile from 0.75 to 25 cm);
     ///  - the left stick slides it, the right stick turns it (as turning does elsewhere) and shows a floor up or down;
@@ -30,7 +31,11 @@ namespace Simitone.Client.VR
         /// <summary>World units per metre in the dollhouse.</summary>
         private float DollhouseScale = 120f;
         public const float DollhouseMinScale = TileUnits / 0.25f, DollhouseMaxScale = TileUnits / 0.0075f;
-        private const float DollhouseWidth = 1.3f, DollhouseBelowEyes = 0.65f, DollhouseAhead = 0.75f;
+        /// <summary>World units per metre on entering: a tile 10 cm across (you're ten times a Sim's size).</summary>
+        public const float GiantScale = TileUnits / 0.10f;
+        private const float GroundAhead = 0.5f;
+        /// <summary>Set by the bridge: the tile to put in front of you on entering (your selected Sim's), if any.</summary>
+        public Vector2? DollhouseAnchorTile;
 
         /// <summary>Set every update by the dollhouse: the hands (0 left, 1 right) holding the model itself.</summary>
         public readonly bool[] DragHands = new bool[2];
@@ -219,29 +224,35 @@ namespace Simitone.Client.VR
             });
         }
 
-        /// <summary>Fits the lot to a table-sized model in front of you, its ground a little below your hands.</summary>
+        /// <summary>
+        /// The lot's ground on your floor, a tile 10 cm across, and your Sim (or where you were, or the lot's middle) half a
+        /// metre in front of you: you're a giant standing beside them.
+        /// </summary>
         private void EnterDollhouse(World world)
         {
             var bp = Lot(world);
             if (bp == null) return;
+            var wasIn = InDollhouse;
+            var stoodAt = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
             InDollhouse = true;
             DragMask = 0;
             DropLid(true);
-            DollhouseScale = FitScale(Math.Max(bp.Width, bp.Height));
+            DollhouseScale = GiantScale;
             var head = SimitoneVR.HeadPoseTracking();
             var headTrack = head.Valid ? head.Position : new Vector3(0, Settings.FallbackEyeHeight, 0);
             var yaw = head.Valid ? VRMath.Yaw(head.Orientation) : 0;
             var forward = new Vector3(-(float)Math.Sin(yaw), 0, -(float)Math.Cos(yaw));
-            var table = new Vector3(headTrack.X, Math.Max(0.5f, headTrack.Y - DollhouseBelowEyes), headTrack.Z) + forward * DollhouseAhead;
-            var centreTile = new Vector2(bp.Width, bp.Height) / 2;
-            var centre = new Vector3(centreTile.X * TileUnits, FloorHeight(world, centreTile, 1), centreTile.Y * TileUnits);
-            PlaceTrackingAt(table, centre);
+            // your floor in tracking space: 0 when the runtime's space is the floor's, else below your eyes
+            var floorY = SimitoneVR.Runtime?.FloorRelative == true ? 0f : headTrack.Y - Settings.FallbackEyeHeight;
+            var spot = new Vector3(headTrack.X, floorY, headTrack.Z) + forward * GroundAhead;
+            bool OnLot(Vector2 t) => t.X >= 1 && t.Y >= 1 && t.X < bp.Width - 1 && t.Y < bp.Height - 1;
+            var tile = DollhouseAnchorTile is Vector2 sim && OnLot(sim) ? sim
+                : !wasIn && FramesActive > 1 && OnLot(stoodAt) ? stoodAt
+                : new Vector2(bp.Width, bp.Height) / 2;
+            PlaceTrackingAt(spot, new Vector3(tile.X * TileUnits, FloorHeight(world, tile, 1), tile.Y * TileUnits));
             FloorsUsedRefresh = 0;
             SimitoneVR.Log($"dollhouse: a tile is {TileUnits / DollhouseScale * 100:0.0} cm");
         }
-
-        /// <summary>World units per metre that make a lot this many tiles across about <see cref="DollhouseWidth"/> metres wide.</summary>
-        public static float FitScale(int tiles) => MathHelper.Clamp(TileUnits * Math.Max(1, tiles) / DollhouseWidth, DollhouseMinScale, DollhouseMaxScale);
 
         /// <summary>Back to your own size, standing where you were looking down at, facing the same way.</summary>
         private void LeaveDollhouse(World world)

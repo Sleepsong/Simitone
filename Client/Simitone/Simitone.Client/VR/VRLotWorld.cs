@@ -48,6 +48,9 @@ namespace Simitone.Client.VR
         /// <summary>Set by the dollhouse: the lifted Sim is dangling from your hand (they kick their legs).</summary>
         public bool LiftedDangling;
         private readonly VRSimArms Kicker = new VRSimArms();
+        /// <summary>Set every update by the bridge: whose giant body you have in the dollhouse (null for none: the controllers).</summary>
+        public FSO.LotView.Components.AvatarComponent GiantSim;
+        private readonly VRGiant Giant = new VRGiant();
         private float KickTime;
         private FSO.LotView.Components.AvatarComponent LiftRestore;
         private Vector3 LiftRestorePosition;
@@ -210,6 +213,9 @@ namespace Simitone.Client.VR
                 // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
                 Arms.ApplyGestures(VRCamera.SimAvatar, VRCamera); // (gives the hands back when you let go of the Sim)
                 if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
+                // in the dollhouse you're a giant of your Sim (its hands are yours, so no controllers)
+                Giant.Update(VRCamera.InDollhouse ? GiantSim : null, VRCamera, this, SimitoneVR.FrameDelta);
+                VRCamera.GiantShown = Giant.Shown;
                 Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime);
                 ApplyGlide(SimitoneVR.FrameDelta);
                 ApplyLift();
@@ -218,6 +224,7 @@ namespace Simitone.Client.VR
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
                     base.InternalDraw(device);
+                    Giant.Draw(device, State);
                     DrawLid(device);
                 });
 
