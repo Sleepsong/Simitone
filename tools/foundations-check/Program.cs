@@ -73,25 +73,35 @@ static class Program
         FSO.SimAntics.Model.VMRoomMap.AddFoundationEdges(map, 4, 4, obstacles);
         Check("corner tile: two edges", obstacles.Count == 2, $"{obstacles.Count} obstacle(s)");
 
-        // ---- saving (version 39 and later keeps foundations; older saves have none)
+        // ---- saving: foundations go at the very end of a save (version 39), so the terrain, walls, floors and
+        // everything else are laid out as before and builds without foundations still read them
         var terrain = new VMArchitectureTerrain(12, 12);
         terrain.Foundations.CopyFrom(map);
         byte[] saved;
         using (var mem = new MemoryStream())
         {
-            using (var w = new BinaryWriter(mem)) terrain.SerializeInto(w);
+            using (var w = new BinaryWriter(mem)) VMArchitectureTerrain.WriteFoundations(w, terrain.Foundations);
             saved = mem.ToArray();
         }
-        var loaded = new VMArchitectureTerrain(12, 12) { Version = 39 };
-        using (var r = new BinaryReader(new MemoryStream(saved))) loaded.Deserialize(r);
+        FoundationMap back;
+        using (var r = new BinaryReader(new MemoryStream(saved))) back = VMArchitectureTerrain.ReadFoundations(r);
+        var loaded = new VMArchitectureTerrain(12, 12);
+        loaded.SetFoundations(back);
         Check("saved and loaded", loaded.Foundations.Any && loaded.Foundations.Raise.SequenceEqual(map.Raise)
             && loaded.Foundations.Steps.SequenceEqual(map.Steps) && loaded.Foundations.Pattern.SequenceEqual(map.Pattern), $"{saved.Length} bytes");
-        var plain = new VMArchitectureTerrain(12, 12);
         using (var mem = new MemoryStream())
         {
-            using (var w = new BinaryWriter(mem)) plain.SerializeInto(w);
-            Check("no foundations: one byte more than before", mem.ToArray().Length == 2 + 4 + 12 * 12 * 2 + 4 + 12 * 12 + 1, $"{mem.ToArray().Length} bytes");
+            using (var w = new BinaryWriter(mem)) VMArchitectureTerrain.WriteFoundations(w, new FoundationMap(12, 12));
+            Check("none: one byte", mem.ToArray().Length == 1, $"{mem.ToArray().Length} bytes");
         }
+        using (var mem = new MemoryStream())
+        {
+            using (var w = new BinaryWriter(mem)) terrain.SerializeInto(w);
+            Check("terrain laid out as before", mem.ToArray().Length == 2 + 4 + 12 * 12 * 2 + 4 + 12 * 12, $"{mem.ToArray().Length} bytes");
+        }
+        var wrongSize = new VMArchitectureTerrain(10, 10);
+        wrongSize.SetFoundations(back);
+        Check("foundations for another size of lot are ignored", !wrongSize.Foundations.Any, "10x10 lot, 12x12 foundations");
 
         // ---- the drawn model: sides, bare tops, steps
         Blueprint bp = null;
