@@ -119,6 +119,8 @@ namespace Simitone.VR.OpenXR
         HapticActionInfo = 59,
         SessionActionSetsAttachInfo = 60,
         ActionsSyncInfo = 61,
+        BoundSourcesForActionEnumerateInfo = 62,
+        InputSourceLocalizedNameGetInfo = 63,
         GraphicsBindingOpenGLWin32KHR = 1000023000,
         GraphicsBindingOpenGLXlibKHR = 1000023001,
         SwapchainImageOpenGLKHR = 1000023004,
@@ -625,6 +627,24 @@ namespace Simitone.VR.OpenXR
         public XrStructureType Type;
         public void* Next;
         public ulong InteractionProfile;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XrBoundSourcesForActionEnumerateInfo
+    {
+        public XrStructureType Type;
+        public void* Next;
+        public ulong Action;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XrInputSourceLocalizedNameGetInfo
+    {
+        public XrStructureType Type;
+        public void* Next;
+        public ulong SourcePath;
+        /// <summary>XR_INPUT_SOURCE_LOCALIZED_NAME_*_BIT: 1 user path ("Left Hand"), 2 interaction profile, 4 component.</summary>
+        public ulong WhichComponents;
     }
 
     [StructLayout(LayoutKind.Sequential)]

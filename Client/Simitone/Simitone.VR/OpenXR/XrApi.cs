@@ -61,6 +61,8 @@ namespace Simitone.VR.OpenXR
         public delegate* unmanaged<ulong, XrActionCreateInfo*, ulong*, XrResult> CreateAction;
         public delegate* unmanaged<ulong, XrSessionActionSetsAttachInfo*, XrResult> AttachSessionActionSets;
         public delegate* unmanaged<ulong, XrActionsSyncInfo*, XrResult> SyncActions;
+        public delegate* unmanaged<ulong, XrBoundSourcesForActionEnumerateInfo*, uint, uint*, ulong*, XrResult> EnumerateBoundSourcesForAction;
+        public delegate* unmanaged<ulong, XrInputSourceLocalizedNameGetInfo*, uint, uint*, byte*, XrResult> GetInputSourceLocalizedName;
         public delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateBoolean*, XrResult> GetActionStateBoolean;
         public delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateFloat*, XrResult> GetActionStateFloat;
         public delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateVector2f*, XrResult> GetActionStateVector2f;
@@ -142,6 +144,8 @@ namespace Simitone.VR.OpenXR
             CreateAction = (delegate* unmanaged<ulong, XrActionCreateInfo*, ulong*, XrResult>)Require(i, "xrCreateAction");
             AttachSessionActionSets = (delegate* unmanaged<ulong, XrSessionActionSetsAttachInfo*, XrResult>)Require(i, "xrAttachSessionActionSets");
             SyncActions = (delegate* unmanaged<ulong, XrActionsSyncInfo*, XrResult>)Require(i, "xrSyncActions");
+            EnumerateBoundSourcesForAction = (delegate* unmanaged<ulong, XrBoundSourcesForActionEnumerateInfo*, uint, uint*, ulong*, XrResult>)Require(i, "xrEnumerateBoundSourcesForAction");
+            GetInputSourceLocalizedName = (delegate* unmanaged<ulong, XrInputSourceLocalizedNameGetInfo*, uint, uint*, byte*, XrResult>)Require(i, "xrGetInputSourceLocalizedName");
             GetActionStateBoolean = (delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateBoolean*, XrResult>)Require(i, "xrGetActionStateBoolean");
             GetActionStateFloat = (delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateFloat*, XrResult>)Require(i, "xrGetActionStateFloat");
             GetActionStateVector2f = (delegate* unmanaged<ulong, XrActionStateGetInfo*, XrActionStateVector2f*, XrResult>)Require(i, "xrGetActionStateVector2f");

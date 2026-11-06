@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 using Simitone.VR.OpenXR;
 
@@ -173,11 +174,11 @@ namespace Simitone.VR
             return action;
         }
 
-        private bool Suggest(string profile, List<(ulong action, string path)> bindings)
+        private bool Suggest(string profile, List<(ulong action, string path)> bindings, bool quiet = false)
         {
             ulong profilePath;
             try { profilePath = Api.Path(profile); }
-            catch (XrException e) { Log?.Invoke("OpenXR: " + profile + ": " + e.Message); return false; }
+            catch (XrException e) { if (!quiet) Log?.Invoke("OpenXR: " + profile + ": " + e.Message); return false; }
 
             var list = new XrActionSuggestedBinding[bindings.Count];
             for (int i = 0; i < bindings.Count; i++)
@@ -188,7 +189,7 @@ namespace Simitone.VR
                 }
                 catch (XrException e)
                 {
-                    Log?.Invoke("OpenXR: bad binding path " + bindings[i].path + ": " + e.Message);
+                    if (!quiet) Log?.Invoke("OpenXR: bad binding path " + bindings[i].path + ": " + e.Message);
                     return false;
                 }
             }
@@ -204,12 +205,110 @@ namespace Simitone.VR
                 var result = Api.SuggestInteractionProfileBindings(Api.Instance, &suggested);
                 if ((int)result < 0)
                 {
-                    Log?.Invoke($"OpenXR: bindings for {profile} rejected: {Api.ResultName(result)}");
+                    if (!quiet) Log?.Invoke($"OpenXR: bindings for {profile} rejected: {Api.ResultName(result)}");
                     return false;
                 }
             }
-            BoundProfiles.Add(profile);
+            if (!quiet && !BoundProfiles.Contains(profile)) BoundProfiles.Add(profile);
             return true;
+        }
+
+        private ulong ProbeSet, ProbeBool, ProbeFloat, ProbeVector, ProbePose, ProbeHaptic;
+
+        /// <summary>
+        /// Which input paths (for each hand, e.g. "/user/hand/left/input/a/click") a profile has: each likely one
+        /// suggested on its own, to probe actions of its type in a set that's never used. Empty if the runtime knows
+        /// none of them (or not the profile).
+        /// </summary>
+        private HashSet<string> ProbeComponents(string profile)
+        {
+            if (ProbeSet == 0)
+            {
+                ProbeSet = CreateSet("simitone_probe", "Simitone (finding buttons)", 0);
+                ProbeBool = CreateAction(ProbeSet, "probe_bool", "Probe (button)", XrActionType.BooleanInput, true);
+                ProbeFloat = CreateAction(ProbeSet, "probe_float", "Probe (value)", XrActionType.FloatInput, true);
+                ProbeVector = CreateAction(ProbeSet, "probe_vector", "Probe (stick)", XrActionType.Vector2fInput, true);
+                ProbePose = CreateAction(ProbeSet, "probe_pose", "Probe (pose)", XrActionType.PoseInput, true);
+                ProbeHaptic = CreateAction(ProbeSet, "probe_haptic", "Probe (haptic)", XrActionType.VibrationOutput, true);
+            }
+            var candidates = new List<(string component, ulong action)>();
+            foreach (var c in new[] { "thumbstick", "trackpad" })
+            {
+                candidates.Add(("input/" + c, ProbeVector));
+                candidates.Add(("input/" + c + "/click", ProbeBool));
+                candidates.Add(("input/" + c + "/touch", ProbeBool));
+            }
+            candidates.Add(("input/trackpad/force", ProbeFloat));
+            foreach (var c in new[] { "trigger", "squeeze" })
+            {
+                candidates.Add(("input/" + c + "/value", ProbeFloat));
+                candidates.Add(("input/" + c + "/click", ProbeBool));
+                candidates.Add(("input/" + c + "/touch", ProbeBool));
+                candidates.Add(("input/" + c + "/force", ProbeFloat));
+            }
+            foreach (var c in new[] { "a", "b", "x", "y", "menu", "view", "start", "select", "back", "system", "thumbrest",
+                "dpad_up", "dpad_down", "dpad_left", "dpad_right", "bumper", "shoulder", "grip" })
+            {
+                candidates.Add(("input/" + c + "/click", ProbeBool));
+                candidates.Add(("input/" + c + "/touch", ProbeBool));
+            }
+            foreach (var c in new[] { "aim", "grip", "grip_surface", "palm_ext" }) candidates.Add(("input/" + c + "/pose", ProbePose));
+            candidates.Add(("output/haptic", ProbeHaptic));
+
+            var known = new HashSet<string>();
+            foreach (var hand in new[] { "/user/hand/left/", "/user/hand/right/" })
+                foreach (var (component, action) in candidates)
+                    if (Suggest(profile, new List<(ulong, string)> { (action, hand + component) }, quiet: true)) known.Add(hand + component);
+            return known;
+        }
+
+        private static string Components(HashSet<string> known, string hand)
+        {
+            var list = known.Where(k => k.StartsWith(hand)).Select(k => k.Substring(hand.Length)).OrderBy(k => k).ToList();
+            return list.Count == 0 ? "nothing" : string.Join(" ", list);
+        }
+
+        /// <summary>
+        /// The Steam Frame controllers' bindings, from the paths they have (<paramref name="known"/>): for each action the
+        /// first of its likely inputs that's there. Face buttons are A/B on the right and X/Y on the left if it has
+        /// those, else A/B on both (as the Index); without them the pointing stick's click toggles the view.
+        /// </summary>
+        private static List<(ulong, string)> FrameLayout(Roles r, string dom, string off, HashSet<string> known)
+        {
+            const string L = "/user/hand/left/", R = "/user/hand/right/";
+            var b = new List<(ulong, string)>();
+            string Pick(params string[] paths) => paths.FirstOrDefault(known.Contains);
+            void Bind(ulong action, params string[] paths)
+            {
+                var p = Pick(paths);
+                if (p != null) b.Add((action, p));
+            }
+            Bind(r.Move, off + "input/thumbstick", off + "input/trackpad");
+            Bind(r.Turn, dom + "input/thumbstick", dom + "input/trackpad");
+            Bind(r.Select, dom + "input/trigger/value", dom + "input/trigger/click");
+            Bind(r.MoveArc, off + "input/trigger/value", off + "input/trigger/click");
+            Bind(r.Secondary, dom + "input/squeeze/value", dom + "input/squeeze/force", dom + "input/squeeze/click", dom + "input/grip/click");
+            Bind(r.BuildMenu, off + "input/squeeze/value", off + "input/squeeze/force", off + "input/squeeze/click", off + "input/grip/click");
+            Bind(r.Sprint, off + "input/thumbstick/click", off + "input/trackpad/click");
+            string First(string hand) => hand == R ? "a" : "x";
+            string Second(string hand) => hand == R ? "b" : "y";
+            var domFirst = Pick(dom + "input/" + First(dom) + "/click", dom + "input/a/click");
+            var domSecond = Pick(dom + "input/" + Second(dom) + "/click", dom + "input/b/click");
+            var offFirst = Pick(off + "input/" + First(off) + "/click", off + "input/a/click");
+            var offSecond = Pick(off + "input/" + Second(off) + "/click", off + "input/b/click");
+            var stickClick = Pick(dom + "input/thumbstick/click", dom + "input/trackpad/click");
+            if (domFirst != null)
+            {
+                b.Add((r.ToggleView, domFirst));
+                if (stickClick != null) b.Add((r.Speed, stickClick));
+            }
+            else if (stickClick != null) b.Add((r.ToggleView, stickClick));
+            if (domSecond != null) b.Add((r.SwitchMode, domSecond));
+            if (offFirst != null) b.Add((r.Pause, offFirst));
+            if (offSecond != null) b.Add((r.NextSim, offSecond));
+            Bind(r.Menu, L + "input/menu/click", R + "input/menu/click", L + "input/view/click", L + "input/start/click",
+                L + "input/select/click", L + "input/back/click", R + "input/start/click", R + "input/view/click");
+            return b;
         }
 
         private void SuggestBindings(bool frameControllerExtension)
@@ -265,14 +364,26 @@ namespace Simitone.VR
                 return b;
             };
 
-            // Steam Frame controllers (SteamVR 2.15.1+ path, then the older one).
-            if (frameControllerExtension)
+            // Steam Frame controllers (SteamVR 2.15.1+ path, then the older one). Their extension isn't in the public
+            // registry, so the names of their buttons are found by asking: each likely one is suggested on its own, and
+            // the bindings are made from those SteamVR takes (a suggestion with any unknown path is refused whole).
+            // (SIMITONE_XR_PROBE_PROFILE=<profile> probes another profile the same way, to test this on a runtime without
+            // the Frame's; that profile's own bindings are suggested after, as usual)
+            var probeOther = Environment.GetEnvironmentVariable("SIMITONE_XR_PROBE_PROFILE");
+            if (frameControllerExtension || !string.IsNullOrEmpty(probeOther))
             {
                 bool ok = false;
-                foreach (var profile in new[] { "/interaction_profiles/valve/frame_controller_valve", "/interaction_profiles/valve/frame_controller" })
+                var profiles = string.IsNullOrEmpty(probeOther)
+                    ? new[] { "/interaction_profiles/valve/frame_controller_valve", "/interaction_profiles/valve/frame_controller" }
+                    : new[] { probeOther };
+                foreach (var profile in profiles)
                 {
-                    ok = Suggest(profile, Both(Common(true, true, true))) || Suggest(profile, Both(Common(true, true, false)))
-                        || Suggest(profile, Both(Common(false, true, false))) || Suggest(profile, Both(Common(false, false, false)));
+                    var known = ProbeComponents(profile);
+                    if (known.Count == 0) continue;
+                    Log?.Invoke($"OpenXR: {profile} has: left {Components(known, L)}; right {Components(known, R)}");
+                    var bindings = Both((r, dom, off) => FrameLayout(r, dom, off, known)).Where(b => known.Contains(b.Item2)).ToList();
+                    ok = Suggest(profile, bindings);
+                    Log?.Invoke($"OpenXR: {profile}: {bindings.Count} bindings from what it has {(ok ? "accepted" : "refused")}");
                     if (ok) break;
                 }
                 if (!ok) Log?.Invoke("OpenXR: Steam Frame controller bindings were not accepted; SteamVR will fall back to the Touch bindings.");
@@ -371,6 +482,13 @@ namespace Simitone.VR
                 ActiveActionSets = active
             };
             var result = Api.SyncActions(session, &sync);
+            if (result != LastSyncResult)
+            {
+                // (what the runtime says when it changes: input only comes with XR_SUCCESS)
+                if (result != XrResult.Success || LastSyncResult != (XrResult)int.MinValue)
+                    Log?.Invoke("OpenXR: xrSyncActions: " + Api.ResultName(result));
+                LastSyncResult = result;
+            }
             if (result != XrResult.Success)
             {
                 // XR_SESSION_NOT_FOCUSED etc: treat as no input this frame.
@@ -403,6 +521,81 @@ namespace Simitone.VR
             RightGrip = Locate(RightGripSpace, baseSpace, displayTime, false);
             // (eye gaze only counts while it's really tracked, not a guess)
             Gaze = GazeBound ? Locate(GazeSpace, baseSpace, displayTime, true) : default;
+
+            // the first time each control does something, for the log (did the input arrive?)
+            First("walking stick", Move != Vector2.Zero, Move.ToString());
+            First("turning stick", Turn != Vector2.Zero, Turn.ToString());
+            First("pointing trigger", SelectValue > 0.05f, SelectValue.ToString("0.00"));
+            First("pointing grip", SecondaryValue > 0.05f, SecondaryValue.ToString("0.00"));
+            First("walking trigger", MoveArcValue > 0.05f, MoveArcValue.ToString("0.00"));
+            First("walking grip", BuildMenu.Down, "");
+            First("walking stick click", Sprint.Down, "");
+            First("pointing stick click", Speed.Down, "");
+            First("view button", ToggleView.Down, "");
+            First("mode button", SwitchMode.Down, "");
+            First("pause button", Pause.Down, "");
+            First("next Sim button", NextSim.Down, "");
+            First("menu button", Menu.Down, "");
+            First("left controller pose", LeftAim.Valid, "");
+            First("right controller pose", RightAim.Valid, "");
+        }
+
+        private XrResult LastSyncResult = (XrResult)int.MinValue;
+        private readonly HashSet<string> SeenInput = new HashSet<string>();
+
+        private void First(string name, bool now, string value)
+        {
+            if (now && SeenInput.Add(name)) Log?.Invoke("OpenXR: first input: " + name + (value.Length > 0 ? " " + value : ""));
+        }
+
+        /// <summary>
+        /// Logs what each action is bound to now, as the runtime says (its own names for the controls, e.g. "Right Hand
+        /// Trigger"), or that it's bound to nothing: call when the controllers change.
+        /// </summary>
+        public void LogBindings(ulong session)
+        {
+            if (Api == null || Api.EnumerateBoundSourcesForAction == null || session == 0) return;
+            var r = LeftHanded ? LeftHandedRoles : RightHanded;
+            var actions = new (string name, ulong action)[]
+            {
+                ("move", r.Move), ("turn", r.Turn), ("select", r.Select), ("secondary", r.Secondary), ("move_arc", r.MoveArc),
+                ("build_menu", r.BuildMenu), ("sprint", r.Sprint), ("speed", r.Speed), ("toggle_view", r.ToggleView),
+                ("switch_mode", r.SwitchMode), ("pause", r.Pause), ("next_sim", r.NextSim), ("vr_menu", r.Menu),
+                ("aim", AimPoseAction), ("grip", GripPoseAction), ("haptic", HapticAction)
+            };
+            var parts = new List<string>();
+            foreach (var (name, action) in actions)
+            {
+                var info = new XrBoundSourcesForActionEnumerateInfo { Type = XrStructureType.BoundSourcesForActionEnumerateInfo, Action = action };
+                uint count = 0;
+                var result = Api.EnumerateBoundSourcesForAction(session, &info, 0, &count, null);
+                if ((int)result < 0) { parts.Add(name + ": (" + Api.ResultName(result) + ")"); continue; }
+                var sources = new ulong[count];
+                if (count > 0)
+                    fixed (ulong* p = sources) Api.EnumerateBoundSourcesForAction(session, &info, count, &count, p);
+                var names = sources.Take((int)count).Select(source => SourceName(session, source)).ToList();
+                parts.Add(name + ": " + (names.Count == 0 ? "nothing" : string.Join(" / ", names)));
+            }
+            Log?.Invoke("OpenXR: bound (" + (LeftHanded ? "left-handed" : "right-handed") + "): " + string.Join("; ", parts));
+        }
+
+        private string SourceName(ulong session, ulong source)
+        {
+            var path = Api.PathString(source);
+            if (Api.GetInputSourceLocalizedName == null) return path;
+            var info = new XrInputSourceLocalizedNameGetInfo
+            {
+                Type = XrStructureType.InputSourceLocalizedNameGetInfo,
+                SourcePath = source,
+                WhichComponents = 1 | 4 // (which hand, and which control)
+            };
+            uint count = 0;
+            if (Api.GetInputSourceLocalizedName(session, &info, 0, &count, null) != XrResult.Success || count == 0) return path;
+            var buffer = new byte[count];
+            fixed (byte* p = buffer)
+                if (Api.GetInputSourceLocalizedName(session, &info, count, &count, p) != XrResult.Success) return path;
+            var localized = System.Text.Encoding.UTF8.GetString(buffer, 0, Math.Max(0, (int)count - 1));
+            return localized.Length > 0 ? $"{localized} ({path})" : path;
         }
 
         public void Clear()

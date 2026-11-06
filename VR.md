@@ -337,7 +337,9 @@ X/Y do what A/B did and the other way round, and the wrist displays swap (the ne
 goes on your right wrist; the watch on your left). The menu button stays on the left Touch controller (the right
 one hasn't got one). It applies at once.
 
-Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_controller_interaction`),
+Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_controller_interaction`; that extension
+isn't in the public registry, so Simitone asks SteamVR which of the usual button names it has, one at a time, logs
+them, and binds each action to the first that's there),
 **Oculus Touch**, **Valve Index** (A/B on the walking hand act as X/Y), **HTC Vive** wands (trackpads move and
 turn) and the KHR simple controller. SteamVR lets you rebind everything in its controller binding UI; the two
 layouts are the action sets "Simitone" and "Simitone (left-handed)".
@@ -847,7 +849,8 @@ Design choices:
   path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding, and `SIMITONE_SMOKE_LINKED=1` SteamVR's layout without the
   loader (as on the Steam Frame): `active_runtime.json` a symbolic link to a manifest whose relative `library_path`
   is relative to where the manifest really is. `SIMITONE_XR_REFUSE_ATTEMPTS=n` treats the first n tries at creating
-  the instance as refused, to exercise the fallbacks (OpenXR 1.1, then fewer optional extensions) that Simitone
+  the instance as refused, and `SIMITONE_XR_PROBE_PROFILE=<profile>` finds another profile's buttons the way the
+  Steam Frame controller's are found (on Monado's Touch profile it finds exactly Touch's), to exercise the fallbacks (OpenXR 1.1, then fewer optional extensions) that Simitone
   steps through when a runtime won't create one with everything it asked for. The second half of the run is left-handed, and input must sync
   in both layouts. Ubuntu packages: `monado-service libopenxr1-monado
   libopenxr-loader1 xvfb mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri libsdl2-2.0-0`.

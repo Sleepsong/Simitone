@@ -53,6 +53,8 @@ int main(void) {
   S(XrSessionActionSetsAttachInfo) O(XrSessionActionSetsAttachInfo, countActionSets) O(XrSessionActionSetsAttachInfo, actionSets)
   S(XrActiveActionSet) S(XrActionsSyncInfo) O(XrActionsSyncInfo, countActiveActionSets) O(XrActionsSyncInfo, activeActionSets)
   S(XrActionStateGetInfo) O(XrActionStateGetInfo, action) O(XrActionStateGetInfo, subactionPath)
+  S(XrBoundSourcesForActionEnumerateInfo) O(XrBoundSourcesForActionEnumerateInfo, action)
+  S(XrInputSourceLocalizedNameGetInfo) O(XrInputSourceLocalizedNameGetInfo, sourcePath) O(XrInputSourceLocalizedNameGetInfo, whichComponents)
   S(XrActionStateBoolean) O(XrActionStateBoolean, currentState) O(XrActionStateBoolean, changedSinceLastSync) O(XrActionStateBoolean, lastChangeTime) O(XrActionStateBoolean, isActive)
   S(XrActionStateFloat) O(XrActionStateFloat, currentState) O(XrActionStateFloat, lastChangeTime) O(XrActionStateFloat, isActive)
   S(XrActionStateVector2f) O(XrActionStateVector2f, currentState) O(XrActionStateVector2f, changedSinceLastSync) O(XrActionStateVector2f, lastChangeTime) O(XrActionStateVector2f, isActive)

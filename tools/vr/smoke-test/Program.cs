@@ -75,6 +75,8 @@ class SmokeGame : Game
             bool began = Runtime.BeginFrame(0.2f);
             if (Runtime.Focused) Focused++;
             if (Runtime.Input.Active) { if (Runtime.Input.LeftHanded) SyncedLeft++; else SyncedRight++; }
+            // what the runtime says each action is bound to (on a real headset this is logged when the controllers change)
+            if (Runtime.Input.Active && (SyncedRight == 20 || SyncedLeft == 20)) Runtime.Input.LogBindings(Runtime.Session);
 
             // Each eye: top half red, bottom half blue (MonoGame/XNA coordinates, y down).
             for (int i = 0; i < 2; i++)

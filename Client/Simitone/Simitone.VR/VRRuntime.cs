@@ -560,7 +560,11 @@ namespace Simitone.VR
                 }
             }
             if (HandProfiles[0] + "|" + HandProfiles[1] != before)
+            {
                 Log($"OpenXR: controllers now: left '{HandProfiles[0]}', right '{HandProfiles[1]}'");
+                try { Input?.LogBindings(Session); }
+                catch (Exception e) { Log("OpenXR: couldn't list the bindings: " + e.Message); }
+            }
         }
 
         private void HandleSessionState(XrSessionState state)
