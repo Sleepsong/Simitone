@@ -7,6 +7,10 @@ using FSO.LotView.Model;
 using FSO.LotView.Utils;
 using FSO.SimAntics.Model;
 using FSO.SimAntics.Model.Routing;
+using FSO.SimAntics.NetPlay.Model;
+using FSO.SimAntics;
+using FSO.SimAntics.Utils;
+using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 
 // Foundations (FreeSO's FSO.LotView.Model.FoundationMap and what uses it): heights under Sims and things, which tile
@@ -31,10 +35,9 @@ static class Program
             for (int x = 4; x <= 6; x++)
             {
                 map.Raise[y * 12 + x] = FoundationMap.DefaultHeight;
-                map.Pattern[y * 12 + x] = 7;
+                map.SetAllSides(y * 12 + x, 7);
             }
         map.Steps[7 * 12 + 5] = 1; // direction 0: toward -y
-        map.Pattern[7 * 12 + 5] = 7;
         map.Refresh();
         return map;
     }
@@ -107,16 +110,39 @@ static class Program
         var loaded = new VMArchitectureTerrain(12, 12);
         loaded.SetFoundations(back);
         Check("saved and loaded", loaded.Foundations.Any && loaded.Foundations.Raise.SequenceEqual(map.Raise)
-            && loaded.Foundations.Steps.SequenceEqual(map.Steps) && loaded.Foundations.Pattern.SequenceEqual(map.Pattern), $"{saved.Length} bytes");
+            && loaded.Foundations.Steps.SequenceEqual(map.Steps) && loaded.Foundations.Sides.SequenceEqual(map.Sides), $"{saved.Length} bytes");
         using (var r = new BinaryReader(new MemoryStream(saved)))
             Check("older builds still see foundations", saved[0] == VMArchitectureTerrain.FoundationsRevision && r.ReadBoolean(), $"first byte {saved[0]}");
-        // saves from before the concrete look: the tool put a brick covering on every foundation, so it goes
-        var old = (byte[])saved.Clone();
-        old[0] = 1;
-        FoundationMap oldBack;
-        using (var r = new BinaryReader(new MemoryStream(old))) oldBack = VMArchitectureTerrain.ReadFoundations(r);
-        Check("older foundations lose the tool's brick", oldBack.Raise.SequenceEqual(map.Raise) && oldBack.Steps.SequenceEqual(map.Steps)
-            && oldBack.Pattern.All(p => p == 0), $"{oldBack.Pattern.Count(p => p != 0)} covered tiles");
+        // older saves had one covering per tile. Revision 1 (before the concrete look): the tool put a brick covering on
+        // every foundation, so it goes; revision 2: it's on all four sides
+        Func<byte, byte[]> perTileSave = (revision) =>
+        {
+            using (var mem = new MemoryStream())
+            {
+                using (var w = new BinaryWriter(mem))
+                {
+                    w.Write(revision);
+                    w.Write(12); w.Write(12);
+                    VMSerializableUtils.WriteArray(w, map.Raise);
+                    w.Write(map.Steps);
+                    VMSerializableUtils.WriteArray(w, Enumerable.Range(0, 144).Select(i => map.Raise[i] > 0 ? (ushort)7 : (ushort)0).ToArray());
+                    w.Write(1234); // what comes after in the save
+                }
+                return mem.ToArray();
+            }
+        };
+        foreach (var rev in new byte[] { 1, 2 })
+        {
+            using (var r = new BinaryReader(new MemoryStream(perTileSave(rev))))
+            {
+                var oldBack = VMArchitectureTerrain.ReadFoundations(r);
+                var after = r.ReadInt32();
+                var want = (rev == 1) ? 0 : 7;
+                Check($"revision {rev} save", oldBack.Raise.SequenceEqual(map.Raise) && oldBack.Steps.SequenceEqual(map.Steps) && after == 1234
+                    && Enumerable.Range(0, 144).All(i => Enumerable.Range(0, 4).All(d => oldBack.Sides[i * 4 + d] == (map.Raise[i] > 0 ? want : 0))),
+                    rev == 1 ? "the tool's brick goes" : "its covering on all four sides");
+            }
+        }
         using (var mem = new MemoryStream())
         {
             using (var w = new BinaryWriter(mem)) VMArchitectureTerrain.WriteFoundations(w, new FoundationMap(12, 12));
@@ -127,6 +153,25 @@ static class Program
             using (var w = new BinaryWriter(mem)) terrain.SerializeInto(w);
             Check("terrain laid out as before", mem.ToArray().Length == 2 + 4 + 12 * 12 * 2 + 4 + 12 * 12, $"{mem.ToArray().Length} bytes");
         }
+        // ---- painting the sides, as walls are painted: one side, or every side of the foundation
+        var arch = (VMArchitecture)RuntimeHelpers.GetUninitializedObject(typeof(VMArchitecture));
+        arch.Terrain = new VMArchitectureTerrain(12, 12);
+        arch.Terrain.Foundations.CopyFrom(map);
+        var painted = arch.Terrain.Foundations;
+        Check("paint one side", VMFoundationTools.PaintSides(arch, new Point(4, 5), 3, 9) == 1 && painted.SideOf(4, 5, 3) == 9
+            && painted.SideOf(4, 5, 1) == 7 && painted.SideOf(4, 4, 3) == 7, "(4, 5)'s -x side only");
+        Check("again: nothing changes", VMFoundationTools.PaintSides(arch, new Point(4, 5), 3, 9) == 0, "same covering");
+        Check("a side inside the foundation can't be painted", VMFoundationTools.PaintSides(arch, new Point(5, 5), 0, 9) == 0, "(5, 5)");
+        Check("nor the one the steps lead up", VMFoundationTools.PaintSides(arch, new Point(5, 6), 2, 9) == 0, "(5, 6)'s +y side");
+        Check("nor the ground", VMFoundationTools.PaintSides(arch, new Point(1, 1), 0, 9) == 0, "(1, 1)");
+        Check("groups: one per covering painted", Modelled3DFoundation.Groups(painted).OrderBy(g => g).SequenceEqual(new ushort[] { 0, 7, 9 }), "0, 7, 9");
+        var savedPainted = new MemoryStream();
+        using (var w = new BinaryWriter(savedPainted, System.Text.Encoding.UTF8, true)) VMArchitectureTerrain.WriteFoundations(w, painted);
+        savedPainted.Position = 0;
+        using (var r = new BinaryReader(savedPainted)) Check("each side saved", VMArchitectureTerrain.ReadFoundations(r).Sides.SequenceEqual(painted.Sides), "revision " + VMArchitectureTerrain.FoundationsRevision);
+        Check("paint the whole foundation (shift)", VMFoundationTools.PaintSides(arch, new Point(5, 5), VMFoundationTools.PaintWholeFoundation, 0) == 11
+            && Enumerable.Range(0, 144 * 4).All(i => painted.Sides[i] == 0 || !painted.SideShows(i / 4 % 12, i / 4 / 12, i % 4)), "11 showing sides back to plain");
+
         var wrongSize = new VMArchitectureTerrain(10, 10);
         wrongSize.SetFoundations(back);
         Check("foundations for another size of lot are ignored", !wrongSize.Foundations.Any, "10x10 lot, 12x12 foundations");
@@ -179,6 +224,25 @@ static class Program
             bp.Floors[0][5 * 12 + 5].Pattern = 12; // floor laid on the middle: its top is the floor's
             verts = new TestFoundation(bp, 0).Build();
             Check("floored tile has no bare top", verts.Length == (8 + 11 * 3 + 2 + 13) * 4, $"{verts.Length / 4} quads");
+
+            // one side painted something else: the covered group loses it, and its own group has it
+            map.Sides[map.SideIndex(4, 5, 3)] = 9;
+            Check("a painted side is in its covering's group", new TestFoundation(bp, 9).Build().Length == 4 && new TestFoundation(bp, 7).Build().Length == 10 * 4, "1 and 10 quads");
+            map.Sides[map.SideIndex(4, 5, 3)] = 7;
+
+            // picking the side to paint: a ray (world units, 3 a tile) at a third of a tile up, toward -y
+            Point pt;
+            int pd;
+            var hitSide = bp.FoundationSideAt(new Ray(new Vector3(4.5f * 3, 0.3f * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd);
+            Check("pick the side facing the camera", hitSide && pt == new Point(4, 6) && pd == 2, $"{pt}, side {pd}");
+            hitSide = bp.FoundationSideAt(new Ray(new Vector3(1 * 3, 0.3f * 3, 5.5f * 3), new Vector3(1, 0, 0)), out pt, out pd);
+            Check("from the other way", hitSide && pt == new Point(4, 5) && pd == 3, $"{pt}, side {pd}");
+            Check("not behind the steps", !bp.FoundationSideAt(new Ray(new Vector3(5.5f * 3, 0.3f * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd), "nothing");
+            Check("not from above (the top hides them)", !bp.FoundationSideAt(new Ray(new Vector3(5.5f * 3, 5 * 3, 5.5f * 3), new Vector3(0, -1, 0)), out pt, out pd), "nothing");
+            Check("not over the top", !bp.FoundationSideAt(new Ray(new Vector3(4.5f * 3, 1 * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd), "nothing");
+            var slant = Vector3.Normalize(new Vector3(0, -1, -1)); // down at 45 degrees onto the +y side, then the top behind it
+            Check("a slanting ray meets the side before the top", bp.FoundationSideAt(new Ray(new Vector3(6.5f * 3, 1.25f * 3, 7.6f * 3), slant), out pt, out pd)
+                && pt == new Point(6, 6) && pd == 2, $"{pt}, side {pd}");
 
             // an L: x 4..6 on y 4, and x 6 on y 5..6: one inside corner, at (6, 5)
             var l = new FoundationMap(12, 12);

@@ -254,7 +254,7 @@ namespace Simitone.Client.UI.Panels.LotControls
                 return "Digs out a basement a storey below the ground floor, as in The Sims 2. Drag out an area; it gets a floor, and so does the ground floor above it. Then go down a floor to build walls and put stairs in. Hold Ctrl (or use erase) to fill it back in.";
             return (id == StepsID)
                 ? "Steps up onto a foundation. Click the ground beside one; Sims can only get on and off a foundation by its steps. Hold Ctrl (or use erase) to remove steps."
-                : "Raises the ground floor a few steps, as in The Sims 2. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Hold Ctrl (or use erase) to remove a foundation.";
+                : "Raises the ground floor a few steps, as in The Sims 2. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Paint its sides with the wall coverings. Hold Ctrl (or use erase) to remove a foundation.";
         }
 
         public override int GetPrice(ulong id)
