@@ -802,38 +802,160 @@ namespace Simitone.Client.UI.Screens
             this.Add(Frontend);
         }
 
+        /// <summary>
+        /// The lots around yours, instead of grey void: as FreeSO puts the lots around one in The Sims Online, a ring of
+        /// eight, drawn with it but not simulated (<see cref="FSO.LotView.World"/>'s sub-worlds). Which depends on
+        /// SurroundingLotMode (config.ini): 0 none, 1 open ground (your lot's ground and grass, at its height), 2 your
+        /// neighbours' houses where the neighbourhood has them, as it has them on its map (<see cref="SurroundingLayout"/>),
+        /// furnished but without their Sims, and open ground between. They're loaded one per update after you arrive,
+        /// so the lot comes up as quickly as before.
+        /// </summary>
         public void LoadSurrounding(short houseID)
         {
-            return;
-            var surrounding = new NBHm(new OBJ(File.OpenRead(@"C:\Users\Rhys\Desktop\fso 2018\nb4.obj")));
-            NBHmHouse myH = null;
-            var myHeight = vm.Context.Blueprint.InterpAltitude(new Vector3(0, 0, 0));
-            if (!surrounding.Houses.TryGetValue(houseID, out myH)) return;
-            foreach (var house in surrounding.Houses)
+            var mode = FSO.LotView.WorldConfig.Current?.SurroundingLots ?? 0;
+            if (mode <= 0 || vm == null || World == null) return;
+            var myVM = vm;
+            var queue = new Queue<(Point cell, short house)>();
+            Dictionary<Point, short> neighbours = null;
+            var tries = 0;
+            void Next(FSO.Common.Rendering.Framework.Model.UpdateState state)
             {
-                if (house.Key == houseID) continue;
-                var h = house.Value;
-                //let's make their lot as a surrounding lot
-                var gd = World.State.Device;
-                var subworld = World.MakeSubWorld(gd);
-                subworld.Initialize(gd);
-                var tempVM = new VM(new VMContext(subworld), new VMServerDriver(new VMTSOGlobalLinkStub()), new VMNullHeadlineProvider());
-                tempVM.Init();
-                BlueprintReset(Content.Get().Neighborhood.GetHousePath(house.Key), tempVM);
-                subworld.State.Level = 5;
-                var subHeight = tempVM.Context.Blueprint.InterpAltitude(new Vector3(0, 0, 0));
-                tempVM.Context.Blueprint.BaseAlt = (int)Math.Round(((subHeight - myHeight) + myH.Position.Y - h.Position.Y) / tempVM.Context.Blueprint.TerrainFactor);
-                subworld.UseFade = false;
-                subworld.GlobalPosition = new Vector2((myH.Position.X - h.Position.X), (myH.Position.Z - h.Position.Z));
-
-                foreach (var obj in tempVM.Entities)
+                if (vm != myVM || World == null) return; // (left the lot)
+                var arch = vm.Context?.Architecture;
+                if (arch == null)
                 {
-                    obj.Position = obj.Position;
+                    if (++tries < 300) GameThread.NextUpdate(Next); // (the lot's still loading)
+                    return;
                 }
-
-                vm.Context.Blueprint.SubWorlds.Add(subworld);
+                if (neighbours == null)
+                {
+                    neighbours = mode >= 2 ? NeighbourCells(houseID, arch.Width - 2) : new Dictionary<Point, short>();
+                    for (int y = -1; y <= 1; y++)
+                        for (int x = -1; x <= 1; x++)
+                            if (x != 0 || y != 0)
+                                queue.Enqueue((new Point(x, y), neighbours.TryGetValue(new Point(x, y), out var h) ? h : (short)-1));
+                    System.Diagnostics.Debug.WriteLine($"surroundings: {neighbours.Count} neighbour(s) around house {houseID}");
+                }
+                if (queue.Count == 0) return;
+                var (cell, house) = queue.Dequeue();
+                try { AddSurrounding(cell, house); }
+                catch (Exception e) { System.Diagnostics.Debug.WriteLine($"surroundings: lot at {cell} failed: {e.Message}"); }
+                if (queue.Count > 0) GameThread.NextUpdate(Next);
             }
+            GameThread.NextUpdate(Next);
+        }
+
+        /// <summary>Your neighbours' houses around <paramref name="houseID"/>, by cell, from the neighbourhood map's spots.</summary>
+        private static Dictionary<Point, short> NeighbourCells(short houseID, float spacing)
+        {
+            var locations = Content.Get().Neighborhood?.LotLocations;
+            if (locations == null) return new Dictionary<Point, short>();
+            foreach (var str in locations.List<STR>() ?? new List<STR>())
+            {
+                var lines = new List<string>();
+                for (int i = 0; i < str.Length; i++) lines.Add(str.GetString(i));
+                var houses = SurroundingLayout.Parse(lines);
+                if (!houses.Any(h => h.house == houseID)) continue;
+                var onGround = houses.Select(h => (h.house, SurroundingLayout.MapToTiles(h.screen, houses.Count))).ToList();
+                return SurroundingLayout.Arrange(onGround, houseID, spacing);
+            }
+            return new Dictionary<Point, short>();
+        }
+
+        /// <summary>
+        /// One lot of the ring: a neighbour's house (furnished, their Sims left out) or, for -1 or if it won't load, open
+        /// ground; placed in its cell, its edges at your lot's height.
+        /// </summary>
+        private void AddSurrounding(Point cell, short house)
+        {
+            var gd = World.State.Device;
+            var mine = vm.Context.Architecture;
+            var myHeight = BorderHeight(mine.Terrain);
+            var subworld = World.MakeSubWorld(gd);
+            subworld.Initialize(gd);
+            var tempVM = new VM(new VMContext(subworld), new VMServerDriver(new VMTS1GlobalLinkStub()), new VMNullHeadlineProvider());
+            tempVM.Init();
+            var path = house >= 0 ? Content.Get().Neighborhood.GetHousePath(house) : null;
+            var loaded = false;
+            if (path != null && File.Exists(path))
+            {
+                try
+                {
+                    BlueprintReset(path, tempVM);
+                    // scenery: their Sims stay at home, out of sight
+                    foreach (var avatar in tempVM.Entities.OfType<VMAvatar>().ToList()) avatar.Delete(true, tempVM.Context);
+                    loaded = tempVM.Context.Blueprint != null && tempVM.Context.Architecture != null;
+                }
+                catch (Exception e)
+                {
+                    System.Diagnostics.Debug.WriteLine($"surroundings: house {house} won't load ({e.Message}); open ground instead");
+                }
+            }
+            if (!loaded)
+            {
+                subworld.Dispose();
+                subworld = World.MakeSubWorld(gd);
+                subworld.Initialize(gd);
+                tempVM = new VM(new VMContext(subworld), new VMServerDriver(new VMTS1GlobalLinkStub()), new VMNullHeadlineProvider());
+                tempVM.Init();
+                OpenGround(tempVM, subworld, mine.Width, mine.Terrain, (short)Math.Round(myHeight));
+            }
+
+            var blueprint = tempVM.Context.Blueprint;
+            var size = tempVM.Context.Architecture.Width;
+            // edges at your lot's edge height, and centred in its cell
+            blueprint.BaseAlt = (int)Math.Round(BorderHeight(tempVM.Context.Architecture.Terrain) - myHeight) + vm.Context.Blueprint.BaseAlt;
+            var spacing = mine.Width - 2;
+            var origin = new Vector2(cell.X * spacing + (mine.Width - size) / 2, cell.Y * spacing + (mine.Width - size) / 2);
+            subworld.GlobalPosition = -origin;
+            subworld.State.Level = 5;
+            subworld.UseFade = false;
+            foreach (var obj in tempVM.Entities) obj.Position = obj.Position; // (draw them where they are)
+            vm.Context.Blueprint.SubWorlds.Add(subworld);
             vm.Context.World.InitSubWorlds();
+        }
+
+        /// <summary>The average height of a lot's ground a tile in from its edge (the lots' heights are matched there).</summary>
+        private static float BorderHeight(VMArchitectureTerrain terrain)
+        {
+            if (terrain?.Heights == null) return 0;
+            int w = terrain.Width, h = terrain.Height;
+            double sum = 0;
+            int count = 0;
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++)
+                {
+                    if (x != 1 && y != 1 && x != w - 2 && y != h - 2) continue;
+                    sum += terrain.Heights[y * w + x];
+                    count++;
+                }
+            return count == 0 ? 0 : (float)(sum / count);
+        }
+
+        /// <summary>An empty lot: your lot's kind of ground and grass, flat at its edge height.</summary>
+        private static void OpenGround(VM tempVM, FSO.LotView.Components.SubWorldComponent subworld, int size, VMArchitectureTerrain like, short height)
+        {
+            var blueprint = new Blueprint(size, size);
+            tempVM.Context.Blueprint = blueprint;
+            subworld.InitBlueprint(blueprint);
+            var arch = new VMArchitecture(size, size, blueprint, tempVM.Context);
+            tempVM.Context.Architecture = arch;
+            arch.EmptyRoomMap();
+            tempVM.Context.RegeneratePortalInfo();
+            var terrain = new FSO.LotView.Components.TerrainComponent(new Rectangle(0, 0, size, size), blueprint);
+            terrain.Initialize(subworld.State.Device, subworld.State);
+            blueprint.Terrain = terrain;
+            arch.Terrain.LightType = like?.LightType ?? FSO.Content.Model.TerrainType.GRASS;
+            arch.Terrain.DarkType = like?.DarkType ?? FSO.Content.Model.TerrainType.GRASS;
+            arch.Terrain.GenerateGrassStates(RestoreLotType.Blank);
+            for (int i = 0; i < arch.Terrain.Heights.Length; i++) arch.Terrain.Heights[i] = height;
+            arch.Terrain.RegenerateCenters();
+            arch.SignalTerrainRedraw();
+            arch.ClearDirty();
+            arch.RegenRoomMap();
+            tempVM.Context.RegeneratePortalInfo();
+            tempVM.Context.RefreshAllLighting();
+            tempVM.Tick();
         }
 
         public void BlueprintReset(string path, VM vm)

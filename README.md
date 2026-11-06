@@ -275,6 +275,18 @@ Simitone finds The Sims 1 installation in this priority order:
 -nosound         # Disable audio
 ```
 
+### Surrounding Lots
+
+Instead of grey void past the edge of your lot, Simitone shows a ring of eight lots around it, as FreeSO does in The Sims Online. They're scenery: drawn, not simulated, and their Sims stay home. Set `SurroundingLotMode` in `config.ini`:
+
+```ini
+SurroundingLotMode=2   # 2: your neighbours' houses where the neighbourhood map has them, open ground between (default)
+                       # 1: open ground only (your lot's grass, at its height)
+                       # 0: off (grey void, as before)
+```
+
+The Sims never put its lots side by side, so each neighbour goes in the lot next to yours that's nearest the way it lies on the neighbourhood map, the nearest first; houses further than a lot or so away aren't shown. Their edges are matched to your lot's height. The lots load one per frame after you arrive, so the lot comes up as quickly as before.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.
