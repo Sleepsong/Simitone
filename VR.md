@@ -846,7 +846,9 @@ Design choices:
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
   path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding, and `SIMITONE_SMOKE_LINKED=1` SteamVR's layout without the
   loader (as on the Steam Frame): `active_runtime.json` a symbolic link to a manifest whose relative `library_path`
-  is relative to where the manifest really is. The second half of the run is left-handed, and input must sync
+  is relative to where the manifest really is. `SIMITONE_XR_REFUSE_ATTEMPTS=n` treats the first n tries at creating
+  the instance as refused, to exercise the fallbacks (OpenXR 1.1, then fewer optional extensions) that Simitone
+  steps through when a runtime won't create one with everything it asked for. The second half of the run is left-handed, and input must sync
   in both layouts. Ubuntu packages: `monado-service libopenxr1-monado
   libopenxr-loader1 xvfb mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri libsdl2-2.0-0`.
 

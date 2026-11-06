@@ -186,6 +186,37 @@ namespace Simitone.VR
             }
         }
 
+        /// <summary>One try at xrCreateInstance; sets <see cref="Instance"/> if it works.</summary>
+        private XrResult CreateInstance(string applicationName, ulong apiVersion, List<string> extensions)
+        {
+            var namePtrs = extensions.Select(e => System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(e)).ToArray();
+            try
+            {
+                fixed (IntPtr* names = namePtrs)
+                {
+                    var create = new XrInstanceCreateInfo
+                    {
+                        Type = XrStructureType.InstanceCreateInfo,
+                        EnabledExtensionCount = (uint)extensions.Count,
+                        EnabledExtensionNames = (byte**)names,
+                    };
+                    XrConst.WriteString(create.ApplicationInfo.ApplicationName, XrConst.MaxApplicationNameSize, applicationName);
+                    XrConst.WriteString(create.ApplicationInfo.EngineName, XrConst.MaxEngineNameSize, "FreeSO");
+                    create.ApplicationInfo.ApplicationVersion = 1;
+                    create.ApplicationInfo.EngineVersion = 1;
+                    create.ApplicationInfo.ApiVersion = apiVersion;
+                    ulong instance;
+                    var r = Api.CreateInstance(&create, &instance);
+                    if ((int)r >= 0) Instance = instance;
+                    return r;
+                }
+            }
+            finally
+            {
+                foreach (var p in namePtrs) System.Runtime.InteropServices.Marshal.FreeHGlobal(p);
+            }
+        }
+
         private void InitializeInternal(string applicationName)
         {
             if (!XrLoader.Load(Log, out var loadError)) throw new InvalidOperationException("OpenXR unavailable: " + loadError);
@@ -198,52 +229,77 @@ namespace Simitone.VR
             // ---- extensions
             var available = EnumerateExtensions();
             Log("OpenXR: runtime extensions: " + string.Join(" ", available.OrderBy(x => x)));
-            var wanted = new List<string> { "XR_KHR_opengl_enable" };
+            var required = new List<string> { "XR_KHR_opengl_enable" };
             if (!available.Contains("XR_KHR_opengl_enable"))
                 throw new InvalidOperationException("The OpenXR runtime does not support OpenGL (XR_KHR_opengl_enable).");
             if (GLContext.Kind == GLContextKind.EGL)
             {
                 if (!available.Contains("XR_MNDX_egl_enable"))
                     throw new InvalidOperationException("SDL created an EGL context but the runtime lacks XR_MNDX_egl_enable. Try SDL_VIDEODRIVER=x11.");
-                wanted.Add("XR_MNDX_egl_enable");
+                required.Add("XR_MNDX_egl_enable");
             }
-            foreach (var optional in new[] { "XR_EXT_local_floor", VRInput.FrameControllerExtension, VRInput.EyeGazeExtension })
-                if (available.Contains(optional)) wanted.Add(optional);
-            // the controllers' own models (SteamVR, including on the Steam Frame), when the runtime offers them
+            // optional, in the order they're given up if the runtime won't start with them
+            var renderModels = new List<string>();
+            // the controllers' own models (SteamVR, including on the Steam Frame), when the runtime offers them; their
+            // structures use XR_EXT_uuid's type (core in OpenXR 1.1), so under 1.0 that goes with them
             if (available.Contains(XrRenderModelApi.RenderModelExtension) && available.Contains(XrRenderModelApi.InteractionRenderModelExtension))
             {
-                wanted.Add(XrRenderModelApi.RenderModelExtension);
-                wanted.Add(XrRenderModelApi.InteractionRenderModelExtension);
+                renderModels.Add(XrRenderModelApi.RenderModelExtension);
+                renderModels.Add(XrRenderModelApi.InteractionRenderModelExtension);
             }
+            string Optional(string name) => available.Contains(name) ? name : null;
+            var frame = Optional(VRInput.FrameControllerExtension);
+            var eyes = Optional(VRInput.EyeGazeExtension);
+            var floor = Optional("XR_EXT_local_floor");
+            var uuid = Optional("XR_EXT_uuid");
 
-            // ---- instance
-            var namePtrs = wanted.Select(s => System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(s)).ToArray();
-            try
+            // ---- instance: as asked for first; if the runtime refuses (an extension it won't take with this API
+            // version, say), with OpenXR 1.1, then giving up optional extensions one at a time
+            List<string> Set(ulong api, bool models, bool frameProfile, bool eyeGaze, bool localFloor)
             {
-                fixed (IntPtr* names = namePtrs)
+                var set = new List<string>(required);
+                if (models && renderModels.Count > 0)
                 {
-                    var create = new XrInstanceCreateInfo
-                    {
-                        Type = XrStructureType.InstanceCreateInfo,
-                        EnabledExtensionCount = (uint)wanted.Count,
-                        EnabledExtensionNames = (byte**)names,
-                    };
-                    XrConst.WriteString(create.ApplicationInfo.ApplicationName, XrConst.MaxApplicationNameSize, applicationName);
-                    XrConst.WriteString(create.ApplicationInfo.EngineName, XrConst.MaxEngineNameSize, "FreeSO");
-                    create.ApplicationInfo.ApplicationVersion = 1;
-                    create.ApplicationInfo.EngineVersion = 1;
-                    // Ask for 1.0 - SteamVR on the Steam Frame and older runtimes may not accept 1.1.
-                    create.ApplicationInfo.ApiVersion = XrConst.MakeVersion(1, 0, 0);
-                    ulong instance;
-                    var r = Api.CreateInstance(&create, &instance);
-                    if ((int)r < 0) throw new XrException("xrCreateInstance", r);
-                    Instance = instance;
+                    set.AddRange(renderModels);
+                    if (api < XrConst.MakeVersion(1, 1, 0) && uuid != null) set.Add(uuid);
                 }
+                if (frameProfile && frame != null) set.Add(frame);
+                if (eyeGaze && eyes != null) set.Add(eyes);
+                if (localFloor && floor != null) set.Add(floor);
+                return set;
             }
-            finally
+            ulong v10 = XrConst.MakeVersion(1, 0, 0), v11 = XrConst.MakeVersion(1, 1, 0);
+            var attempts = new List<(ulong api, List<string> extensions)>
             {
-                foreach (var p in namePtrs) System.Runtime.InteropServices.Marshal.FreeHGlobal(p);
+                (v10, Set(v10, true, true, true, true)),
+                (v11, Set(v11, true, true, true, true)),
+                (v11, Set(v11, false, true, true, true)),
+                (v10, Set(v10, false, true, true, true)),
+                (v10, Set(v10, false, false, true, true)),
+                (v10, Set(v10, false, false, false, true)),
+                (v10, Set(v10, false, false, false, false)),
+            };
+            // (a test hook: treat the first attempts as refused, to exercise this with a runtime that takes everything)
+            int.TryParse(Environment.GetEnvironmentVariable("SIMITONE_XR_REFUSE_ATTEMPTS"), out var refuse);
+            List<string> wanted = null;
+            var tried = new HashSet<string>();
+            XrResult last = XrResult.ErrorValidationFailure;
+            foreach (var (api, extensions) in attempts)
+            {
+                var key = XrConst.VersionString(api) + " " + string.Join(" ", extensions);
+                if (!tried.Add(key)) continue; // (the same as one already tried: an extension the runtime hasn't got)
+                var r = refuse-- > 0 ? XrResult.ErrorValidationFailure : CreateInstance(applicationName, api, extensions);
+                if ((int)r >= 0)
+                {
+                    wanted = extensions;
+                    if (tried.Count > 1) Log($"OpenXR: instance created with OpenXR {XrConst.VersionString(api)} and {string.Join(" ", extensions)}");
+                    break;
+                }
+                last = r;
+                Log($"OpenXR: xrCreateInstance refused ({r}) with OpenXR {XrConst.VersionString(api)} and {string.Join(" ", extensions)}");
+                if (r == XrResult.ErrorRuntimeUnavailable) break; // (no runtime running: nothing else will do)
             }
+            if (wanted == null) throw new XrException("xrCreateInstance", last);
             foreach (var ext in wanted) EnabledExtensions.Add(ext);
             Api.LoadInstanceFunctions(Instance, true);
 
