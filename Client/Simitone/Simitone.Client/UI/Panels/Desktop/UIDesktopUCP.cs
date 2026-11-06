@@ -231,7 +231,7 @@ namespace Simitone.Client.UI.Panels.Desktop
             RotateCCWButton.OnButtonClick += RotateCounterClockwise;
 
             FloorUpButton.OnButtonClick += (b) => { if (Game.Level < 5) Game.Level++; };
-            FloorDownButton.OnButtonClick += (b) => { if (Game.Level > 1) Game.Level--; };
+            FloorDownButton.OnButtonClick += (b) => { if (Game.Level > Game.MinLevel) Game.Level--; };
 
             Size = new Vector2(Background.Width, Background.Height);
 
@@ -270,7 +270,7 @@ namespace Simitone.Client.UI.Panels.Desktop
         private int LastSpeed = -1;
         private int LastCut;
         private int LastMoney = 0;
-        private sbyte LastFloor = 0;
+        private sbyte LastFloor = -1;
         private int LastZoom;
         public override void Update(UpdateState state)
         {
@@ -294,9 +294,9 @@ namespace Simitone.Client.UI.Panels.Desktop
             if (Game.Level != LastFloor)
             {
                 LastFloor = Game.Level;
-                FloorLabel.Caption = FloorNames[LastFloor - 1];
-                FloorLabelShadow.Caption = FloorNames[LastFloor - 1];
-                FloorDownButton.Disabled = LastFloor == 1;
+                FloorLabel.Caption = TS1GameScreen.FloorName(LastFloor);
+                FloorLabelShadow.Caption = TS1GameScreen.FloorName(LastFloor);
+                FloorDownButton.Disabled = LastFloor <= Game.MinLevel;
                 FloorUpButton.Disabled = LastFloor == 5;
             }
 
@@ -387,7 +387,7 @@ namespace Simitone.Client.UI.Panels.Desktop
                         if (keys.Contains(Keys.OemPlus) && !state.CtrlDown && !ZoomInButton.Disabled) { Game.ZoomLevel -= 1; UpdateZoomButton(); }
                         if (keys.Contains(Keys.OemMinus) && !state.CtrlDown && !ZoomOutButton.Disabled) { Game.ZoomLevel += 1; UpdateZoomButton(); }
                     }
-                    if (keys.Contains(Keys.PageDown)) { if (Game.Level > 1) Game.Level--; }
+                    if (keys.Contains(Keys.PageDown)) { if (Game.Level > Game.MinLevel) Game.Level--; }
                     if (keys.Contains(Keys.PageUp)) { if (Game.Level < 5) Game.Level++; }
                     if (keys.Contains(Keys.Home)) UpdateWallsViewKeyHandler(1);
                     if (keys.Contains(Keys.End)) UpdateWallsViewKeyHandler(0);

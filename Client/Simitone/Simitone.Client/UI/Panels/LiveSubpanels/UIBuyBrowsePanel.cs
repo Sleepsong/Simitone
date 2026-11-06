@@ -1154,6 +1154,23 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                     Parameters = new List<int> { }
                 }
             });
+            // basements, as in The Sims 2 (Simitone.Client.UI.Panels.LotControls.UIBasementPlacer)
+            FullCategory.Insert(0, new UICatalogElement
+            {
+                Item = new ObjectCatalogItem()
+                {
+                    Name = "Basement",
+                    Category = 18,
+                    Price = (uint)FSO.SimAntics.VMArchitecture.BasementTilePrice,
+                },
+                Special = new UISpecialCatalogElement
+                {
+                    Control = typeof(Simitone.Client.UI.Panels.LotControls.UIBasementPlacer),
+                    ResID = Simitone.Client.UI.Panels.LotControls.UICatalogFoundationResProvider.BasementID,
+                    Res = foundationRes,
+                    Parameters = new List<int> { }
+                }
+            });
             FullCategory.Insert(0, new UICatalogElement
             {
                 Item = new ObjectCatalogItem()

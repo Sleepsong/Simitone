@@ -101,6 +101,8 @@ namespace Simitone.Client.UI.Panels.LotControls
             {
                 case VMFoundationTools.FailBlocked: return "Clear furniture and walls first";
                 case VMFoundationTools.FailNoFoundation: return "Steps go beside a foundation";
+                case VMBasementTools.FailBlocked: return "Clear bare ground of things first (and no pools or foundations)";
+                case VMBasementTools.FailOccupied: return "Move everything out of that part of the basement first";
                 default: return "";
             }
         }
@@ -248,24 +250,30 @@ namespace Simitone.Client.UI.Panels.LotControls
     {
         public const ulong FoundationID = 100;
         public const ulong StepsID = 101;
+        public const ulong BasementID = 102;
 
         public override Texture2D GetIcon(ulong id)
         {
+            if (id == BasementID) return UIElement.GetTexture(0x1E000000001); //down
             return (id == StepsID) ? UIElement.GetTexture(0x1E200000001) : UIElement.GetTexture(0x1E100000001); //up, level
         }
 
         public override Texture2D GetThumb(ulong id)
         {
+            if (id == BasementID) return UIElement.GetTexture(0x1D700000001); //terrain down
             return (id == StepsID) ? UIElement.GetTexture(0x1D900000001) : UIElement.GetTexture(0x1D800000001);
         }
 
         public override string GetName(ulong id)
         {
+            if (id == BasementID) return "Basement";
             return (id == StepsID) ? "Foundation Steps" : "Foundation";
         }
 
         public override string GetDescription(ulong id)
         {
+            if (id == BasementID)
+                return "Digs out a basement a storey below the ground floor, as in The Sims 2. Drag out an area; it gets a floor, and so does the ground floor above it. Then go down a floor to build walls and put stairs in. Hold Ctrl (or use erase) to fill it back in.";
             return (id == StepsID)
                 ? "Steps up onto a foundation. Click the ground beside one; Sims can only get on and off a foundation by its steps. Hold Ctrl (or use erase) to remove steps."
                 : "Raises the ground floor a few steps, as in The Sims 2. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Hold Ctrl (or use erase) to remove a foundation.";
@@ -273,6 +281,7 @@ namespace Simitone.Client.UI.Panels.LotControls
 
         public override int GetPrice(ulong id)
         {
+            if (id == BasementID) return VMArchitecture.BasementTilePrice;
             return (id == StepsID) ? VMArchitecture.FoundationStepsPrice : VMArchitecture.FoundationTilePrice;
         }
 
