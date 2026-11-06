@@ -166,6 +166,8 @@ namespace Simitone.Client
                 FSO.Content.TS1.TS1Audio.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Sound", message);
                 //neighbourhood pictures of a lot that came out with black floors and roof, and the renderer's state then
                 Utils.LotPictureGuard.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Lot picture", message);
+                //in 3D, objects in other objects (a sink in a counter): whether a basin was cut into what it's in, and why not
+                FSO.LotView.Utils.DGRPRenderer.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("3D", message);
             }
             //-travellog: travel between lots, town maps, pie menus and why their interactions were left out, and the
             //scripts of interactions picked away from home, step by step (see TRAVEL_FIXES.md)

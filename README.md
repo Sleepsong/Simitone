@@ -284,8 +284,9 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 
 **Diagnostic logs** (written to the user data folder, off unless asked for; in Steam, add them to the game's Launch Options):
 ```bash
--logs            # simantics-errors.log (script errors, with every VM frame, sounds that couldn't play, and
-                 # neighbourhood pictures of a lot that came out black), gamepad.log (controllers and focus), discord.log (Rich Presence, where built in) and simitone_debug.log
+-logs            # simantics-errors.log (script errors, with every VM frame, sounds that couldn't play,
+                 # neighbourhood pictures of a lot that came out black, and in 3D, whether each sink's basin
+                 # was cut into its counter), gamepad.log (controllers and focus), discord.log (Rich Presence, where built in) and simitone_debug.log
 -travellog       # travel.log: trips between lots, town maps, pie menus, and the scripts of
                  # interactions picked away from home, step by step (see TRAVEL_FIXES.md)
 -soundlog        # sound.log: every sound the game asks for, who asked, and what came of it
