@@ -67,6 +67,8 @@ namespace Simitone.Windows
             userDir = userDir.Replace('\\', '/');
             FSOEnvironment.UserDir = userDir;
             Directory.CreateDirectory(FSOEnvironment.UserDir);
+            StartupLogPath = Path.Combine(FSOEnvironment.UserDir, "startup.log");
+            try { File.Delete(StartupLogPath); } catch { }
 
             ILocator gameLocator;
             if (linux && Directory.Exists("/Users"))
@@ -164,6 +166,14 @@ namespace Simitone.Windows
                 if (!GlobalSettings.Default.TS1InstallationConfigured || string.IsNullOrEmpty(path))
                 {
                     var installations = gameLocator.GetAllTheSims1Installations();
+                    StartupLog($"looking for The Sims: {installations.Count} found");
+                    foreach (var found in installations) StartupLog($"  {found.description}: {found.path}");
+                    if (installations.Count == 0 && linux && !Directory.Exists("/Users"))
+                    {
+                        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                        foreach (var library in LinuxLocator.SteamLibraries(home))
+                            StartupLog($"  (looked in the Steam library {library})");
+                    }
 
                     if (installations.Count == 0)
                     {
@@ -320,6 +330,13 @@ namespace Simitone.Windows
 
             if (path != null)
             {
+                StartupLog("The Sims: " + path + (pathProvidedViaCommandLine ? " (from the command line)" : ""));
+                if (linux && !Directory.Exists("/Users"))
+                {
+                    // the Legacy Collection's neighbourhood is in its Proton prefix: Simitone's copy is made from there
+                    try { StartupLog(LinuxLocator.PrepareSaves(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), path, FSOEnvironment.UserDir)); }
+                    catch (Exception e) { StartupLog("neighbourhood: couldn't copy the Legacy Collection's saves: " + e.Message); }
+                }
                 FSOEnvironment.ContentDir = "Content/";
                 FSOEnvironment.GFXContentDir = "Content/" + (useDX ? "DX/" : "OGL/");
                 FSOEnvironment.Linux = linux;
@@ -366,6 +383,15 @@ namespace Simitone.Windows
         /// <summary>
         /// Save installation configuration to settings
         /// </summary>
+        private static string StartupLogPath;
+
+        /// <summary>What happened finding the game, on the console and in startup.log in the user folder (for a headset).</summary>
+        private static void StartupLog(string message)
+        {
+            Console.WriteLine(message);
+            try { if (StartupLogPath != null) File.AppendAllText(StartupLogPath, DateTime.Now.ToString("HH:mm:ss ") + message + "\n"); } catch { }
+        }
+
         private static void SaveInstallationConfig(string path, bool isSteam)
         {
             GlobalSettings.Default.TS1HybridPath = path;
