@@ -1,58 +1,62 @@
 # Try for Baby
 
-Simitone adds **Try for Baby**, from The Sims 2, to The Sims 1. In The Sims 1, a couple living together can be asked
-"have a baby?" at random after a kiss. With Try for Baby, you choose when they try, and each try has a 50% chance.
-A successful try leads into The Sims 1's own baby: its question, the baby in a bassinet, and naming the baby, exactly as
-when it happens after a kiss.
+Simitone adds **Try for Baby**, from The Sims 2, to The Sims 1. It's WooHoo with a chance of a baby:
+
+- **50%** of tries bring a baby, and **1 in 10** of those babies are twins.
+- There's no "do you want a baby?" question. The baby simply arrives in its bassinet, and the game asks you to
+  name it. Twins arrive one after the other, and you name each.
+- Otherwise there's no baby this time, and a message says so.
 
 ## Using it
 
-Select one partner, tap the other, and choose **Try for Baby**. It appears when:
+The Sims 1's WooHoo is **Play** in the **Vibromatic Heart Bed** (Livin' Large), so Try for Baby appears on that bed,
+next to Play. Choose it for one partner, and for the other as you would for Play. It appears when the Sim:
 
-- both Sims are adults, one male and one female (as in The Sims 2),
-- both are members of the household that lives on this lot,
-- the household has fewer than 8 members,
-- their daily relationship is at least 50 both ways, and
-- the game would let them kiss right now.
+- is an adult in the household that lives on this lot,
+- has a partner there of the other sex (as in The Sims 2), and
+- has a daily relationship of at least 50 with that partner, both ways.
 
-The couple kisses, using the game's own kiss, and then:
+The household must also have fewer than 8 members. The game's own rules for Play still apply on top.
 
-- **If the try works** (half the time), the game asks whether they want a baby. From there it's The Sims 1's usual baby.
-- **If it doesn't**, a message says there's no baby this time, and they can try again later.
-- **If the try works but the game's own baby check still says no**, the message says so. That can happen when their
-  mood is low or the kiss is turned down.
-
-A kiss that isn't Try for Baby can still bring the baby question by chance, as it always has in The Sims 1.
+Play itself still works as it always has, and so does a kiss. Either can still bring the game's baby question by
+chance, as in The Sims 1.
 
 ## How it works
 
-The Sims 1's baby question lives in the game's own scripts, which Simitone runs. Try for Baby doesn't change the game's
-files. When a Sim's menu is first opened on a lot, it finds three things in the scripts:
+The Sims 1's baby lives in the game's own scripts, which Simitone runs. Try for Baby doesn't change the game's files.
+When a menu is first opened on a lot, it finds three things in the scripts:
 
 - **The baby question:** a yes/no dialog whose text mentions a baby. The search reads the dialog's text, so it needs
   the game's English text.
-- **The interaction that leads to it**, normally the kiss.
+- **The interactions that lead to it:** the bed's Play, and the kiss.
 - **The scripts in between**, where the game rolls the dice for a baby.
 
-Try for Baby is added to the Sims' interactions as a copy of that kiss. While a couple is trying, the dice rolls in
-those in-between scripts come out the way the try's own 50% roll did. A lucky roll passes the game's check, and an
-unlucky roll fails it, so a try can't bring a baby by luck either. Rolls go back to normal as soon as the question
-comes up or the try ends.
+When a Sim starts Try for Baby, Simitone rolls once for the couple:
 
-The new interaction is kept in memory only. The game writes Sims' files back when it saves, and they never get it.
+- **The dice:** the rolls in those in-between scripts are steered to pass (baby) or fail (no baby).
+- **The question:** it's answered "yes" or "no" for them, without being shown. A baby then goes through the game's
+  usual code: the bassinet, then naming.
+- **Twins:** the game's baby code runs a second time.
 
-The log says what was found and what happened. Lines start with `[baby]`:
+The new interaction is a copy of the bed's Play, kept in memory only, and never saved to any file.
 
-- the baby dialogs found, and which one is the question,
-- the interaction it starts from, and the chain of scripts in between,
-- each try, its roll, the dice it steered, and the outcome.
+The log shows what was found and what happened. Lines start with `[baby]`:
 
-The engine side is `FSO.SimAntics.Model.TS1Platform.VMTryForBaby` in FreeSO. It hooks the random number primitive,
-the dialog primitive, the start of queued interactions, and Sims' pie menus. Simitone's lot screen shows the message
-when a try ends without a baby.
+- the baby dialogs found, and the interactions that lead to them,
+- each try and its roll, the dice it steered, the questions it answered, and how it ended.
+
+The engine side is `FSO.SimAntics.Model.TS1Platform.VMTryForBaby` in FreeSO. It hooks:
+
+- the random number primitive,
+- the dialog primitive,
+- the start of queued interactions,
+- pie menus.
+
+Simitone's lot screen shows the message when a try ends with twins or with no baby.
 
 ## Limits
 
-- It finds the baby question by its English text. With the game in another language, Try for Baby doesn't appear.
+- It needs the Vibromatic Heart Bed, the only bed in The Sims 1 with WooHoo.
+- It finds the baby question by its English text. With the game in another language, it can't answer the question.
 - With the desktop `-jit` option, compiled scripts don't go through the steered dice rolls.
-- There's no pregnancy. A successful try goes straight to The Sims 1's baby, as a kiss does.
+- There's no pregnancy. A successful try goes straight to the baby, as The Sims 1's own babies do.

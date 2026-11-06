@@ -277,8 +277,8 @@ Simitone finds The Sims 1 installation in this priority order:
 
 ## Try for Baby
 
-Couples can **Try for Baby**, as in The Sims 2: tap your Sim's partner and choose it. Each try has a 50% chance, and a
-successful try leads into The Sims 1's own baby. See [TRY_FOR_BABY.md](TRY_FOR_BABY.md).
+Couples can **Try for Baby**, as in The Sims 2: it's next to WooHoo (Play) on the Vibromatic Heart Bed. Half the tries
+bring a baby (one in ten are twins), which arrives straight away to be named. See [TRY_FOR_BABY.md](TRY_FOR_BABY.md).
 
 # Building from Source
 

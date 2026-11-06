@@ -609,15 +609,23 @@ namespace Simitone.Client.UI.Screens
         private VMMarshal SavedLot;
 
         /// <summary>
-        /// Try for Baby: when a try ends without the game's baby question, say so (The Sims 2 says nothing, but on a phone
-        /// it's easy to miss whether anything happened). When it worked, the game's own question is the answer.
+        /// Try for Baby: a baby needs no message (the game asks for its name), but twins and a try with no baby get one
+        /// (The Sims 2 plays a lullaby for a baby and stays quiet otherwise, which is easy to miss on a phone).
         /// </summary>
         private void TryForBabyResult(VM fromVM, VMAvatar initiator, VMAvatar partner, VMTryForBabyOutcome outcome)
         {
-            if (fromVM != vm || outcome == VMTryForBabyOutcome.Asked) return;
-            var message = (outcome == VMTryForBabyOutcome.NoLuck)
-                ? $"No baby this time for {initiator.Name} and {partner.Name}. They can try again."
-                : $"No baby this time for {initiator.Name} and {partner.Name}. The game's own baby check said no: they may need a better mood or a closer relationship, or the kiss was turned down.";
+            if (fromVM != vm || outcome == VMTryForBabyOutcome.Baby) return;
+            var couple = (partner == null) ? initiator.Name : $"{initiator.Name} and {partner.Name}";
+            string message;
+            switch (outcome)
+            {
+                case VMTryForBabyOutcome.Twins:
+                    message = $"Twins! {couple} have two new babies."; break;
+                case VMTryForBabyOutcome.NoLuck:
+                    message = $"No baby this time for {couple}. They can try again."; break;
+                default:
+                    message = $"No baby this time for {couple}: the game's own baby check didn't go ahead. They may need a better mood, or the household may be full."; break;
+            }
             GameThread.NextUpdate(x =>
             {
                 UIMobileAlert alert = null;
