@@ -347,7 +347,7 @@ Q/E to turn, PageUp/PageDown to change floors (observer). F9 opens the VR menu.
 
 ## Settings (`vr.ini`)
 
-`vr.ini` is in the Simitone user folder (on Linux `~/Documents/Simitone/`, or `~/Simitone/` if there is no
+`vr.ini` is in the Simitone user folder (on Linux `~/Documents/Simitone/`, or `~/.local/share/Simitone/` if there is no
 Documents folder; on Windows `Documents\Simitone\`). It lists every option; the ones at their default are
 commented out (`# Key=Value`), so they follow the defaults if a later version changes them, and only what you've
 changed (in the file, or in the VR menu) is set. Remove the `#` to set one by hand. A `vr.defaults.ini` next to the
@@ -455,9 +455,14 @@ Deploying:
 2. Either use Valve's **SteamOS Devkit Client** to upload `publish/Simitone-SteamFrame-arm64/` with
    `Simitone-VR` as the launch command, **or** copy the folder over SSH (e.g. to `~/Simitone-VR/`) and add
    `Simitone-VR` as a non-Steam game from Desktop Mode.
-3. Make The Sims available on the headset. If the Steam version (*The Sims Legacy Collection*) is installed
-   in the internal Steam library (`~/.steam/steam/steamapps/common/The Sims/`), it is found automatically.
-   Otherwise set `SIMITONE_SIMS_PATH=/path/to/The Sims` in the launch options, or pass `-path"..."`.
+3. Make The Sims available on the headset. The Steam version (*The Sims Legacy Collection*) is found
+   automatically in any Steam library (internal or SD card, as Steam's `libraryfolders.vdf` lists them): the folder
+   its Steam manifest names, or `The Sims Legacy Collection` or `The Sims`, under `steamapps/common` or `common`, with
+   the game's `GameData` in it or one folder down. Its neighbourhood (saved in its Proton prefix,
+   `compatdata/3314060/pfx/drive_c/users/steamuser/Saved Games/Electronic Arts/The Sims 25/`) is copied to
+   Simitone's own the first time, so run the Legacy Collection once beforehand. Otherwise set
+   `SIMITONE_SIMS_PATH=/path/to/The Sims` in the launch options, or pass `-path"..."`. `startup.log` in the Simitone
+   user folder (`~/Documents/Simitone/`, or `~/.local/share/Simitone/`) says what was found and where it looked.
 
 Performance: the Frame renders around 1440-1728 px per eye and FreeSO draws the lot twice per frame.
 `RenderScale=0.75` is the starting point; lower it if SteamVR is reprojecting heavily, raise it if your lot
