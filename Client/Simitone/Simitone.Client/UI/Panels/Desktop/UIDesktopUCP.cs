@@ -314,6 +314,8 @@ namespace Simitone.Client.UI.Panels.Desktop
                 }
                 LastSpeed = speed;
             }
+            //at ultra speed by itself (everyone away or asleep), speed 3 flashes, as in TS1
+            SpeedButtons[2].ForceState = Game.UltraSpeed ? (TS1GameScreen.FlashOn ? 1 : 0) : -1;
             
             if (LastCut != Game.LotControl.WallsMode)
             {

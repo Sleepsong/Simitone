@@ -9,6 +9,7 @@ using FSO.HIT;
 using FSO.SimAntics;
 using Microsoft.Xna.Framework;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Screens;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -149,6 +150,9 @@ namespace Simitone.Client.UI.Panels
                 }
                 LastSpeed = speed;
             }
+            //at ultra speed by itself (everyone away or asleep), speed 3 flashes, as in TS1
+            var ultra = (UIScreen.Current as TS1GameScreen)?.UltraSpeed == true;
+            Btns[2].ForceState = ultra ? (TS1GameScreen.FlashOn ? 1 : 0) : -1;
             base.Update(state);
         }
 

@@ -307,6 +307,12 @@ namespace Simitone.Client.UI.Screens
         private int SpeedBeforeAutoFastForward;
         private bool AutoFastForwardDeclined; // the user changed speed while everyone was away or asleep
 
+        /// <summary>Running at ultra speed by itself (auto fast-forward): the speed 3 button flashes, as in TS1.</summary>
+        public bool UltraSpeed => AutoFastForward && vm?.SpeedMultiplier == 10;
+
+        /// <summary>Whether a flashing button is lit now (twice a second, half the time).</summary>
+        public static bool FlashOn => (Environment.TickCount / 500) % 2 == 0;
+
         private void UpdateAutoFastForward()
         {
             var family = vm?.TS1State?.CurrentFamily;
