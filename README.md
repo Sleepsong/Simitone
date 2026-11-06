@@ -275,6 +275,11 @@ Simitone finds The Sims 1 installation in this priority order:
 -nosound         # Disable audio
 ```
 
+## Terrain Paint
+
+In build mode, **Terrain** has a paint for each of the game's terrain types (grass, dark and autumn grass, sand, rock,
+snow, cloud): drag to paint the ground, as in The Sims 2. See [TERRAIN_PAINT.md](TERRAIN_PAINT.md).
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.

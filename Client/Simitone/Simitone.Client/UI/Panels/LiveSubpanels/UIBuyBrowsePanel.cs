@@ -1135,6 +1135,31 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                     Parameters = new List<int> { }
                 }
             });
+
+            // terrain paint, as in The Sims 2, with the game's terrain types (Simitone.Client.UI.Panels.LotControls.UITerrainPainter)
+            var paintRes = new Simitone.Client.UI.Panels.LotControls.UICatalogTerrainPaintResProvider();
+            var paints = FSO.SimAntics.Utils.VMTerrainPaintTools.PaintTypes.Select(x => (int)x).ToList();
+            paints.Add(FSO.SimAntics.Utils.VMTerrainPaintTools.Erase);
+            paints.Reverse();
+            foreach (var paint in paints)
+            {
+                FullCategory.Insert(0, new UICatalogElement
+                {
+                    Item = new ObjectCatalogItem()
+                    {
+                        Name = paintRes.GetName((ulong)paint),
+                        Category = 18,
+                        Price = 1,
+                    },
+                    Special = new UISpecialCatalogElement
+                    {
+                        Control = typeof(Simitone.Client.UI.Panels.LotControls.UITerrainPainter),
+                        ResID = (uint)paint,
+                        Res = paintRes,
+                        Parameters = new List<int> { paint }
+                    }
+                });
+            }
         }
 
         public override void GameResized()
