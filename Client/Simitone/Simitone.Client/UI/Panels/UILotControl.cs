@@ -334,6 +334,13 @@ namespace Simitone.Client.UI.Panels
             var picture = (iconType == 3) ? entity?.Object.Resource.Get<FSO.Files.Formats.IFF.Chunks.BMP>((ushort)(5000 + info.Operand.IconNameStringID)) : null;
             if (picture != null)
                 alert.SetIcon(picture.GetTexture(GameFacade.GraphicsDevice), 256, 256); //e.g. the phone's prank call and money chance pictures
+            else if (UILivePicture.Enabled(World) && UILivePicture.SubjectOf(vm, info) is VMEntity subject)
+            {
+                //Live Picture in Picture: a live view of the Sim or object the popup is about
+                var live = new UILivePicture(World, vm, subject);
+                alert.Add(live);
+                alert.SetIcon(live.Picture.Target, 256, 256);
+            }
             else if (entity is VMGameObject)
             {
                 var objects = entity.MultitileGroup.Objects;
