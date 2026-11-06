@@ -166,6 +166,12 @@ namespace Simitone.VR
         /// <summary>Show simple controller models in your hands when you're not in your Sim's body (observer, stepped out).</summary>
         public bool ControllerModels = true;
         /// <summary>
+        /// Over the flat screen (the neighbourhood, menus, or a lot shown flat), draw your controllers and the pointer's
+        /// laser in a see-through layer on top, so you can see where you point. False if the runtime shows that layer as
+        /// black (it would hide the screen); the cursor dot on the screen and the panels still shows where you point.
+        /// </summary>
+        public bool HandsOverScreen = true;
+        /// <summary>
         /// Draw the lot once for both eyes (OpenGL multiview) instead of once per eye: about half the CPU cost of drawing
         /// it. Used when the graphics driver supports it; otherwise each eye is drawn separately.
         /// </summary>

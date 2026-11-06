@@ -135,6 +135,24 @@ namespace Simitone.Client.VR
         public RenderTarget2D Image => Target;
 
         /// <summary>Copies the panel into its swapchain and adds it to the frame, while it's shown.</summary>
+        /// <summary>
+        /// A dot where the pointer is on the panel (a black-edged white square, green while the trigger's held): where
+        /// there's no laser (over the flat screen it's in the hands layer, but this is exact), you see where you point.
+        /// </summary>
+        private void DrawCursor(uint swapImage)
+        {
+            if (mouse.X < 0 || mouse.Y < 0 || mouse.X >= Width || mouse.Y >= Height) return;
+            int cx = mouse.X * Chain.Width / Math.Max(1, Width);
+            int cy = Chain.Height - 1 - mouse.Y * Chain.Height / Math.Max(1, Height); // (GL's origin is the bottom left)
+            int s = Math.Max(4, Math.Max(Chain.Width, Chain.Height) / 90);
+            var down = mouse.LeftButton == ButtonState.Pressed;
+            GLInterop.FillRects(swapImage, new (int, int, int, int, float, float, float)[]
+            {
+                (cx - s - 1, cy - s - 1, 2 * s + 2, 2 * s + 2, 0f, 0f, 0f),
+                (cx - s + 1, cy - s + 1, 2 * s - 2, 2 * s - 2, down ? 0.4f : 1f, 1f, down ? 0.4f : 1f),
+            });
+        }
+
         public void Submit(VRRuntime runtime, ref VRFrameSubmission submission)
         {
             var image = Target;
@@ -146,6 +164,7 @@ namespace Simitone.Client.VR
             }
             var swapImage = Chain.Acquire();
             GLInterop.BlitTexture(GLInterop.GetTextureHandle(image), image.Width, image.Height, swapImage, 0, 0, Chain.Width, Chain.Height, flipY: true);
+            DrawCursor(swapImage);
             Chain.Release();
             submission.AddQuad(new VRQuad
             {

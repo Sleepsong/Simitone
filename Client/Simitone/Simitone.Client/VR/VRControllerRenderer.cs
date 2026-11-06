@@ -34,12 +34,46 @@ namespace Simitone.Client.VR
             Bundled = new VRBundledControllers(System.IO.Path.Combine(AppContext.BaseDirectory, "VRControllers"), SimitoneVR.Log);
         }
 
+        /// <summary>Where the hands are, in whatever space the controllers are drawn in.</summary>
+        public struct Hands
+        {
+            public bool Show, LeftValid, RightValid;
+            public Matrix LeftGrip, RightGrip;
+            /// <summary>A pose in tracking space as a world matrix for something modelled in metres.</summary>
+            public Func<VRPose, Matrix> PoseToWorld;
+
+            /// <summary>The lot's: the VR camera's world (its scale and rig).</summary>
+            public static Hands Of(VRCameraController camera) => new Hands
+            {
+                Show = camera.ShowControllers,
+                LeftValid = camera.LeftHandValid, RightValid = camera.RightHandValid,
+                LeftGrip = camera.LeftGripWorld, RightGrip = camera.RightGripWorld,
+                PoseToWorld = camera.PoseToWorld
+            };
+
+            /// <summary>Your room's (tracking space, metres): for drawing them with no lot, over the flat screen.</summary>
+            public static Hands InRoom(VRInput input)
+            {
+                Matrix World(VRPose pose) => Matrix.CreateFromQuaternion(pose.Orientation) * Matrix.CreateTranslation(pose.Position);
+                var active = input != null && input.Active;
+                return new Hands
+                {
+                    Show = true,
+                    LeftValid = active && input.LeftGrip.Valid, RightValid = active && input.RightGrip.Valid,
+                    LeftGrip = active ? World(input.LeftGrip) : Matrix.Identity, RightGrip = active ? World(input.RightGrip) : Matrix.Identity,
+                    PoseToWorld = World
+                };
+            }
+        }
+
         /// <summary>Works out this frame's models (once per frame, before the eyes are drawn).</summary>
-        public void Prepare(GraphicsDevice device, VRCameraController camera, VRRuntime runtime)
+        public void Prepare(GraphicsDevice device, VRCameraController camera, VRRuntime runtime) => Prepare(device, Hands.Of(camera), runtime);
+
+        public void Prepare(GraphicsDevice device, Hands camera, VRRuntime runtime)
         {
             Frame.Clear();
             LeftCovered = RightCovered = false;
-            if (!camera.ShowControllers || runtime == null) return;
+            if (!camera.Show || runtime == null) return;
             var runtimeModels = runtime.RenderModels;
             if (runtimeModels != null)
             {
@@ -58,13 +92,13 @@ namespace Simitone.Client.VR
             if (input == null || !input.Active) return;
             for (int hand = 0; hand < 2; hand++)
             {
-                if (hand == 0 ? LeftCovered || !camera.LeftHandValid : RightCovered || !camera.RightHandValid) continue;
+                if (hand == 0 ? LeftCovered || !camera.LeftValid : RightCovered || !camera.RightValid) continue;
                 var layout = Bundled.For(hand, runtime.HandProfiles[hand], runtime.SystemName);
                 if (layout == null) continue;
                 var model = GetBundled(device, layout);
                 if (model == null) continue;
                 VRBundledControllers.Animate(layout, VRBundledControllers.Hand(input, hand));
-                Frame.Add((model, hand == 0 ? camera.LeftGripWorld : camera.RightGripWorld, layout.Device));
+                Frame.Add((model, hand == 0 ? camera.LeftGrip : camera.RightGrip, layout.Device));
                 if (hand == 0) LeftCovered = true;
                 else RightCovered = true;
             }
@@ -102,17 +136,19 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>Draws this frame's controllers for one eye.</summary>
-        public void Draw(GraphicsDevice device, VRCameraController camera, Matrix view, Matrix projection)
+        public void Draw(GraphicsDevice device, VRCameraController camera, Matrix view, Matrix projection) => Draw(device, Hands.Of(camera), view, projection);
+
+        public void Draw(GraphicsDevice device, Hands camera, Matrix view, Matrix projection)
         {
-            if (!camera.ShowControllers) return;
+            if (!camera.Show) return;
             foreach (var (model, world, d) in Frame)
             {
                 model.SetAnimatedNodes(d.AnimatedNodes);
                 model.Draw(device, world, view, projection, d.NodePoses, d.NodeVisible);
             }
             // hands the runtime has no model for get the built-in one, at the grip
-            if (camera.LeftHandValid && !LeftCovered) BuiltIn.Draw(device, camera.LeftGripWorld, view, projection);
-            if (camera.RightHandValid && !RightCovered) BuiltIn.Draw(device, camera.RightGripWorld, view, projection);
+            if (camera.LeftValid && !LeftCovered) BuiltIn.Draw(device, camera.LeftGrip, view, projection);
+            if (camera.RightValid && !RightCovered) BuiltIn.Draw(device, camera.RightGrip, view, projection);
         }
 
         private GltfModel Get(GraphicsDevice device, VRDeviceModel d)

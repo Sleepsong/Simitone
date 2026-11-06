@@ -155,6 +155,8 @@ class SmokeGame : Game
                             Transparent = Frames % 4 == 0
                         });
                     }
+                    // Every third frame, the eyes go over the quads, see-through (as the hands layer over the flat screen)
+                    submission.ProjectionOnTop = Frames % 3 == 0;
                     Submitted++;
                 }
                 Runtime.EndFrame(submission);

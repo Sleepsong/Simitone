@@ -105,6 +105,11 @@ namespace Simitone.VR
 
         /// <summary>Stereo world view (one swapchain per eye, rendered with <see cref="VRRuntime.Views"/>).</summary>
         public VRSwapchain[] ProjectionSwapchains;
+        /// <summary>
+        /// The stereo view goes over the quads instead of under them, blended by its alpha: what's drawn in it (the
+        /// controllers and the pointer over the flat screen) shows over them, and the rest is see-through.
+        /// </summary>
+        public bool ProjectionOnTop;
         /// <summary>Quads drawn over the world, back to front.</summary>
         public VRQuad[] Quads;
         public int QuadCount;
@@ -700,7 +705,8 @@ namespace Simitone.VR
                 projection.Space = AppSpace;
                 projection.ViewCount = 2;
                 projection.Views = projectionViews;
-                layers[layerCount++] = &projection;
+                if (submission.ProjectionOnTop) projection.LayerFlags = XrConst.CompositionLayerBlendTextureSourceAlpha;
+                else layers[layerCount++] = &projection;
             }
 
             if (ShouldRender)
@@ -721,6 +727,8 @@ namespace Simitone.VR
                     };
                     layers[layerCount++] = &quads[i];
                 }
+                if (submission.ProjectionOnTop && projection.Type == XrStructureType.CompositionLayerProjection)
+                    layers[layerCount++] = &projection;
             }
 
             var end = new XrFrameEndInfo

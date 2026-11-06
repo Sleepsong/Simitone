@@ -531,8 +531,19 @@ namespace Simitone.Client.VR
                 NeedsRelease = true;
                 Log("comfort setup opened in front of you");
             }
-            // the VR menu: the left menu button, F9, or the VR options button on the left wrist
-            if (Menu != null && !SetupOpen && ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || MenuRequested))
+            // the menu button while the setup's open closes it (it's in the VR menu, to do later), so it can't trap you
+            var menuPressed = inputActive && input.Menu.Pressed;
+            if (SetupOpen && menuPressed)
+            {
+                Setup.Hide();
+                Settings.ComfortSetupDone = true;
+                Settings.Save();
+                NeedsRelease = true;
+                menuPressed = false;
+                Log("comfort setup closed with the menu button (it's in the VR menu: Comfort setup)");
+            }
+            // the VR menu: the menu button, F9, or the VR options button on the left wrist
+            if (Menu != null && !SetupOpen && (menuPressed || KeyboardMenuToggle || MenuRequested))
             {
                 if (Menu.IsOpen) Menu.Close();
                 else Menu.OpenAt(LastHead);
@@ -694,6 +705,7 @@ namespace Simitone.Client.VR
                 PointerLeft = PointerRight = false;
                 PointerActive = true;
             }
+            PointerHitDistance = pointed != null ? pointedDistance : CursorOnSurface ? PanelPointerDistance : 0;
             if (inputActive && (input.Select.Pressed || input.Secondary.Pressed) && PressesLogged < 40)
             {
                 // (for vr.log: what a press was on, when the controls don't seem to do anything)
@@ -716,6 +728,108 @@ namespace Simitone.Client.VR
         }
 
         private static bool PanelsRecentre;
+        private static float PointerHitDistance; // (metres to what the pointer's on: a panel or the screen; 0 for nothing)
+        private static VRControllerRenderer HandsRenderer;
+        private static BasicEffect HandsEffect;
+        private static readonly VertexPositionColor[] LaserVerts = new VertexPositionColor[12];
+
+        /// <summary>
+        /// Over the flat screen there's no lot to draw your controllers and the laser in, so they're drawn on their own,
+        /// in your room's space, on a transparent background, into the eye images: the frame then goes over the screen and
+        /// panels (<see cref="VRFrameSubmission.ProjectionOnTop"/>). The laser stops where it meets a panel or the screen,
+        /// with a dot there. False if there's nothing to draw it with (no views or no input this frame).
+        /// </summary>
+        private static bool RenderHandsLayer(GraphicsDevice gd)
+        {
+            var input = Runtime?.Input;
+            if (Runtime == null || !Runtime.ViewsValid || input == null || !input.Active || EyeTargets == null || EyeSwapchains == null) return false;
+            try
+            {
+                HandsRenderer ??= new VRControllerRenderer(gd);
+                HandsEffect ??= new BasicEffect(gd) { VertexColorEnabled = true, LightingEnabled = false, TextureEnabled = false };
+                var hands = VRControllerRenderer.Hands.InRoom(input);
+                hands.Show = Settings.ControllerModels;
+                HandsRenderer.Prepare(gd, hands, Runtime);
+                var aim = input.AnyPointerAim;
+                for (int i = 0; i < 2; i++)
+                {
+                    var v = Runtime.Views[i];
+                    var eye = VRMath.Frustum(VRMath.ToXna(v.Pose.Position), VRMath.ToXna(v.Pose.Orientation), v.Fov);
+                    var view = eye.View;
+                    var projection = eye.Projection(0.02f, 50f);
+                    gd.SetRenderTarget(EyeTargets[i]);
+                    gd.Clear(ClearOptions.Target | ClearOptions.DepthBuffer, Color.Transparent, 1, 0);
+                    gd.DepthStencilState = DepthStencilState.Default;
+                    gd.RasterizerState = RasterizerState.CullNone;
+                    gd.BlendState = BlendState.Opaque;
+                    HandsRenderer.Draw(gd, hands, view, projection);
+                    if (aim.Valid) DrawLaser(gd, aim, eye.Position, view, projection);
+                }
+                gd.SetRenderTarget(null);
+                for (int i = 0; i < 2; i++)
+                {
+                    var image = EyeSwapchains[i].Acquire();
+                    GLInterop.BlitTexture(GLInterop.GetTextureHandle(EyeTargets[i]), EyeTargets[i].Width, EyeTargets[i].Height,
+                        image, 0, 0, EyeSwapchains[i].Width, EyeSwapchains[i].Height, flipY: true);
+                    EyeSwapchains[i].Release();
+                }
+                return true;
+            }
+            catch (Exception e)
+            {
+                Settings.HandsOverScreen = false;
+                Log("the hands over the screen can't be drawn, so they're off: " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>The laser: a thin strip from the controller, facing the eye, to what it's on (with a dot), or fading out.</summary>
+        private static void DrawLaser(GraphicsDevice gd, VRPose aim, Vector3 eyePosition, Matrix view, Matrix projection)
+        {
+            var hit = PointerHitDistance > 0;
+            var length = hit ? PointerHitDistance : 1.5f;
+            var start = aim.Position;
+            var end = start + aim.Forward * length;
+            var side = Vector3.Cross(end - start, eyePosition - (start + end) / 2);
+            if (side.LengthSquared() < 1e-10f) return;
+            side = Vector3.Normalize(side) * 0.0015f;
+            var near = new Color(230, 230, 255) * 0.15f;
+            var far = hit ? new Color(120, 255, 140) : new Color(230, 230, 255) * 0.05f;
+            int n = 0;
+            LaserVerts[n++] = new VertexPositionColor(start - side, near);
+            LaserVerts[n++] = new VertexPositionColor(start + side, near);
+            LaserVerts[n++] = new VertexPositionColor(end - side, far);
+            LaserVerts[n++] = new VertexPositionColor(end - side, far);
+            LaserVerts[n++] = new VertexPositionColor(start + side, near);
+            LaserVerts[n++] = new VertexPositionColor(end + side, far);
+            if (hit)
+            {
+                // the dot: a small square facing the eye, just short of the surface
+                var at = end - aim.Forward * 0.003f;
+                var forward = Vector3.Normalize(eyePosition - at);
+                var right = Vector3.Normalize(Vector3.Cross(Math.Abs(forward.Y) > 0.95f ? Vector3.Forward : Vector3.Up, forward)) * 0.006f;
+                var up = Vector3.Normalize(Vector3.Cross(forward, right)) * 0.006f;
+                var c = new Color(120, 255, 140);
+                LaserVerts[n++] = new VertexPositionColor(at - right - up, c);
+                LaserVerts[n++] = new VertexPositionColor(at + right - up, c);
+                LaserVerts[n++] = new VertexPositionColor(at - right + up, c);
+                LaserVerts[n++] = new VertexPositionColor(at - right + up, c);
+                LaserVerts[n++] = new VertexPositionColor(at + right - up, c);
+                LaserVerts[n++] = new VertexPositionColor(at + right + up, c);
+            }
+            HandsEffect.World = Matrix.Identity;
+            HandsEffect.View = view;
+            HandsEffect.Projection = projection;
+            gd.BlendState = BlendState.AlphaBlend; // (premultiplied: the colours above are scaled by their alpha)
+            gd.DepthStencilState = DepthStencilState.DepthRead;
+            foreach (var pass in HandsEffect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                gd.DrawUserPrimitives(PrimitiveType.TriangleList, LaserVerts, 0, n / 3);
+            }
+            gd.DepthStencilState = DepthStencilState.Default;
+            gd.BlendState = BlendState.Opaque;
+        }
         private static float SetupAwayFor, MenuAwayFor;
         private static int PressesLogged;
 
@@ -759,6 +873,12 @@ namespace Simitone.Client.VR
                     else
                     {
                         SubmitScreen(gd, ref submission);
+                        // your controllers and the laser, in a see-through layer over the screen and the panels
+                        if (Settings.HandsOverScreen && RenderHandsLayer(gd))
+                        {
+                            submission.ProjectionSwapchains = EyeSwapchains;
+                            submission.ProjectionOnTop = true;
+                        }
                     }
                     Keyboard?.Submit(Runtime, ref submission);
                     Menu?.Submit(Runtime, ref submission);

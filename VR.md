@@ -126,7 +126,8 @@ loads. It asks:
 - how strong the vignette is.
 
 If the setup (or the VR menu) is out of view, more than 60 degrees round from where you face, for a second and a
-half, it comes back in front of you; B on the flat screen brings it back too. Each choice applies at once, and the
+half, it comes back in front of you; B on the flat screen brings it back too. The menu button closes the setup (it's in the VR menu as
+*Comfort setup*, for later). Each choice applies at once, and the
 current one is highlighted. NEXT and BACK move between pages (the grip also
 goes back), and START at the end saves it (`ComfortSetupDone=True`). Run it again from the VR menu or the Options
 panel's VR button.
@@ -377,6 +378,7 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `NormalSpeedWhenSteering` | True | Walking your Sim at game speed 2 or 3 drops the game to speed 1 until you've let go for 2 s |
 | `SimHands` | True | While you walk your Sim, their arms reach for your controllers. `False`: their arms always animate as usual |
 | `ControllerModels` | True | Show your controllers in your hands when you're not in your Sim's body (the runtime's own models when it has them, else a simple one) |
+| `HandsOverScreen` | True | Over the flat screen (the neighbourhood, menus, a lot shown flat), draw your controllers and the laser in a see-through layer on top, so you see where you point. `False` if your runtime shows that layer as black; the cursor dot on the screen and panels still shows where you point |
 | `ComfortSetupDone` | False | The first-run comfort setup has been done; set `False` to see it again |
 | `RenderScale` | 1.0 (Frame: 0.75) | Multiplier on the headset's recommended per-eye resolution |
 | `WorldScale` | 3.0 | FreeSO world units per metre. 3 = life size (a TS1 tile is about 1 m) |
