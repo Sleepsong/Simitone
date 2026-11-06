@@ -263,10 +263,17 @@ Simitone finds The Sims 1 installation in this priority order:
 **Graphics & Performance:**
 ```bash
 -dx / -gl        # Force DirectX or OpenGL rendering
--3d              # Enable 3D mode in the game (can be toggled on or off with F12)
+-3d              # Enable 3D mode (remembered for later launches; F12 switches Full 3D / Hybrid)
+-aa              # Force anti-aliasing on
 -jit             # Enable JIT compilation for SimAntics (faster gameplay, slower startup)
--hz <rate>       # Set refresh rate
+-hz<rate>        # Set refresh rate, e.g. -hz120
 ```
+
+**Options:** open the options dialog from the **...** button on the neighbourhood screen, or from
+**Options > Settings** while on a lot. The **Graphics** tab changes lighting quality, anti-aliasing,
+3D mode, windowed/fullscreen, window size and refresh rate; **Sound & Controls** sets music, sound
+effect, voice and ambience volume and edge scrolling. Changes apply immediately (turning 3D mode
+on or off takes effect after a restart) and are saved to `config.ini`.
 
 **Other Options:**
 ```bash
