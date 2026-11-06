@@ -458,20 +458,44 @@ namespace Simitone.Client.UI.Screens
 
         private int SwitchLot = -1;
 
-        // As in TS1: while none of the household's Sims are on the lot (all at work, school...),
-        // run at ultra speed, then go back to the previous speed when one of them returns.
+        // As in TS1: while none of the household's Sims on the lot is awake (all at work or school, or all asleep),
+        // run at ultra speed, then go back to the previous speed when one of them returns or wakes up.
         private bool AutoFastForward;
         private int SpeedBeforeAutoFastForward;
-        private bool AutoFastForwardDeclined; // the user changed speed while everyone was away
+        private bool AutoFastForwardDeclined; // the user changed speed while everyone was away or asleep
+
+        /// <summary>Running at ultra speed by itself (auto fast-forward): the speed 3 button flashes, as in TS1.</summary>
+        public bool UltraSpeed => AutoFastForward && vm?.SpeedMultiplier == 10;
+
+        /// <summary>Whether a flashing button is lit now (twice a second, half the time).</summary>
+        public static bool FlashOn => (Environment.TickCount / 500) % 2 == 0;
+
+        /// <summary>
+        /// Flashes the speed 3 button between its selected and plain look while ultra is on, and puts it back once when
+        /// it goes off. It's left alone otherwise, so the pad's highlight (ForceState 2) can use it. Returns whether
+        /// it's flashing.
+        /// </summary>
+        public static bool FlashSpeed3(UIButton button, bool ultra, bool wasFlashing)
+        {
+            if (ultra)
+            {
+                if (button.ForceState != 2) button.ForceState = FlashOn ? 1 : 0;
+                return true;
+            }
+            if (wasFlashing && (button.ForceState == 0 || button.ForceState == 1)) button.ForceState = -1;
+            return false;
+        }
 
         private void UpdateAutoFastForward()
         {
             var family = vm?.TS1State?.CurrentFamily;
             if (vm == null || !vm.Ready || family == null) return;
             //household Sims who aren't on the lot (at work or school) are kept as objects out of the world (as
-            //VMTS1LotState creates absent members), so only Sims in the world count as home
+            //VMTS1LotState creates absent members), so only Sims in the world count as home; and a Sim asleep (their
+            //sleep state motive is set, as the motive decay reads it) doesn't count as awake
             var present = vm.Context.ObjectQueries.Avatars.Any(x => !x.Dead && family.RuntimeSubset.Contains(x.Object.OBJ.GUID)
-                && x.Position != FSO.LotView.Model.LotTilePos.OUT_OF_WORLD);
+                && x.Position != FSO.LotView.Model.LotTilePos.OUT_OF_WORLD
+                && (x as VMAvatar)?.GetMotiveData(VMMotive.SleepState) == 0);
 
             if (present) AutoFastForwardDeclined = false;
 
@@ -487,7 +511,7 @@ namespace Simitone.Client.UI.Screens
             }
             else if (vm.SpeedMultiplier > 0 && vm.SpeedMultiplier != 10)
             {
-                AutoFastForward = false; // the user picked a speed themselves; leave it until someone is home
+                AutoFastForward = false; // the user picked a speed themselves; leave it until someone is home and awake
                 AutoFastForwardDeclined = true;
             }
             else if (present && vm.SpeedMultiplier == 10)

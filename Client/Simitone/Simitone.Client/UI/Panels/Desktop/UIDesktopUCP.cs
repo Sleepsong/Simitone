@@ -56,6 +56,7 @@ namespace Simitone.Client.UI.Panels.Desktop
         public UIButton[] SpeedButtons;
 
         private TS1GameScreen Game;
+        private bool SpeedFlashing;
 
         public Func<UIMainPanelMode, bool> OnModeClick;
 
@@ -314,6 +315,8 @@ namespace Simitone.Client.UI.Panels.Desktop
                 }
                 LastSpeed = speed;
             }
+            //at ultra speed by itself (everyone away or asleep), speed 3 flashes, as in TS1
+            SpeedFlashing = TS1GameScreen.FlashSpeed3(SpeedButtons[2], Game.UltraSpeed, SpeedFlashing);
             
             if (LastCut != Game.LotControl.WallsMode)
             {
