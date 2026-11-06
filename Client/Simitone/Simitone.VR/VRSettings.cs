@@ -118,6 +118,8 @@ namespace Simitone.VR
         /// controllers are known to, and are turned round already; this turns them round again.)
         /// </summary>
         public bool WristOtherSide = false;
+        /// <summary>How big the wrist displays are: 1 (a 7.5 cm watch and a 9 cm needs display), 1.3 or 1.6 (*Wrist display size*).</summary>
+        public float WristDisplaySize = 1.3f;
         /// <summary>
         /// How quickly the view follows your Sim's head (per second). Lower is smoother but laggier; the head bone
         /// bobs with every animation, so following it exactly is uncomfortable.

@@ -57,6 +57,9 @@ namespace Simitone.Client.VR
             Add("Extra height", () => Settings.HeightOffset < 0.01f ? "Off" : "+" + Settings.HeightOffset.ToString("0.00") + " m",
                 d => Settings.HeightOffset = Heights[Wrap(Nearest(Heights, Settings.HeightOffset) + d, Heights.Length)]);
             Add("Wrist displays", () => Name(Settings.WristDisplays), d => Settings.WristDisplays = Cycle(Settings.WristDisplays, d));
+            Add("Wrist display size", () => Settings.WristDisplaySize < 1.15f ? "Small" : Settings.WristDisplaySize < 1.45f ? "Medium" : "Large",
+                d => Settings.WristDisplaySize = Settings.WristDisplaySize < 1.15f ? (d > 0 ? 1.3f : 1.6f)
+                    : Settings.WristDisplaySize < 1.45f ? (d > 0 ? 1.6f : 1f) : (d > 0 ? 1f : 1.3f));
             Add("Wrist side", () => Settings.WristOtherSide ? "Turned round" : "As the controller says", d => Settings.WristOtherSide = !Settings.WristOtherSide);
             Add("Messages", () => Settings.WatchMessages ? "On the watch" : "Pop up", d => Settings.WatchMessages = !Settings.WatchMessages);
             Add("Stick when busy", () => Settings.StickCancelsActions ? "Takes over" : "Waits", d => Settings.StickCancelsActions = !Settings.StickCancelsActions);

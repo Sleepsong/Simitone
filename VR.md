@@ -407,6 +407,7 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
 | `WristOtherSide` | False | Put the wrist displays on the other side of the wrist (*Wrist side* in the VR menu): for a controller whose grip pose has the back of the hand the other way round from the OpenXR rule. The Steam Frame's controllers are turned round already |
+| `WristDisplaySize` | 1.3 | How big the wrist displays are: `1` (a 7.5 cm watch, a 9 cm needs display), `1.3` or `1.6` (*Wrist display size* in the VR menu: Small, Medium, Large). Bigger ones reach further back along the forearm |
 | `SimHeadSmoothing` | 20 | How quickly the view follows your Sim's position (per second) while they move on their own; while you steer them it follows exactly. Lower is smoother but laggier |
 | `LeanLimit` | 0.3 | How far (m) you can lean away from your Sim's head before the view drags along |
 | `MirrorEye` | Left (Frame: None) | Eye shown in the desktop window: `Left`, `Right`, `None` |

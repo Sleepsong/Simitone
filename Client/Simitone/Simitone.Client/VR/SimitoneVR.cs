@@ -514,7 +514,7 @@ namespace Simitone.Client.VR
             }
             else if (Tablet?.Shown == true) Tablet.Hide();
             if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays, needsAllowed: !tabletWanted,
-                otherSide: Settings.WristOtherSide != WristFlippedByController());
+                otherSide: Settings.WristOtherSide != WristFlippedByController(), size: Settings.WristDisplaySize);
             else Wrists?.HideAll();
             // the VR pie menu, over what you pointed at
             if (vrPie && LastHead.Valid)

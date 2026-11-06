@@ -60,6 +60,9 @@ namespace Simitone.Client.VR
     /// </summary>
     public class VRWristHud
     {
+        /// <summary>The displays' widths at size 1 (metres): the watch, and the needs display.</summary>
+        public const float WatchWidth = 0.075f, NeedsWidth = 0.09f;
+
         public readonly VRWatchPanel Watch = new VRWatchPanel();
         public readonly VRNeedsPanel Needs = new VRNeedsPanel();
 
@@ -70,7 +73,8 @@ namespace Simitone.Client.VR
         /// <param name="needsAllowed">False hides the needs display (the catalogue tablet is in that hand).</param>
         /// <param name="otherSide">Put them on the other side of the wrist from where the grip pose says the back of the
         /// hand is (a runtime or controller with that axis the other way round).</param>
-        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true, bool otherSide = false)
+        /// <param name="size">How big they are, against their first size (a 7.5 cm watch, a 9 cm needs display).</param>
+        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true, bool otherSide = false, float size = 1)
         {
             WatchFacing = false;
             bool watch = false, needs = false;
@@ -80,11 +84,16 @@ namespace Simitone.Client.VR
                 // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
                 // The watch is on the pointing hand's wrist and the needs (which you point at) on the other: right and
                 // left, swapped when left-handed.
+                // Bigger ones reach further back along the forearm, so their front edge stays clear of the hand.
                 var side = otherSide ? -1f : 1f;
-                var rightWrist = (offset: new Vector3(-0.035f * side, 0.005f, 0.085f), yaw: -MathHelper.PiOver2 * side);
-                var leftWrist = (offset: new Vector3(0.035f * side, 0.005f, 0.085f), yaw: MathHelper.PiOver2 * side);
-                var watchSide = input.LeftHanded ? leftWrist : rightWrist;
-                var needsSide = input.LeftHanded ? rightWrist : leftWrist;
+                size = MathHelper.Clamp(size, 0.5f, 2.5f);
+                Watch.WidthMetres = WatchWidth * size;
+                Needs.WidthMetres = NeedsWidth * size;
+                (Vector3 offset, float yaw) Wrist(bool right, float width) =>
+                    (new Vector3((right ? -0.035f : 0.035f) * side, 0.005f, 0.085f + (width - width / size) / 2),
+                     (right ? -MathHelper.PiOver2 : MathHelper.PiOver2) * side);
+                var watchSide = Wrist(!input.LeftHanded, Watch.WidthMetres);
+                var needsSide = Wrist(input.LeftHanded, Needs.WidthMetres);
                 watch = Place(Watch, input.PointerGrip, head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);
                 needs = needsAllowed && Place(Needs, input.WalkGrip, head, needsSide.offset, needsSide.yaw, mode, out _);
                 WatchFacing = watchFacing;
@@ -145,7 +154,7 @@ namespace Simitone.Client.VR
         private readonly UIDiagonalStripe MessageStripe;
         private int LastSpeed = -2;
 
-        public VRWatchPanel() : base((int)(228 * FaceScale), (int)(136 * FaceScale), 0.075f)
+        public VRWatchPanel() : base((int)(228 * FaceScale), (int)(136 * FaceScale), VRWristHud.WatchWidth)
         {
             var face = new UIContainer { ScaleX = FaceScale, ScaleY = FaceScale };
             Add(face);
@@ -256,7 +265,7 @@ namespace Simitone.Client.VR
         private readonly UIMotiveBar[] Bars = new UIMotiveBar[8];
         private readonly UIVRSpeedDial Dial;
 
-        public VRNeedsPanel() : base(PanelWidth, PanelHeight, 0.09f)
+        public VRNeedsPanel() : base(PanelWidth, PanelHeight, VRWristHud.NeedsWidth)
         {
             Add(new UIDiagonalStripe(new Point(PanelWidth - 32, PanelHeight), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg));
             NameLabel = VRUI.Label("", 19, UIStyle.Current.Text);
