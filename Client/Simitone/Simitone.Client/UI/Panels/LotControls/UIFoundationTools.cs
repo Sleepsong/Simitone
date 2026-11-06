@@ -125,28 +125,6 @@ namespace Simitone.Client.UI.Panels.LotControls
             vm.Context.Architecture.Commands.Clear();
             vm.Context.Architecture.SignalRedraw();
         }
-
-        /// <summary>
-        /// The wall covering new foundations get on their sides: a brick or stone wall pattern if the game has one,
-        /// else the first pattern.
-        /// </summary>
-        public static ushort DefaultCovering()
-        {
-            try
-            {
-                var walls = Content.Get().WorldWalls.List().OfType<WallReference>().Where(w => w.ID != 0).ToList();
-                foreach (var word in new[] { "brick", "stone", "block", "concrete" })
-                {
-                    var match = walls.FirstOrDefault(w => (w.Name ?? "").IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0);
-                    if (match != null) return (ushort)match.ID;
-                }
-                return (ushort)(walls.FirstOrDefault()?.ID ?? 0);
-            }
-            catch (Exception)
-            {
-                return 0;
-            }
-        }
     }
 
     /// <summary>
@@ -162,7 +140,7 @@ namespace Simitone.Client.UI.Panels.LotControls
 
         public UIFoundationPlacer(VM vm, World world, ILotControl parent, List<int> parameters) : base(vm, world, parent)
         {
-            Covering = (parameters != null && parameters.Count > 0 && parameters[0] > 0) ? (ushort)parameters[0] : DefaultCovering();
+            Covering = (parameters != null && parameters.Count > 0 && parameters[0] > 0) ? (ushort)parameters[0] : (ushort)0; //plain concrete sides
         }
 
         private VMArchitectureCommand Command(Point a, Point b)

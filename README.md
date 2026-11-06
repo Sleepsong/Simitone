@@ -282,7 +282,7 @@ As in The Sims 2, a house can stand on a foundation: its ground floor is raised 
 - **Foundation**: drag out an area of clear ground. Lay floors, then build walls on it as usual. Walls on its edge stand on the foundation. Hold Ctrl (or use the erase button on touch) to remove a foundation.
 - **Foundation Steps**: click a ground tile beside a foundation to put steps up onto it. Ctrl removes steps.
 
-Sims can only get on and off a foundation by its steps, so give each house a set at its door. As in The Sims 2, a foundation goes on empty ground: clear furniture and walls off the tiles first. Furniture can't straddle a foundation's edge, and pools can't go in one. A foundation's sides use a brick or stone wall covering. Foundations are kept in Simitone's saves only: The Sims itself doesn't have them.
+Sims can only get on and off a foundation by its steps, so give each house a set at its door. As in The Sims 2, a foundation goes on empty ground: clear furniture and walls off the tiles first. Furniture can't straddle a foundation's edge, and pools can't go in one. Foundations are concrete, with a cap round the top edge and concrete steps; a foundation with no floor laid on it shows a concrete top. (Foundations built before this change lose the brick they were given and turn concrete too.) Foundations are kept in Simitone's saves only: The Sims itself doesn't have them.
 
 ### Basements
 

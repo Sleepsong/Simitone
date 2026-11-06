@@ -35,6 +35,28 @@ namespace Simitone.Client.UI.Panels.LotControls
             FloorPattern = DefaultFloor();
         }
 
+        /// <summary>
+        /// The wall covering on the earth's sides round a new basement: a brick or stone wall pattern if the game has one,
+        /// else the first pattern.
+        /// </summary>
+        public static ushort DefaultCovering()
+        {
+            try
+            {
+                var walls = Content.Get().WorldWalls.List().OfType<WallReference>().Where(w => w.ID != 0).ToList();
+                foreach (var word in new[] { "brick", "stone", "block", "concrete" })
+                {
+                    var match = walls.FirstOrDefault(w => (w.Name ?? "").IndexOf(word, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (match != null) return (ushort)match.ID;
+                }
+                return (ushort)(walls.FirstOrDefault()?.ID ?? 0);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
         /// <summary>The floor a new basement gets (and the ground floor above it, where it had none): concrete if the game has it.</summary>
         public static ushort DefaultFloor()
         {
