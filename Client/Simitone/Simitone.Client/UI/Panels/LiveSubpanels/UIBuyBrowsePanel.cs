@@ -1034,6 +1034,38 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                     }
                 });
             }
+
+            // the roof tool, as in The Sims 2 (Simitone.Client.UI.Panels.LotControls.UIRoofTool), before the styles
+            var toolRes = new Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider();
+            var tools = new[]
+            {
+                Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Auto,
+                Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Remove,
+                Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Shed,
+                Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Gable,
+                Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Hip,
+            };
+            foreach (var tool in tools)
+            {
+                FullCategory.Insert(0, new UICatalogElement
+                {
+                    Item = new ObjectCatalogItem()
+                    {
+                        Name = toolRes.GetName((ulong)tool),
+                        Category = 17,
+                        Price = (uint)toolRes.GetPrice((ulong)tool),
+                    },
+                    Special = new UISpecialCatalogElement
+                    {
+                        Control = (tool == Simitone.Client.UI.Panels.LotControls.UICatalogRoofToolResProvider.Auto)
+                            ? typeof(Simitone.Client.UI.Panels.LotControls.UIAutoRoofer)
+                            : typeof(Simitone.Client.UI.Panels.LotControls.UIRoofTool),
+                        ResID = (uint)tool,
+                        Res = toolRes,
+                        Parameters = new List<int> { tool }
+                    }
+                });
+            }
         }
 
         public static short[] WallStyleIDs =

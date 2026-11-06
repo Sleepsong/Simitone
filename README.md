@@ -275,6 +275,11 @@ Simitone finds The Sims 1 installation in this priority order:
 -nosound         # Disable audio
 ```
 
+## Drawing Roofs (concept)
+
+In build mode, **Roofs** has Hip, Gable and Shed roof tools: drag a roof onto the walls of the floor you're looking at,
+as in The Sims 2, instead of the automatic roof. See [ROOFS.md](ROOFS.md).
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.
