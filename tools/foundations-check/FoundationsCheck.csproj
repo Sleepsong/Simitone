@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Checks foundation heights, routing edges, saving and the side/step geometry (no game data or GPU): dotnet run -c Release -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../FreeSO/TSOClient/tso.simantics/FSO.SimAntics.csproj" />
+  </ItemGroup>
+</Project>
