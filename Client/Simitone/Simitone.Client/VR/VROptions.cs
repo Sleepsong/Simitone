@@ -63,6 +63,11 @@ namespace Simitone.Client.VR
             Add("Sim's hands", () => Settings.SimHands ? "Follow yours" : "Animated", d => Settings.SimHands = !Settings.SimHands);
             Add("Controllers", () => Settings.ControllerModels ? "Shown" : "Hidden", d => Settings.ControllerModels = !Settings.ControllerModels);
             Add("Buy and build", () => Settings.VRBuildMode ? "In VR" : "Flat screen", d => Settings.VRBuildMode = !Settings.VRBuildMode);
+            Add("3D sound", () => !Settings.Sound3D ? "Off" : VRAudio.HrtfStatus == "On" ? "On (HRTF)" : "On, " + VRAudio.HrtfStatus,
+                d => { Settings.Sound3D = !Settings.Sound3D; SimitoneVR.ApplySound(); });
+            Add("Stairs (observer)", () => Name(Settings.ObserverStairs), d => Settings.ObserverStairs = Cycle(Settings.ObserverStairs, d));
+            Add("Walls in buy/build", () => Settings.BuildWalls == VRWallView.Cutaway ? "Cut away" : Name(Settings.BuildWalls),
+                d => Settings.BuildWalls = Cycle(Settings.BuildWalls, d));
             Add("Catalogue", () => Settings.Catalogue == VRCatalogStyle.Hand ? "In your hand" : "On a desk",
                 d => Settings.Catalogue = Cycle(Settings.Catalogue, d));
             Add("Pie menus", () => Settings.VRPieMenus ? "VR" : "Game's", d => Settings.VRPieMenus = !Settings.VRPieMenus);

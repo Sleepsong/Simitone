@@ -111,6 +111,7 @@ namespace Simitone.VR.OpenXR
         EventDataEventsLost = 49,
         InteractionProfileSuggestedBinding = 51,
         EventDataInteractionProfileChanged = 52,
+        InteractionProfileState = 53,
         SwapchainImageAcquireInfo = 55,
         SwapchainImageWaitInfo = 56,
         SwapchainImageReleaseInfo = 57,
@@ -615,6 +616,15 @@ namespace Simitone.VR.OpenXR
         public XrStructureType Type;
         public void* Next;
         public uint SupportsEyeGazeInteraction;
+    }
+
+    /// <summary>Which interaction profile (controller type) a hand is being driven by now.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe struct XrInteractionProfileState
+    {
+        public XrStructureType Type;
+        public void* Next;
+        public ulong InteractionProfile;
     }
 
     [StructLayout(LayoutKind.Sequential)]

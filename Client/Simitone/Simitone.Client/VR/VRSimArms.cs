@@ -42,6 +42,55 @@ namespace Simitone.Client.VR
         private Matrix[] AnimatedBones = new Matrix[0];
         private bool LoggedMissing;
 
+        // the hand poses: what the game last chose for each hand, and what we put on instead (null when we haven't)
+        private SimAvatar GestureAvatar;
+        private SimHandGesture GameLeft, GameRight;
+        private SimHandGesture? SetLeft, SetRight;
+
+        /// <summary>
+        /// Your hands' poses on your Sim's hands (the game's own: open, fist, pointing) while their arms follow yours;
+        /// the game's pose comes back when they stop. If the game changes a hand's pose meanwhile (an animation), that
+        /// becomes the one to come back to.
+        /// </summary>
+        public void ApplyGestures(AvatarComponent avatar, VRCameraController camera)
+        {
+            var model = avatar?.Avatar as SimAvatar;
+            if (model != GestureAvatar)
+            {
+                Release();
+                GestureAvatar = model;
+            }
+            if (model == null) return;
+            if (camera == null || camera.ArmWeight < 0.5f) { Release(); return; }
+            Hold(ref GameLeft, ref SetLeft, model.LeftHandGesture, camera.LeftHandValid ? camera.LeftGesture : (SimHandGesture?)null, g => model.LeftHandGesture = g);
+            Hold(ref GameRight, ref SetRight, model.RightHandGesture, camera.RightHandValid ? camera.RightGesture : (SimHandGesture?)null, g => model.RightHandGesture = g);
+        }
+
+        private static void Hold(ref SimHandGesture game, ref SimHandGesture? set, SimHandGesture current, SimHandGesture? want, Action<SimHandGesture> apply)
+        {
+            if (set == null || current != set.Value) game = current; // (first time, or the game changed it)
+            if (want == null)
+            {
+                if (set != null && current == set.Value && current != game) apply(game);
+                set = null;
+                return;
+            }
+            if (current != want.Value) apply(want.Value); // (changing it reloads the hand's mesh: only on a change)
+            set = want.Value;
+        }
+
+        /// <summary>Gives the hands back to the game's poses.</summary>
+        public void Release()
+        {
+            var model = GestureAvatar;
+            if (model != null)
+            {
+                if (SetLeft != null && model.LeftHandGesture == SetLeft.Value && GameLeft != SetLeft.Value) model.LeftHandGesture = GameLeft;
+                if (SetRight != null && model.RightHandGesture == SetRight.Value && GameRight != SetRight.Value) model.RightHandGesture = GameRight;
+            }
+            SetLeft = SetRight = null;
+        }
+
         /// <summary>Moves <paramref name="avatar"/>'s arms toward the controllers (call once per frame, before drawing).</summary>
         public void Apply(AvatarComponent avatar, VRCameraController camera)
         {
@@ -81,32 +130,33 @@ namespace Simitone.Client.VR
             var world = Matrix.CreateRotationY((float)(Math.PI - avatar.RadianDirection)) * avatar.World;
             if (avatar.Scale != 1f) world = Matrix.CreateScale(avatar.Scale) * world;
             var toModel = Matrix.Invert(world);
+            var handedness = toModel.Determinant() < 0 ? -1f : 1f; // (a mirrored skeleton turns the other way)
             Solve(skeleton, bones, weight,
                 camera.LeftHandValid ? Vector3.Transform(camera.LeftWrist, toModel) : (Vector3?)null,
                 Vector3.TransformNormal(camera.LeftPoint, toModel),
                 camera.RightHandValid ? Vector3.Transform(camera.RightWrist, toModel) : (Vector3?)null,
-                Vector3.TransformNormal(camera.RightPoint, toModel));
+                Vector3.TransformNormal(camera.RightPoint, toModel), camera.LeftRoll * handedness, camera.RightRoll * handedness);
         }
 
         /// <summary>
         /// The arm pose itself, in the skeleton's own space: bends each arm whose wrist target is given so the wrist
-        /// reaches it (as far as the arm reaches) and the hand points along its pointing direction, blended by
-        /// <paramref name="weight"/>. Writes <paramref name="bones"/> (the skinning matrices) and the bones' absolute
+        /// reaches it (as far as the arm reaches) and the hand points along its pointing direction, rolled about it by
+        /// that hand's roll (relative to how the game holds it), blended by <paramref name="weight"/>. Writes <paramref name="bones"/> (the skinning matrices) and the bones' absolute
         /// matrices. False if the skeleton has no arms it recognises. (Also used by tools/vr/ui-check.)
         /// </summary>
         public bool Solve(Skeleton skeleton, Matrix[] bones, float weight, Vector3? leftWrist, Vector3 leftPoint,
-            Vector3? rightWrist, Vector3 rightPoint)
+            Vector3? rightWrist, Vector3 rightPoint, float leftRoll = 0, float rightRoll = 0)
         {
             var rig = RigFor(skeleton);
             if (rig == null) return false;
             // which way is out from the body for each shoulder
             var midShoulders = (bones[rig.Left.Shoulder].Translation + bones[rig.Right.Shoulder].Translation) / 2;
-            if (leftWrist != null) Reach(bones, skeleton, rig.Left, midShoulders, leftWrist.Value, leftPoint, weight);
-            if (rightWrist != null) Reach(bones, skeleton, rig.Right, midShoulders, rightWrist.Value, rightPoint, weight);
+            if (leftWrist != null) Reach(bones, skeleton, rig.Left, midShoulders, leftWrist.Value, leftPoint, leftRoll, weight);
+            if (rightWrist != null) Reach(bones, skeleton, rig.Right, midShoulders, rightWrist.Value, rightPoint, rightRoll, weight);
             return true;
         }
 
-        private void Reach(Matrix[] bones, Skeleton skeleton, Arm arm, Vector3 midShoulders, Vector3 target, Vector3 pointing, float weight)
+        private void Reach(Matrix[] bones, Skeleton skeleton, Arm arm, Vector3 midShoulders, Vector3 target, Vector3 pointing, float roll, float weight)
         {
             var s = bones[arm.Shoulder].Translation;
             var e = bones[arm.Elbow].Translation;
@@ -150,6 +200,9 @@ namespace Simitone.Client.VR
                 var f = bones[arm.Finger].Translation;
                 if ((f - h2).LengthSquared() > 1e-8f)
                     Rotate(bones, skeleton, arm.HandSet, h2, Blend(Between(f - h2, Vector3.Normalize(pointing)), weight));
+                // and roll it about that line as the controller is rolled (thumb up leaves the game's hand as it is)
+                if (Math.Abs(roll) > 1e-3f)
+                    Rotate(bones, skeleton, arm.HandSet, h2, Blend(Quaternion.CreateFromAxisAngle(Vector3.Normalize(pointing), roll), weight));
             }
         }
 

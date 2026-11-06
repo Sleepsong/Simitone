@@ -214,11 +214,15 @@ namespace Simitone.Client.VR
             var previousFallback = FSO.Common.Rendering.Framework.Game.FocusFallback;
             FSO.Common.Rendering.Framework.Game.FocusFallback = () => SessionRunning || (previousFallback?.Invoke() ?? false);
 
+            ApplySound();
             Runtime.ReferenceSpaceChanged += () => { ScreenPoseDirty = true; PanelShown = false; };
             GameThread.EveryUpdate(InjectPointer);
             Status = $"VR running on {Runtime.SystemName} ({Runtime.RuntimeName}), update rate {FSOEnvironment.RefreshRate} Hz";
             Log(Status);
         }
+
+        /// <summary>HRTF on for 3D sound (or back to OpenAL's own choice): at start and when the option changes.</summary>
+        public static void ApplySound() => VRAudio.SetHrtf(Settings.Sound3D, Log);
 
         /// <summary>(Re)creates the per-eye render targets and swapchains at the current render scale.</summary>
         private static void CreateEyeBuffers(GraphicsDevice gd)
@@ -322,6 +326,7 @@ namespace Simitone.Client.VR
                 Tablet?.Destroy();
                 PiePanel?.Destroy();
                 Thumbnails?.Dispose();
+                if (Settings.Sound3D) VRAudio.SetHrtf(false, null);
                 Runtime.Dispose();
             }
             catch { }
@@ -349,6 +354,7 @@ namespace Simitone.Client.VR
             Tip?.Hide();
             Tablet?.Hide();
             PiePanel?.Hide();
+            if (Settings.Sound3D) VRAudio.SetHrtf(false, null); // (back to the desktop's sound)
             // Without a headset, first person would leave you with no UI and keyboard-only movement.
             var world = CurrentWorld;
             if (world?.Immersive == true) GameThread.NextUpdate(_ => world.ExitImmersive());
@@ -437,7 +443,7 @@ namespace Simitone.Client.VR
             var deskBuild = BuildMode && !CatalogInHand;
             var kind = deskBuild ? PanelKind.Desk
                 : PickerOpen && dialog == null ? PanelKind.Picker
-                : (dialog is UIMobileDialog && !PieMenuOpen) ? PanelKind.Dialog
+                : dialog is UIMobileDialog ? PanelKind.Dialog // (a pie menu under it waits)
                 : (PieMenuOpen && OpenPie != null && dialog == null && !vrPie) ? PanelKind.Pie
                 : PanelKind.Full;
             var showPanel = immersive && (UIPanelWanted || deskBuild);

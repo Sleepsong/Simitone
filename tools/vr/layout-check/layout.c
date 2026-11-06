@@ -45,6 +45,7 @@ int main(void) {
   S(XrCompositionLayerQuad) O(XrCompositionLayerQuad, layerFlags) O(XrCompositionLayerQuad, space) O(XrCompositionLayerQuad, eyeVisibility) O(XrCompositionLayerQuad, subImage) O(XrCompositionLayerQuad, pose) O(XrCompositionLayerQuad, size)
   S(XrEventDataBuffer) O(XrEventDataBuffer, varying)
   S(XrEventDataSessionStateChanged) O(XrEventDataSessionStateChanged, session) O(XrEventDataSessionStateChanged, state) O(XrEventDataSessionStateChanged, time)
+  S(XrInteractionProfileState) O(XrInteractionProfileState, interactionProfile)
   S(XrActionSetCreateInfo) O(XrActionSetCreateInfo, actionSetName) O(XrActionSetCreateInfo, localizedActionSetName) O(XrActionSetCreateInfo, priority)
   S(XrActionCreateInfo) O(XrActionCreateInfo, actionName) O(XrActionCreateInfo, actionType) O(XrActionCreateInfo, countSubactionPaths) O(XrActionCreateInfo, subactionPaths) O(XrActionCreateInfo, localizedActionName)
   S(XrActionSuggestedBinding)

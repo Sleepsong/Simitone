@@ -79,6 +79,7 @@ namespace Simitone.Client.VR
         /// <summary>The game's catalogue and open pie menu, for the VR tablet and pie menu.</summary>
         private VRGameCatalog Catalog;
         private VRGamePie Pie;
+        private readonly VRAudio Audio = new VRAudio();
         private UIObjectSelection LastHolding;
         private bool RotateLatched;
         private bool WasImmersive;
@@ -114,6 +115,7 @@ namespace Simitone.Client.VR
         {
             DirectAvatar = null;
             Pie = null;
+            Audio.ReleaseAll();
             LastMeasured = null;
             SegmentKind = MoveKind.None;
             SpeedBeforeSteering = 0;
@@ -143,6 +145,7 @@ namespace Simitone.Client.VR
                 SimitoneVR.OpenPie = null;
                 SimitoneVR.PieSource = null;
                 SimitoneVR.CatalogSource = null;
+                Audio.ReleaseAll();
                 return;
             }
             var camera = world.VRCamera;
@@ -217,6 +220,8 @@ namespace Simitone.Client.VR
 
             // ---- pointing at things
             UpdatePointer(world, camera, vm, lc, state, immersive);
+            // ---- sounds come from where they are around your head
+            Audio.Update(vm, camera, immersive && SimitoneVR.Settings.Sound3D);
             // (published together, after pointing may have opened a pie menu, so the next frame shows it as one)
             SimitoneVR.PickerOpen = immersive && picker;
             SimitoneVR.PieMenuOpen = lc.PieMenuOpen;
@@ -835,6 +840,7 @@ namespace Simitone.Client.VR
             camera.BuildMode = active;
             var holder = lc.ObjectHolder;
             var holding = active ? holder?.Holding : null;
+            if (Screen.VRWorld != null) Screen.VRWorld.Held = holding?.Group;
             camera.PlacementMode = active && (holding != null || lc.CustomControl != null);
             camera.PlacementValid = holding == null || holding.CanPlace == VMPlacementError.Success;
             camera.SuppressTurn = holding != null;

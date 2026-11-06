@@ -8,6 +8,9 @@ using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Panels.LiveSubpanels.Catalog;
 using Simitone.Client.UI.Screens;
+using Simitone.VR;
+using FSO.SimAntics;
+using FSO.SimAntics.Model;
 
 namespace Simitone.Client.VR
 {
@@ -140,7 +143,8 @@ namespace Simitone.Client.VR
                         Name = elem.ToString(),
                         Price = (int)elem.Item.Price,
                         Icon = special?.Res != null ? special.Res.GetIcon(special.ResID) : ObjectIcon(elem.Item.GUID),
-                        GUID = special == null ? elem.Item.GUID : 0
+                        GUID = special == null ? elem.Item.GUID : 0,
+                        Description = special?.Res != null ? special.Res.GetDescription(special.ResID) : ObjectDescription(elem.Item.GUID)
                     });
                 }
             }
@@ -157,6 +161,70 @@ namespace Simitone.Client.VR
             cache[guid] = icon;
             return icon;
         }
+
+        private VRCameraController Camera => Screen.VRWorld?.VRCamera;
+        public int Floor => Camera?.PlayerLevel ?? 1;
+        public int Floors => Camera?.Stories ?? 1;
+        public void ChangeFloor(int direction) => Camera?.RequestLevelChange(direction);
+        public VRWallView Walls => SimitoneVR.Settings.BuildWalls;
+
+        public void SetWalls(VRWallView walls)
+        {
+            SimitoneVR.Settings.BuildWalls = walls;
+            SimitoneVR.Settings.Save();
+        }
+
+        /// <summary>An object's catalogue description (as the game's query panel shows it).</summary>
+        private static string ObjectDescription(uint guid)
+        {
+            var obj = Content.Get().WorldObjects.Get(guid);
+            return obj?.Resource.Get<CTSS>(obj.OBJ.CatalogStringsID)?.GetString(1) ?? "";
+        }
+
+        private VMEntity HeldEntity;
+        private VRHeldObject HeldInfo;
+
+        public VRHeldObject Held
+        {
+            get
+            {
+                var lc = Screen.LotControl;
+                var holding = lc?.ObjectHolder?.Holding;
+                if (holding == null || !holding.IsBought || lc.vm == null)
+                {
+                    HeldEntity = null;
+                    return null;
+                }
+                var entity = holding.RealEnt ?? holding.Group.BaseObject;
+                if (entity != HeldEntity)
+                {
+                    HeldEntity = entity;
+                    HeldInfo = Describe(lc.vm, entity);
+                }
+                return HeldInfo;
+            }
+        }
+
+        /// <summary>What the game's pickup panel says about an object picked up from the lot (UIPickupPanel.SetInfo).</summary>
+        private static VRHeldObject Describe(VM vm, VMEntity entity)
+        {
+            var def = entity.MasterDefinition ?? entity.Object.OBJ;
+            var name = entity.Object.Resource.Get<CTSS>(def.CatalogStringsID)?.GetString(0) ?? entity.ToString();
+            var value = entity.MultitileGroup.Price;
+            var canSell = entity.IsUserMovable(vm.Context, true) == VMPlacementError.Success;
+            string Str(string id, string fallback)
+            {
+                var s = GameFacade.Strings?.GetString("136", id);
+                return string.IsNullOrEmpty(s) ? fallback : s;
+            }
+            var text = !canSell ? Str("2", "% can't be deleted.").Replace("%", name)
+                : value > 0 ? Str("1", "Sell % for $?").Replace("%", name).Replace("$", "§" + value)
+                : Str("0", "Delete %?").Replace("%", name);
+            return new VRHeldObject { Name = name, Text = text, CanSell = canSell, Value = value };
+        }
+
+        public void SellHeld() => Screen.LotControl?.ObjectHolder?.SellBack(null);
+        public void PutBackHeld() => Screen.LotControl?.ObjectHolder?.Cancel();
 
         public void SetMode(VRCatalogMode mode)
         {

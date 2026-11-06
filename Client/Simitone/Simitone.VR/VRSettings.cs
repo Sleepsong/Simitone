@@ -36,6 +36,15 @@ namespace Simitone.VR
     public enum VRCatalogStyle { Hand, Desk }
 
     /// <summary>
+    /// The walls in buy/build mode, as the game's wall buttons: cut away around where you're placing (not right next to
+    /// you), all down, or all up.
+    /// </summary>
+    public enum VRWallView { Cutaway, Down, Up }
+
+    /// <summary>Observer mode on stairs: ride up or down them at walking speed, or blink to the other end.</summary>
+    public enum VRStairs { Ride, Blink }
+
+    /// <summary>
     /// User tunable VR options, stored as key=value lines in &lt;UserDir&gt;/vr.ini.
     /// The file is (re)written with every key and its default on first run, so it doubles as documentation.
     /// </summary>
@@ -75,6 +84,15 @@ namespace Simitone.VR
         /// an arc lands, like a teleport arc. False switches buy/build to the flat screen instead.
         /// </summary>
         public bool VRBuildMode = true;
+        /// <summary>
+        /// 3D sound in first person: each Sim's and object's sound comes from where it is around your head (above,
+        /// behind...), with OpenAL Soft's HRTF for headphones. False: the game's own left/right panning.
+        /// </summary>
+        public bool Sound3D = true;
+        /// <summary>Observer mode on stairs (see <see cref="VRStairs"/>).</summary>
+        public VRStairs ObserverStairs = VRStairs.Ride;
+        /// <summary>Walls in buy/build mode (see <see cref="VRWallView"/>); the catalogue tablet's wall button changes it.</summary>
+        public VRWallView BuildWalls = VRWallView.Cutaway;
         /// <summary>Where the buy/build catalogue is (see <see cref="VRCatalogStyle"/>).</summary>
         public VRCatalogStyle Catalogue = VRCatalogStyle.Hand;
         /// <summary>

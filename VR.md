@@ -43,8 +43,10 @@ It runs on any OpenXR runtime that supports OpenGL: SteamVR on Windows and Linux
   their actions, and then walk where you push. Turn this off with `StickCancelsActions=False`; then holding the
   stick only stands up a seated Sim.
 - **Your hands are your Sim's hands:** while you walk your Sim, their arms reach for your controllers, so when you
-  look down you see their hands where yours are, pointing the way you point. During an action their hands do the
-  action, and the arms blend back to it in a fifth of a second. `SimHands=False` keeps the game's animation.
+  look down you see their hands where yours are, pointing the way you point and turned the way you turn your
+  wrists. They make a fist while you squeeze the grip or pull the trigger, and the pointing hand points while its
+  beam is on something you can use (the game's own hand poses). During an action their hands do the action, and
+  the arms blend back to it in a fifth of a second. `SimHands=False` keeps the game's animation.
 - **Interacting:** point with the right controller (the laser turns green on something usable) and pull the trigger.
   That object's (or Sim's) pie menu floats over it, turned to face you, at a readable distance and size: the game's
   own buttons and layout, with your Sim's head in the middle turning to look at the choice you point at. Point and
@@ -118,14 +120,16 @@ panel's VR button.
 **Observer** (B to switch). You leave your Sim and roam freely as yourself:
 - smooth locomotion, snap or smooth turning, and right stick up/down to change floors;
 - walls and furniture stop you as they stop Sims (you slide along them); doors don't;
-- **stairs:** walk onto them and you blink to the other end, on the other floor;
+- **stairs:** walk onto them and you ride up or down them at walking speed, with the vignette as when the stick
+  moves you (`ObserverStairs=Blink` blinks you to the other end instead);
 - **teleport:** hold the left trigger, aim the arc and let go to blink there;
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game;
 - **your controllers in your hands** (also when you've stepped out of your Sim): the real ones, as the headset's
   software models them, with their sticks, triggers and buttons moving as you use them. That's SteamVR, on the
   Steam Frame and on a PC, so the Frame's own controllers, Index, Vive or Touch controllers. Where the runtime
-  can't provide models, Simitone draws a simple controller with its green band. `ControllerModels=False` hides
-  them.
+  can't provide models, Simitone has its own of Meta's Touch controllers (Rift S and Quest 1, Quest 2, Quest 3 and
+  3S, Quest Pro: for Meta's PC runtime over Link) and of Vive wands (for Monado), which move the same way; for
+  anything else it draws a simple controller with its green band. `ControllerModels=False` hides them.
 
 **Wrist displays.** Turn your wrist to look at it:
 - **right wrist:** a watch made of the game's clock (time and speed) and money display, plus any messages
@@ -164,19 +168,27 @@ stay in first person, where you were standing. The game pauses, as usual, and yo
 - **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool in the
   catalogue, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
   arc.
-- **Other floors:** right stick up/down changes the floor you build on (while you're not holding anything or using a
-  tool). You can go up to floors that aren't built yet: there's no gravity in buy and build, so you float there.
-- **Cutaway:** the walls within a couple of tiles of where you're placing are cut away, as the game does around the
-  mouse, except the ones right next to you.
+- **Gliding:** what you hold glides from tile to tile as you sweep the arc, rather than jumping.
+- **Picked up from the lot:** the tablet shows what it is and what it sells for, as the game's pickup panel does,
+  with **Sell** (or Delete) and **Put back**.
+- **Other floors:** the floor buttons at the top of the tablet change the floor you build on at any time, even while
+  you hold something or use a tool; with empty hands, right stick up/down does too (so do the game's own floor
+  buttons on the desk catalogue). You can go up to floors that aren't built yet: there's no gravity in buy and
+  build, so you float there.
+- **Walls:** the wall button on the tablet switches, as the game's does, between cut away (the walls within a
+  couple of tiles of where you're placing, except the ones right next to you), down and up (`BuildWalls`, also in
+  the VR menu).
 - **Why not:** when something can't go where you're aiming, the game's reason ("not enough room", "can't afford
   it") floats above it in orange. Build tools' tips (a wall's cost, for example) float there too, in white.
 
 **Travel.** The vacation, downtown and neighbourhood pickers float in front of you on the panel; point and pull the
 trigger to choose.
 
-**Sound.** The game's sounds come from where things are, heard from your head: louder as you get closer, panned by
-which way you face, and quieter from other floors than yours (the game's own sound model, with you as the
-listener instead of the camera).
+**Sound.** The game's sounds come from where things are, heard from your head: louder as you get closer and quieter
+from other floors than yours (the game's own sound model, with you as the listener instead of the camera). Each
+Sim's and object's sound is placed in 3D, in the direction it really is from your head, and played through HRTF
+(OpenAL Soft's binaural rendering for headphones), so you can tell in front from behind and above from below,
+not just left from right. `Sound3D=False` gives the game's left/right panning.
 
 **Tips.** Whatever the game shows as a tooltip beside the mouse floats over what you're pointing at instead: a
 Sim's name, an object's sale price, why something can't be placed.
@@ -305,6 +317,9 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `PanelDistance` / `PanelWidth` | 1.3 / 1.7 | Floating dialog panel distance and width, metres (the buy/build catalogue desk, with `Catalogue=Desk`, is closer, lower and 90% as wide) |
 | `VRBuildMode` | True | Buy and build in first person with remote placement. `False` uses the flat screen instead |
 | `Catalogue` | Hand | Buy/build catalogue: `Hand` (a tablet in your walking hand, with 3D objects) or `Desk` (the game's catalogue on a panel below you) |
+| `BuildWalls` | Cutaway | Walls in buy/build: `Cutaway` (around where you're placing), `Down` or `Up` |
+| `ObserverStairs` | Ride | Observer on stairs: `Ride` up or down them, or `Blink` to the other end |
+| `Sound3D` | True | Sims' and objects' sounds placed in 3D around your head, with HRTF. `False`: the game's left/right panning |
 | `VRPieMenus` | True | Pie menus drawn for VR (the game's buttons and your Sim's head, sized for a headset). `False` shows the game's 2D pie menu on a panel |
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
@@ -432,6 +447,10 @@ Client/Simitone/Simitone.Client/VR/
   VRGameCatalog.cs                    the game's catalogue (UIMainPanel, UIBuyBrowsePanel) as the tablet's source
   VRCatalogThumbnails.cs              3D pictures of catalogue objects (their lot meshes, FreeSO's RCObject shader)
   VRPieMenuPanel.cs                   the pie menu drawn for VR (IVRPieSource), and the game's UIPieMenu as its source
+  VRAudio.cs                          3D sound: sounds placed around your head; HRTF on MonoGame's OpenAL device
+  VRBundledControllers.cs             Simitone's own controller models (for runtimes with none), chosen and animated
+Client/Simitone/Simitone.VR/Controllers/   those models (MIT, @webxr-input-profiles/assets 1.0.20; see its README),
+                                      copied next to the game as VRControllers/
 ```
 
 Per frame, all on the game thread inside MonoGame's `Draw`:
@@ -549,6 +568,28 @@ Design choices:
   look direction, and sounds are quieter on floors other than the visible one. The VR camera puts its target just
   in front of your eyes with a fixed close zoom, and while sounds update (`VM.PreDraw`) the visible floor is set
   to yours without redrawing anything (`WorldState.SilentLevel`), then put back for drawing.
+- **3D sound and HRTF (`VRAudio`).** FreeSO's sound VM already has a 3D path, unused: a listener (`HITVM.Listener`)
+  and an emitter per sound (`HITSound.Set3D`), applied with MonoGame's `Apply3D` on every tick instead of the pan.
+  Each update, the listener is set to your head and each sound with an owner gets an emitter in that owner's
+  direction from your head, 50 units away: inside OpenAL's reference distance (`SoundEffect.DistanceScale`, 100),
+  so OpenAL adds direction but no distance attenuation, and the game's own volume, which HIT sets after
+  `Apply3D`, stands. Leaving first person removes the emitters (the field is protected: reflection). HRTF is OpenAL
+  Soft's `ALC_SOFT_HRTF`, switched on with `alcResetDeviceSOFT` on MonoGame's own device, found by reflection
+  (`OpenALSoundController._device`, `MonoGame.OpenAL.AL.NativeLibrary`); MonoGame's OpenAL Soft (1.23) has a built-in
+  HRTF data set. When VR stops, it goes back to OpenAL's own choice.
+- **Held objects glide (`VRLotWorld.ApplyGlide`).** The object holder puts what you hold on the tile under the
+  cursor every update. Only while the eyes are drawn, its parts are shown part of the way there from where they
+  were drawn last (closing the gap in about a tenth of a second), and put back straight after, so the game never
+  sees them anywhere else.
+- **Stair ride.** Walking onto stairs as the observer starts a ride along the line from where you are to just past
+  their far end, eased in and out, at walking speed: the rig carries you (you can still move your head) while
+  your height goes from one floor's to the other's, and the floor you're on changes halfway. Gravity waits until
+  it's over.
+- **Hand roll and poses.** Each controller's roll about the way it points (0 with the thumb up) turns the Sim's
+  hand the same way about the same line, after it's aimed, so it works without knowing the skeleton's bone axes.
+  The hand poses are FreeSO's `SimAvatar.LeftHandGesture` / `RightHandGesture` (the game's open, fist and pointing
+  hand meshes), changed only when they differ; the game's own pose is remembered (an animation that changes it
+  meanwhile wins) and put back when the arms stop following you.
 - **Observer collision.** Furniture is the game's own footprints for objects that don't let people through, as
   FreeSO's direct control decides it, except doors and stairs. Stairs are a multitile object with portal parts on
   two floors.
@@ -562,7 +603,14 @@ Design choices:
   - the GLB is parsed on a worker thread (`System.Text.Json`, in .NET) and put on the GPU on the game thread: base
     colour factor and texture, embedded images through MonoGame's `Texture2D.FromStream`, the node tree, and
     the runtime's node poses replacing those nodes' own transforms, as the extension specifies;
-  - a hand without a runtime model gets the built-in one at the grip pose.
+  - a hand without a runtime model gets one of Simitone's own (`VRBundledControllers`), chosen by the interaction
+    profile the runtime reports for that hand (`xrGetCurrentInteractionProfile`, on
+    `XrEventDataInteractionProfileChanged`) and, for Meta's Touch controllers (one profile for every generation),
+    the headset's name. Its parts move as its `profile.json` says (the WebXR motion-controller format: a node moves
+    between a min and a max node by a button's value or a stick's position, or shows when touched), fed from the
+    game's actions, which are per role and mirrored when left-handed. They're drawn at the grip pose, which the
+    WebXR assets are made for;
+  - otherwise the built-in one at the grip pose.
 
   The extensions are newer than OpenXR 1.0.20, so the layout check needs newer Khronos headers for them (below).
 - **Single-pass stereo (`GLMultiview`, `VRStereoRenderer`).** FreeSO's effects are compiled MonoGame effects
@@ -600,7 +648,7 @@ Design choices:
 ### Tests
 
 - `tools/vr/layout-check/run.sh` compares every hand-written OpenXR struct's size and field offsets with the
-  Khronos C headers (167 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
+  Khronos C headers (169 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
   `include`, 1.1.4x or later) it also checks the render model structs (203 checks).
 - `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
@@ -619,20 +667,21 @@ Design choices:
   - the VR menu;
   - three comfort setup pages;
   - the keyboard and the placement tip;
-  - the catalogue tablet in buy mode (two items with made-up 3D meshes, one held and one pointed at, one too dear)
-    and in build mode choosing a subcategory;
+  - the catalogue tablet in buy mode (two items with made-up 3D meshes, one held and one pointed at, one too dear,
+    with a description), in build mode choosing a subcategory, and showing an object picked up from the lot;
   - the VR pie menu's top level (with a stand-in for the Sim's head) and a category of eleven choices;
   - the built-in controller model, from the side and from above.
 
-  It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (18 checks): the wrist reaches a
+  It also checks the Sim arm pose on a made-up skeleton shaped like The Sims' (22 checks): the wrist reaches a
   target in reach and points at one out of reach, bones keep their lengths, the hand points the way the controller
-  does, the elbow bends down and out, folding and blending behave, and a skeleton without arms is left alone
-  (`--arms-only` runs just these).
+  does, the elbow bends down and out, folding and blending behave, a skeleton without arms is left alone, and a
+  controller's roll is measured about the way it points and turns the hand about that line without moving the
+  wrist or fingers (`--arms-only` runs just these).
 
   And it checks the glTF loader used for the runtime's controller models (10 checks) on a small model made in
   code: nodes, scene, meshes, materials, embedded image, transforms, a bad file rejected, and that a node pose
   moves a part and a hidden node isn't drawn. With `UICHECK_GLB_DIR` pointing at a folder of real controller
-  models laid out like the webxr-input-profiles assets' `profiles` folder (MIT; not included), it also draws
+  models laid out like the webxr-input-profiles assets' `profiles` folder (MIT; a few are bundled, see below), it also draws
   Index, Touch, Touch Plus and Vive models with their trigger pulled through the same node-pose mechanism.
 
   Single-pass stereo, on the GPU (Mesa llvmpipe here): every vertex shader (FreeSO's 17 effect files and MonoGame's
@@ -646,6 +695,15 @@ Design choices:
   put back; the object is drawn whole and framed, with transparent corners; textures use only their unpadded part
   (`UVScale`); a mesh still being made waits and is drawn when done; no mesh means no picture; and the pointed-at
   one turns (images: `thumb-*.png`).
+
+  Simitone's own controller models (3 checks): each headset gets its controllers' model, all ten (five sets, each
+  hand) load and draw, and their triggers, grips, sticks and buttons move (image: `controllers-bundled.png`).
+
+  3D sound (7 checks), with OpenAL Soft playing into a WAV file (`run.sh` sets that up): HRTF switches on through
+  `VRAudio` on MonoGame's device ("Default HRTF"); a noise burst placed to the left is louder and brighter in the
+  left ear, and the other way round; behind you it is duller than in front (HRTF's spectral cue; without HRTF they
+  differ only in level); and inside OpenAL's reference distance, where `VRAudio` puts sounds, the level is the
+  game's own.
 
   It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
@@ -671,26 +729,28 @@ Design choices:
   - the 4 m leash, the blink timing and the vignette strengths.
 
   The speeds in [Speeds](#speeds) are worked out from the engine; `vr.log` records the real ones while you play.
-- **Popups, actions and typing:** only Simitone's full-width dialogs, pie menus and the travel pickers are
-  cropped on the panel; anything else shows with the whole UI.
+- **Popups:** all of Simitone's own popups are full-width dialogs, which show on their own on the panel (also while a
+  pie menu is open). The cheat box (Ctrl+Shift+C on the desktop keyboard) isn't shown in the headset.
 - **The catalogue tablet and VR pie menus** are tested with sample data, not the game's (that needs The Sims):
   - where the tablet sits in your hand and its tilt are first guesses;
   - the 3D pictures are taken from the angle of FreeSO's own object thumbnails, unchecked against real objects
     (some may show their side or back; the pointed-at one turns anyway);
-  - the tablet has no search box and no item descriptions (the game's catalogue on the desk has both:
-    `Catalogue=Desk`);
+  - the tablet has no search box (the game's catalogue on the desk has one: `Catalogue=Desk`);
   - the pie menu's Sim head is the game's own render, so it is tested only with a stand-in.
 - **Your Sim's hands** are untested with the game's own skeletons (they need The Sims). They rely on the hand
   bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
-  The hand points the way yours does but doesn't copy its roll, the fingers keep their animation, and the arms
-  only follow you while you walk your Sim (during an action they do the action).
+  The hand poses are the game's three (open, fist, pointing), not each finger, and the arms only follow you while
+  you walk your Sim (during an action they do the action).
 - **Controller models from the runtime** are untested against a runtime that provides them: Monado 21 (used for
   the tests here) doesn't. The loader is tested on real controller models, and the bindings against the Khronos
   headers. Valve's own OpenXR utilities show the Steam Frame's controllers through the same two extensions
-  (`ValveSoftware/Unity`, `ValveOpenXRRenderModelFeature`); runtimes without them (e.g. Monado 21) get the
-  simple built-in controller.
-- **Sound** is the game's stereo panning by direction and distance, not 3D (HRTF) audio.
-- **Observer stairs** take you from end to end in a blink; you don't climb them.
+  (`ValveSoftware/Unity`, `ValveOpenXRRenderModelFeature`). Simitone's own models are tested offscreen; picking them
+  by the interaction profile is untested on Meta's runtime (it may report a newer Touch profile for some
+  controllers, which picks the right model too). Valve Index models aren't included (12 MB; SteamVR provides them).
+- **3D sound** is tested by measuring OpenAL Soft's output, not by ear in a headset. Only mono sounds are placed
+  (most of the game's); stereo ones play as they are. On the Steam Frame the system's OpenAL is used: if it has no
+  HRTF data, the VR menu says HRTF is off and sounds are still placed, with plain stereo panning.
+- **The observer stair ride** goes in a straight line from end to end; it doesn't follow stairs that turn.
 - **Performance** is unmeasured on the Frame:
   - single-pass stereo is tested on Mesa's llvmpipe, not on the Frame's driver (Zink on Turnip); if that lacks
     multiview it falls back to two passes;
@@ -705,7 +765,4 @@ Design choices:
 **Buy/build mode: next steps.**
 - **Catalogue:** the tablet pages through a subcategory eight at a time; scrolling with the stick and a search
   (with the VR keyboard) would help in big categories.
-- **Feedback:** there is no "pull" animation; the held object snaps from tile to tile at the end of the arc, as it
-  does under the mouse.
-- **Changing floors** needs empty hands: put down what you hold, or leave the tool, before right stick up/down.
-- **Cutaway** follows where you place; the game's wall modes (walls up, down, cutaway) aren't offered in VR.
+- **Feedback:** the held object glides between tiles but there is no "pull" animation from where you picked it up.

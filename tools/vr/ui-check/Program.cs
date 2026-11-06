@@ -155,6 +155,9 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             buy.SetMouse(new Vector2(30 + 14 + 184 + 86, 336 + 70), false, false); // over the second tile
         }));
         Shots.Add(("catalogue-build", build, () => build.Show()));
+        var held = new VRCatalogTablet { Source = new SampleCatalog(false, Dot) { HeldObject = new VRHeldObject
+            { Name = "Two-Seater Sofa", Text = "Sell Two-Seater Sofa for §337?", CanSell = true, Value = 337 } } };
+        Shots.Add(("catalogue-held", held, () => held.Show()));
         // the pie menu: the top level (a stand-in for the Sim's head), and a category of eleven
         var pieTop = new VRPieMenuPanel { Source = new SamplePie(false, CatalogCheck.HeadStandIn(GraphicsDevice)) };
         var pieSub = new VRPieMenuPanel { Source = new SamplePie(true, null) };
@@ -204,6 +207,8 @@ class UIGame : FSO.Common.Rendering.Framework.Game
                 if (MultiviewCheck.Run(GraphicsDevice, Content, OutDir) > 0) throw new Exception("multiview checks failed");
                 if (StereoCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("stereo rendering checks failed");
                 if (CatalogCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("catalogue picture checks failed");
+                if (BundledCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("bundled controller model checks failed");
+                if (SoundCheck.Run() > 0) throw new Exception("3D sound checks failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();
@@ -312,6 +317,36 @@ static class ArmCheck
                 "absolute position and matrix updated");
             var right = MakeSkeleton();
             Check("the other arm is left alone", P(s, m, "R_HAND") == right.GetBone("R_HAND").AbsolutePosition, "unchanged");
+        }
+
+        // ---- roll: the controller's roll about the way it points, and the hand rolled to match
+        {
+            var r0 = VRCameraController.RollAbout(Vector3.UnitY, -Vector3.UnitZ);
+            var r90 = VRCameraController.RollAbout(Vector3.UnitX, -Vector3.UnitZ);
+            var rDown = VRCameraController.RollAbout(Vector3.UnitY, -Vector3.UnitY);
+            Check("roll: thumb up is 0, a quarter turn is a quarter turn", Math.Abs(r0) < 1e-4f && Math.Abs(r90 - MathHelper.PiOver2) < 1e-4f && rDown == 0,
+                $"{r0:0.0000}, {r90:0.0000} (pointing straight down: {rDown})");
+            var tilted = Vector3.Normalize(new Vector3(0.2f, -0.4f, -1));
+            var top = Vector3.Transform(Vector3.Normalize(Vector3.UnitY - tilted * tilted.Y), Quaternion.CreateFromAxisAngle(tilted, 0.7f));
+            var rT = VRCameraController.RollAbout(top, tilted);
+            Check("roll: measured about the way it points, however it's tilted", Math.Abs(rT - 0.7f) < 1e-3f, $"{rT:0.0000} (0.7)");
+
+            var s1 = MakeSkeleton();
+            var m1 = Matrices(s1);
+            var target = P(s1, m1, "L_ARM1") + new Vector3(0.3f, -0.6f, -1.1f);
+            arms.Solve(s1, m1, 1, target, forward, null, Vector3.Zero);
+            var s2 = MakeSkeleton();
+            var m2 = Matrices(s2);
+            arms.Solve(s2, m2, 1, target, forward, null, Vector3.Zero, MathHelper.PiOver2, 0);
+            var hand = s1.GetBone("L_HAND").Index;
+            var up1 = Vector3.Normalize(m1[hand].Up);
+            var up2 = Vector3.Normalize(m2[hand].Up);
+            var turned = (float)Math.Acos(MathHelper.Clamp(Vector3.Dot(Vector3.Normalize(up1 - forward * Vector3.Dot(up1, forward)),
+                Vector3.Normalize(up2 - forward * Vector3.Dot(up2, forward))), -1, 1));
+            Check("roll: the hand turns about the way it points", Math.Abs(turned - MathHelper.PiOver2) < 0.01f,
+                $"{MathHelper.ToDegrees(turned):0.0} degrees");
+            Check("roll: the wrist and fingers stay put", Vector3.Distance(P(s1, m1, "L_HAND"), P(s2, m2, "L_HAND")) < 1e-4f
+                && Vector3.Distance(P(s1, m1, "L_FINGER0"), P(s2, m2, "L_FINGER0")) < 1e-4f, "unchanged");
         }
 
         // ---- out of reach: the arm straightens toward it

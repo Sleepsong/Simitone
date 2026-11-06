@@ -11,7 +11,8 @@ namespace Simitone.Client.VR
     /// <summary>
     /// Draws the controllers in your hands when you're not in your Sim's body: the runtime's own models of the devices
     /// you're holding when it has them (<see cref="VRRenderModels"/>: SteamVR, including on the Steam Frame), with
-    /// their sticks, triggers and buttons moving as you use them; otherwise, or for a hand it has no model for,
+    /// their sticks, triggers and buttons moving as you use them; otherwise the models shipped with Simitone for
+    /// common controllers (<see cref="VRBundledControllers"/>: Meta Touch, Vive wands), moving the same way; otherwise
     /// Simitone's simple one (<see cref="VRControllerModel"/>).
     ///
     /// Each model's glTF is parsed on a worker thread the first time it's seen (the built-in model stands in
@@ -25,26 +26,78 @@ namespace Simitone.Client.VR
         private readonly HashSet<string> Broken = new HashSet<string>();
         private readonly List<(GltfModel model, Matrix world, VRDeviceModel device)> Frame = new List<(GltfModel, Matrix, VRDeviceModel)>();
         private bool LeftCovered, RightCovered;
+        private readonly VRBundledControllers Bundled;
 
         public VRControllerRenderer(GraphicsDevice device)
         {
             BuiltIn = new VRControllerModel(device);
+            Bundled = new VRBundledControllers(System.IO.Path.Combine(AppContext.BaseDirectory, "VRControllers"), SimitoneVR.Log);
         }
 
         /// <summary>Works out this frame's models (once per frame, before the eyes are drawn).</summary>
-        public void Prepare(GraphicsDevice device, VRCameraController camera, VRRenderModels runtimeModels)
+        public void Prepare(GraphicsDevice device, VRCameraController camera, VRRuntime runtime)
         {
             Frame.Clear();
             LeftCovered = RightCovered = false;
-            if (!camera.ShowControllers || runtimeModels == null) return;
-            foreach (var device_ in runtimeModels.Models)
+            if (!camera.ShowControllers || runtime == null) return;
+            var runtimeModels = runtime.RenderModels;
+            if (runtimeModels != null)
             {
-                if (!device_.Pose.Valid || device_.Glb == null) continue;
-                var model = Get(device, device_);
+                foreach (var device_ in runtimeModels.Models)
+                {
+                    if (!device_.Pose.Valid || device_.Glb == null) continue;
+                    var model = Get(device, device_);
+                    if (model == null) continue;
+                    Frame.Add((model, camera.PoseToWorld(device_.Pose), device_));
+                    if (device_.Hand < 0) LeftCovered = true;
+                    else if (device_.Hand > 0) RightCovered = true;
+                }
+            }
+            // hands the runtime has no model for: ours, for the controller type it says that hand is using
+            var input = runtime.Input;
+            if (input == null || !input.Active) return;
+            for (int hand = 0; hand < 2; hand++)
+            {
+                if (hand == 0 ? LeftCovered || !camera.LeftHandValid : RightCovered || !camera.RightHandValid) continue;
+                var layout = Bundled.For(hand, runtime.HandProfiles[hand], runtime.SystemName);
+                if (layout == null) continue;
+                var model = GetBundled(device, layout);
                 if (model == null) continue;
-                Frame.Add((model, camera.PoseToWorld(device_.Pose), device_));
-                if (device_.Hand < 0) LeftCovered = true;
-                else if (device_.Hand > 0) RightCovered = true;
+                VRBundledControllers.Animate(layout, VRBundledControllers.Hand(input, hand));
+                Frame.Add((model, hand == 0 ? camera.LeftGripWorld : camera.RightGripWorld, layout.Device));
+                if (hand == 0) LeftCovered = true;
+                else RightCovered = true;
+            }
+        }
+
+        /// <summary>One of Simitone's own models: parsed on a worker thread, then its moving parts read from its profile.</summary>
+        private GltfModel GetBundled(GraphicsDevice device, VRBundledControllers.Layout layout)
+        {
+            var key = "bundled:" + layout.Key;
+            if (Ready.TryGetValue(key, out var model)) return model;
+            if (Broken.Contains(key)) return null;
+            if (!Parsing.TryGetValue(key, out var task))
+            {
+                var glb = layout.Glb;
+                Parsing[key] = Task.Run(() => GltfAsset.Parse(glb));
+                return null;
+            }
+            if (!task.IsCompleted) return null;
+            Parsing.Remove(key);
+            try
+            {
+                if (task.IsFaulted) throw task.Exception.GetBaseException();
+                VRBundledControllers.Prepare(layout, task.Result);
+                model = new GltfModel(device, task.Result);
+                Ready[key] = model;
+                SimitoneVR.Log($"controller model {layout.Key} ready ({model.Bounds.Radius * 200:0} cm across, {layout.Device.AnimatedNodes.Length} moving parts)");
+                return model;
+            }
+            catch (Exception e)
+            {
+                Broken.Add(key);
+                SimitoneVR.Log($"controller model {layout.Key} can't be shown, using the built-in one: {e.Message}");
+                return null;
             }
         }
 

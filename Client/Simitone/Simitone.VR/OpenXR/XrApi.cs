@@ -24,6 +24,8 @@ namespace Simitone.VR.OpenXR
         public delegate* unmanaged<ulong, XrEventDataBuffer*, XrResult> PollEvent;
         public delegate* unmanaged<ulong, XrResult, byte*, XrResult> ResultToString;
         public delegate* unmanaged<ulong, byte*, ulong*, XrResult> StringToPath;
+        public delegate* unmanaged<ulong, ulong, uint, uint*, byte*, XrResult> PathToString;
+        public delegate* unmanaged<ulong, ulong, XrInteractionProfileState*, XrResult> GetCurrentInteractionProfile;
         public delegate* unmanaged<ulong, XrSystemGetInfo*, ulong*, XrResult> GetSystem;
         public delegate* unmanaged<ulong, ulong, XrSystemProperties*, XrResult> GetSystemProperties;
         public delegate* unmanaged<ulong, ulong, int, uint, uint*, XrViewConfigurationView*, XrResult> EnumerateViewConfigurationViews;
@@ -105,6 +107,8 @@ namespace Simitone.VR.OpenXR
             PollEvent = (delegate* unmanaged<ulong, XrEventDataBuffer*, XrResult>)Require(i, "xrPollEvent");
             ResultToString = (delegate* unmanaged<ulong, XrResult, byte*, XrResult>)Require(i, "xrResultToString");
             StringToPath = (delegate* unmanaged<ulong, byte*, ulong*, XrResult>)Require(i, "xrStringToPath");
+            PathToString = (delegate* unmanaged<ulong, ulong, uint, uint*, byte*, XrResult>)Require(i, "xrPathToString");
+            GetCurrentInteractionProfile = (delegate* unmanaged<ulong, ulong, XrInteractionProfileState*, XrResult>)Require(i, "xrGetCurrentInteractionProfile");
             GetSystem = (delegate* unmanaged<ulong, XrSystemGetInfo*, ulong*, XrResult>)Require(i, "xrGetSystem");
             GetSystemProperties = (delegate* unmanaged<ulong, ulong, XrSystemProperties*, XrResult>)Require(i, "xrGetSystemProperties");
             EnumerateViewConfigurationViews = (delegate* unmanaged<ulong, ulong, int, uint, uint*, XrViewConfigurationView*, XrResult>)Require(i, "xrEnumerateViewConfigurationViews");
@@ -163,6 +167,17 @@ namespace Simitone.VR.OpenXR
         {
             if ((int)result < 0) throw new XrException(call, result, ResultName(result));
             return result;
+        }
+
+        /// <summary>A path's text ("" for none or on failure).</summary>
+        public string PathString(ulong path)
+        {
+            if (path == 0 || PathToString == null) return "";
+            const uint capacity = 256;
+            var buffer = stackalloc byte[(int)capacity];
+            uint count;
+            if (PathToString(Instance, path, capacity, &count, buffer) != XrResult.Success || count == 0) return "";
+            return Encoding.UTF8.GetString(buffer, (int)Math.Min(count, capacity) - 1);
         }
 
         public ulong Path(string path)

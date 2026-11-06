@@ -35,6 +35,12 @@ namespace Simitone.Client.VR
         private readonly VertexPositionColorTexture[] IconVerts = new VertexPositionColorTexture[6];
         private readonly VertexPositionColor[] BeamVerts = new VertexPositionColor[1024];
         private ICameraController LastActiveCamera;
+        /// <summary>Set every update by the bridge: what you're holding in buy/build mode (null for nothing).</summary>
+        public FSO.SimAntics.Entities.VMMultitileGroup Held;
+        private FSO.SimAntics.Entities.VMMultitileGroup GlideGroup;
+        private Vector3 GlideShown;
+        private readonly System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent part, Vector3 position)> GlideRestore
+            = new System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent, Vector3)>();
         private int FramesSinceInit;
         private bool AutoEntered;
 
@@ -165,6 +171,7 @@ namespace Simitone.Client.VR
         {
             if (!Immersive || !SimitoneVR.WantsEyes)
             {
+                Arms.Release(); // (your Sim's hands go back to the game's poses)
                 base.InternalDraw(device);
                 return;
             }
@@ -183,8 +190,10 @@ namespace Simitone.Client.VR
             try
             {
                 // your Sim's arms reach for the controllers while you steer them (after the game animated them this frame)
+                Arms.ApplyGestures(VRCamera.SimAvatar, VRCamera); // (gives the hands back when you let go of the Sim)
                 if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
-                Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime?.RenderModels);
+                Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime);
+                ApplyGlide(SimitoneVR.FrameDelta);
                 Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
@@ -205,6 +214,7 @@ namespace Simitone.Client.VR
             finally
             {
                 // (whatever happened, the camera goes back to normal: picking and transitions use it)
+                RestoreGlide();
                 State.FramePerDraw = framePerDraw;
                 cam.Eye = VREyeCamera.MonoEye;
                 cameras.DisableTransitions = oldTransitions;
@@ -226,6 +236,44 @@ namespace Simitone.Client.VR
                 MirrorBatch.Draw(src, new Rectangle(pos.ToPoint(), size.ToPoint()), Color.White);
                 MirrorBatch.End();
             }
+        }
+
+        /// <summary>
+        /// What you hold in buy/build mode glides from tile to tile instead of jumping: the game puts it on the tile under
+        /// the cursor every update, and only for drawing it is shown part of the way there from where it was drawn last,
+        /// closing the gap within about a tenth of a second (<see cref="RestoreGlide"/> puts it back after drawing, so
+        /// the game never sees it anywhere else). All its tiles move together; a long jump (a new floor, a new object)
+        /// isn't smoothed.
+        /// </summary>
+        private void ApplyGlide(float dt)
+        {
+            GlideRestore.Clear();
+            var group = Held;
+            var baseObj = group?.BaseObject ?? (group != null && group.Objects.Count > 0 ? group.Objects[0] : null);
+            var basePart = baseObj?.WorldUI;
+            if (basePart == null) { GlideGroup = null; return; }
+            var target = basePart.Position;
+            if (group != GlideGroup || Vector3.Distance(target, GlideShown) > 6f || Math.Abs(target.Z - GlideShown.Z) > 0.5f)
+            {
+                GlideGroup = group;
+                GlideShown = target;
+            }
+            GlideShown = target + (GlideShown - target) * (float)Math.Exp(-dt * 30f);
+            var offset = GlideShown - target;
+            if (offset.LengthSquared() < 1e-6f) return;
+            foreach (var obj in group.Objects)
+            {
+                var part = obj.WorldUI;
+                if (part == null) continue;
+                GlideRestore.Add((part, part.Position));
+                part.Position += offset;
+            }
+        }
+
+        private void RestoreGlide()
+        {
+            foreach (var (part, position) in GlideRestore) part.Position = position;
+            GlideRestore.Clear();
         }
 
         /// <summary>The controllers in your hands, when you're not in your Sim's body (where their hands are yours).</summary>

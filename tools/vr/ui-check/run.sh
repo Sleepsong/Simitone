@@ -12,4 +12,7 @@ Xvfb :95 -screen 0 1280x720x24 > "$WORK/xvfb.log" 2>&1 & XVFB_PID=$!
 trap 'kill $XVFB_PID 2>/dev/null || true' EXIT
 sleep 1
 dotnet build "$DIR/UICheck.csproj" -c Release -o "$WORK/bin" -v q -nologo > "$WORK/build.log" || { grep -E "error" "$WORK/build.log" | head -20; exit 1; }
+# OpenAL Soft plays into a WAV file (its "wave" output), for the 3D sound checks
+printf '[general]\nchannels = stereo\nfrequency = 44100\n[wave]\nfile = %s\n' "$WORK/sound.wav" > "$WORK/alsoft.conf"
+export ALSOFT_DRIVERS=wave ALSOFT_CONF="$WORK/alsoft.conf" UICHECK_WAV="$WORK/sound.wav"
 DISPLAY=:95 dotnet "$WORK/bin/UICheck.dll" "$SIMITONE" "$OUT"

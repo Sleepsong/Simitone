@@ -468,13 +468,43 @@ namespace Simitone.VR
                         ReferenceSpaceChanged?.Invoke();
                         break;
                     case XrStructureType.EventDataInteractionProfileChanged:
-                        Log("OpenXR: interaction profile changed");
+                        UpdateHandProfiles();
                         break;
                     case XrStructureType.EventDataInteractionRenderModelsChangedEXT:
                         if (RenderModels != null) RenderModels.NeedsEnumerate = true;
                         break;
                 }
             }
+        }
+
+        /// <summary>
+        /// The interaction profile (controller type) each hand is using now, e.g. "/interaction_profiles/oculus/touch_controller"
+        /// (left, right; "" when none or not known yet). Updated when the runtime says it changed.
+        /// </summary>
+        public readonly string[] HandProfiles = { "", "" };
+        private int HandProfileRetry;
+
+        private void UpdateHandProfiles()
+        {
+            if (Api == null || Api.GetCurrentInteractionProfile == null || Session == 0) return;
+            var users = new[] { "/user/hand/left", "/user/hand/right" };
+            var before = HandProfiles[0] + "|" + HandProfiles[1];
+            for (int hand = 0; hand < 2; hand++)
+            {
+                try
+                {
+                    var state = new XrInteractionProfileState { Type = XrStructureType.InteractionProfileState };
+                    HandProfiles[hand] = Api.GetCurrentInteractionProfile(Session, Api.Path(users[hand]), &state) == XrResult.Success
+                        ? Api.PathString(state.InteractionProfile) : "";
+                }
+                catch (Exception e)
+                {
+                    HandProfiles[hand] = "";
+                    Log("OpenXR: couldn't read the " + users[hand] + " interaction profile: " + e.Message);
+                }
+            }
+            if (HandProfiles[0] + "|" + HandProfiles[1] != before)
+                Log($"OpenXR: controllers now: left '{HandProfiles[0]}', right '{HandProfiles[1]}'");
         }
 
         private void HandleSessionState(XrSessionState state)
@@ -539,6 +569,13 @@ namespace Simitone.VR
             if (Focused)
             {
                 Input.Sync(Session, AppSpace, PredictedDisplayTime, deadZone);
+                // (and which controllers each hand has, once input is flowing, until it's known: not every runtime
+                // announces it)
+                if (Input.Active && HandProfiles[0] == "" && HandProfiles[1] == "" && --HandProfileRetry <= 0)
+                {
+                    HandProfileRetry = 180;
+                    UpdateHandProfiles();
+                }
                 RenderModels?.Update(Session, AppSpace, PredictedDisplayTime);
             }
             else

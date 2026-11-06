@@ -37,7 +37,8 @@ class SampleCatalog : IVRCatalogSource
             var prices = new[] { 80, 450, 260, 95, 150, 120, 310, 1250, 70, 25000, 35 };
             var colours = new[] { Color.SaddleBrown, Color.IndianRed, Color.OliveDrab, Color.SlateBlue, Color.Goldenrod };
             for (int i = 0; i < names.Length; i++)
-                ItemList.Add(new VRCatalogEntry { Name = names[i], Price = prices[i], Icon = dot(colours[i % colours.Length]), GUID = i < 2 ? (uint)(i + 1) : 0 });
+                ItemList.Add(new VRCatalogEntry { Name = names[i], Price = prices[i], Icon = dot(colours[i % colours.Length]), GUID = i < 2 ? (uint)(i + 1) : 0,
+                    Description = i == 1 ? "Room for two, and just about room for a cat as well. The cushions are stain resistant, mostly." : "" });
         }
         else
         {
@@ -61,7 +62,16 @@ class SampleCatalog : IVRCatalogSource
     public IReadOnlyList<VRCatalogEntry> Items => Chosen >= 0 ? ItemList : (IReadOnlyList<VRCatalogEntry>)Array.Empty<VRCatalogEntry>();
     public int SelectedItem => Selected;
     public int Version => 1;
+    public int Floor => 2;
+    public int Floors => 5;
+    public Simitone.VR.VRWallView Walls => Build ? Simitone.VR.VRWallView.Down : Simitone.VR.VRWallView.Cutaway;
     public void SetMode(VRCatalogMode mode) { }
+    public VRHeldObject HeldObject;
+    public VRHeldObject Held => HeldObject;
+    public void SellHeld() { }
+    public void PutBackHeld() { }
+    public void ChangeFloor(int direction) { }
+    public void SetWalls(Simitone.VR.VRWallView walls) { }
     public void ChooseCategory(int index) { }
     public void ChooseSubcategory(int index) { }
     public void ChooseItem(int index) { }

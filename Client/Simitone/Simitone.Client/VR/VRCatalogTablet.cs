@@ -26,6 +26,18 @@ namespace Simitone.Client.VR
         public Texture2D Icon;
         /// <summary>The object's GUID, for a 3D thumbnail; 0 for build tools (their picture is the icon).</summary>
         public uint GUID;
+        /// <summary>The catalogue's description (may be empty).</summary>
+        public string Description;
+    }
+
+    /// <summary>An object picked up from the lot, as the game's pickup panel describes it.</summary>
+    public class VRHeldObject
+    {
+        public string Name;
+        /// <summary>The game's line about it: what it sells for, or that it can't be sold.</summary>
+        public string Text;
+        public bool CanSell;
+        public int Value;
     }
 
     public class VRCatalogSubcategory
@@ -49,7 +61,19 @@ namespace Simitone.Client.VR
         int SelectedItem { get; }
         /// <summary>Changes whenever any of the lists above does.</summary>
         int Version { get; }
+        /// <summary>The floor you build on (1 is the ground), and how many the lot can have.</summary>
+        int Floor { get; }
+        int Floors { get; }
+        /// <summary>The walls in buy/build mode.</summary>
+        VRWallView Walls { get; }
+        /// <summary>An object you picked up from the lot (null otherwise): the tablet shows it instead of the items.</summary>
+        VRHeldObject Held { get; }
+        void SellHeld();
+        void PutBackHeld();
         void SetMode(VRCatalogMode mode);
+        /// <summary>Up (1) or down (-1) a floor, even while holding something.</summary>
+        void ChangeFloor(int direction);
+        void SetWalls(VRWallView walls);
         void ChooseCategory(int index);
         void ChooseSubcategory(int index);
         /// <summary>Picks an item up to place it (choosing the one already held puts it back).</summary>
@@ -65,7 +89,7 @@ namespace Simitone.Client.VR
     /// </summary>
     public class VRCatalogTablet : VRUIPanel
     {
-        public const int PanelWidth = 860, PanelHeight = 900;
+        public const int PanelWidth = 860, PanelHeight = 940;
         private const int Left = 30, Columns = 4, Rows = 2, PerPage = Columns * Rows;
         private const int TileW = 172, TileH = 186, GridTop = 336;
 
@@ -74,11 +98,17 @@ namespace Simitone.Client.VR
         public Func<uint, bool, Texture2D> Thumbnail;
 
         private readonly UIVRIconButton[] Tabs = new UIVRIconButton[3];
+        private readonly UIVRIconButton WallsButton, FloorDown, FloorUp;
+        private readonly UILabel FloorLabel;
+        private VRWallView ShownWalls = (VRWallView)(-1);
+        private static readonly string[] FloorNames = { "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th" };
         private readonly UILabel MoneyLabel, NameLabel, PriceLabel, HintLabel, PageLabel, EmptyLabel;
         private readonly List<UICatButton> CategoryButtons = new List<UICatButton>();
         private readonly List<(UICatButton button, UILabel label)> SubButtons = new List<(UICatButton, UILabel)>();
         private readonly UIVRCatalogTile[] Tiles = new UIVRCatalogTile[PerPage];
-        private readonly UIVRKey PrevPage, NextPage;
+        private readonly UIVRKey PrevPage, NextPage, SellKey, PutBackKey;
+        private readonly UILabel DescLabel, HeldTitle, HeldText;
+        private bool HeldShown;
         private int ShownVersion = -1, Page;
         private VRCatalogMode ShownMode = (VRCatalogMode)(-1);
         private IVRCatalogSource ShownSource;
@@ -98,6 +128,26 @@ namespace Simitone.Client.VR
                 Add(tab);
                 Tabs[i] = tab;
             }
+            // the walls (as the game's wall button: cut away, down, up) and the floor you build on
+            WallsButton = new UIVRIconButton(VRUI.CustomUI("cut_btn_away.png"), 76) { Position = new Vector2(Left + 300, 14), Frames = 2 };
+            WallsButton.OnClick += () =>
+            {
+                var walls = Source?.Walls ?? VRWallView.Cutaway;
+                Source?.SetWalls(walls == VRWallView.Cutaway ? VRWallView.Up : walls == VRWallView.Up ? VRWallView.Down : VRWallView.Cutaway);
+                Click();
+            };
+            Add(WallsButton);
+            FloorDown = new UIVRIconButton(VRUI.CustomUI("level_down.png"), 60) { Position = new Vector2(Left + 396, 22) };
+            FloorDown.OnClick += () => { if (Source != null && Source.Floor > 1) { Source.ChangeFloor(-1); Click(); } };
+            Add(FloorDown);
+            FloorLabel = VRUI.Label("", 20, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Middle);
+            FloorLabel.Position = new Vector2(Left + 456, 14);
+            FloorLabel.Size = new Vector2(70, 76);
+            Add(FloorLabel);
+            FloorUp = new UIVRIconButton(VRUI.CustomUI("level_up.png"), 60) { Position = new Vector2(Left + 526, 22) };
+            FloorUp.OnClick += () => { if (Source != null && Source.Floor < Source.Floors) { Source.ChangeFloor(1); Click(); } };
+            Add(FloorUp);
+
             var money = new UIVRMoneyPill { Position = new Vector2(PanelWidth - 32 - Left - 140, 38), ScaleX = 1.1f, ScaleY = 1.1f };
             Add(money);
             MoneyLabel = VRUI.Label("", 17, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Middle);
@@ -131,9 +181,34 @@ namespace Simitone.Client.VR
             PriceLabel.Position = new Vector2(PanelWidth - 32 - Left - 200, GridTop + 2 * (TileH + 8) + 6);
             PriceLabel.Size = new Vector2(190, 30);
             Add(PriceLabel);
-            HintLabel = VRUI.Label("", 14, UIStyle.Current.Text * 0.75f);
-            HintLabel.Position = new Vector2(Left + 10, GridTop + 2 * (TileH + 8) + 38);
+            DescLabel = VRUI.Label("", 14, UIStyle.Current.Text * 0.9f);
+            DescLabel.Position = new Vector2(Left + 10, GridTop + 2 * (TileH + 8) + 36);
+            DescLabel.Size = new Vector2(PanelWidth - 32 - Left * 2 - 20, 40);
+            DescLabel.Wrapped = true;
+            DescLabel.MaxLines = 2;
+            Add(DescLabel);
+            HintLabel = VRUI.Label("", 13, UIStyle.Current.Text * 0.7f);
+            HintLabel.Position = new Vector2(Left + 10, GridTop + 2 * (TileH + 8) + 92);
             Add(HintLabel);
+
+            // an object picked up from the lot (the game's pickup panel)
+            HeldTitle = VRUI.Label("", 24, UIStyle.Current.SecondaryText, TextAlignment.Center | TextAlignment.Top);
+            HeldTitle.Position = new Vector2(Left, GridTop + 50);
+            HeldTitle.Size = new Vector2(PanelWidth - 32 - Left * 2, 36);
+            Add(HeldTitle);
+            HeldText = VRUI.Label("", 18, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Top);
+            HeldText.Position = new Vector2(Left + 40, GridTop + 100);
+            HeldText.Size = new Vector2(PanelWidth - 32 - Left * 2 - 80, 80);
+            HeldText.Wrapped = true;
+            HeldText.MaxLines = 3;
+            Add(HeldText);
+            SellKey = new UIVRKey("Sell", 230, 66, 24) { Position = new Vector2((PanelWidth - 32) / 2 - 245, GridTop + 220) };
+            SellKey.OnPress += _ => { Source?.SellHeld(); Click(); };
+            Add(SellKey);
+            PutBackKey = new UIVRKey("Put back", 230, 66, 24) { Position = new Vector2((PanelWidth - 32) / 2 + 15, GridTop + 220) };
+            PutBackKey.OnPress += _ => { Source?.PutBackHeld(); Click(); };
+            Add(PutBackKey);
+            SetHeldShown(false);
 
             var pageY = PanelHeight - 68;
             PrevPage = new UIVRKey("<", 90, 54, 25) { Position = new Vector2(Left + 170, pageY) };
@@ -169,8 +244,42 @@ namespace Simitone.Client.VR
                 Rebuild(source);
             }
             for (int i = 0; i < 3; i++) Tabs[i].Selected = (int)source.Mode == i;
+            if (source.Walls != ShownWalls)
+            {
+                ShownWalls = source.Walls;
+                WallsButton.Picture = VRUI.CustomUI(ShownWalls switch
+                {
+                    VRWallView.Down => "cut_btn_down.png",
+                    VRWallView.Up => "cut_btn_up.png",
+                    _ => "cut_btn_away.png"
+                });
+            }
+            var floor = source.Floor;
+            SetCaption(FloorLabel, FloorNames[Math.Max(0, Math.Min(FloorNames.Length - 1, floor - 1))]);
+            FloorDown.Disabled = floor <= 1;
+            FloorUp.Disabled = floor >= source.Floors;
             var money = "§" + source.Budget.ToString("##,#0");
             if (MoneyLabel.Caption != money) MoneyLabel.Caption = money;
+
+            // something picked up from the lot: what it is and selling it, instead of the catalogue (as the game does)
+            var held = source.Held;
+            if ((held != null) != HeldShown)
+            {
+                SetHeldShown(held != null);
+                if (held == null) ShowPage();
+            }
+            if (held != null)
+            {
+                SetCaption(HeldTitle, held.Name ?? "");
+                SetCaption(HeldText, held.Text ?? "");
+                SellKey.Visible = held.CanSell;
+                SellKey.Caption = held.Value > 0 ? "Sell" : "Delete";
+                SetCaption(NameLabel, "");
+                SetCaption(PriceLabel, "");
+                SetCaption(DescLabel, "");
+                SetCaption(HintLabel, "Aim the arc and pull the trigger to put it down somewhere else.");
+                return;
+            }
 
             // the tiles' pictures (3D when ready) and selection, and what's described below them
             var items = source.Items;
@@ -194,6 +303,7 @@ namespace Simitone.Client.VR
                 SetCaption(NameLabel, entry.Name);
                 SetCaption(PriceLabel, "§" + entry.Price.ToString("##,#0"));
                 PriceLabel.CaptionStyle.Color = entry.Price <= source.Budget ? UIStyle.Current.SecondaryText : UIStyle.Current.NegMoney;
+                SetCaption(DescLabel, entry.Description ?? "");
                 SetCaption(HintLabel, shown == source.SelectedItem
                     ? "Aim the arc and pull the trigger to place it. Grip puts it back."
                     : "Pull the trigger to pick it up.");
@@ -202,9 +312,21 @@ namespace Simitone.Client.VR
             {
                 SetCaption(NameLabel, "");
                 SetCaption(PriceLabel, "");
+                SetCaption(DescLabel, "");
                 SetCaption(HintLabel, source.Mode == VRCatalogMode.Live ? ""
                     : source.ActiveCategory < 0 ? "Choose a category." : source.ActiveSubcategory < 0 ? "Choose a subcategory." : "");
             }
+        }
+
+        private void SetHeldShown(bool shown)
+        {
+            HeldShown = shown;
+            HeldTitle.Visible = HeldText.Visible = SellKey.Visible = PutBackKey.Visible = shown;
+            if (!shown) return;
+            foreach (var tile in Tiles) tile.Visible = false;
+            EmptyLabel.Visible = false;
+            PrevPage.Visible = NextPage.Visible = false;
+            PageLabel.Caption = "";
         }
 
         private static void SetCaption(UILabel label, string text)
@@ -266,10 +388,12 @@ namespace Simitone.Client.VR
             PageLabel.Caption = count > PerPage ? $"{Page + 1} / {pages}" : "";
             PrevPage.Visible = NextPage.Visible = count > PerPage;
             Hovered = -1;
+            EmptyLabel.Visible = true;
             EmptyLabel.Caption = source == null || source.Mode == VRCatalogMode.Live
                 ? "Live mode. Choose Buy or Build above (or squeeze the walking hand's grip)."
                 : source.ActiveSubcategory >= 0 && count == 0 ? "Nothing here." : "";
             for (int i = 0; i < PerPage; i++) Tiles[i].Visible = Page * PerPage + i < count;
+            if (HeldShown) SetHeldShown(true); // (still showing what you picked up)
         }
 
         /// <summary>
@@ -358,10 +482,12 @@ namespace Simitone.Client.VR
     /// <summary>A picture button (the mode tabs): highlighted when pointed at, with a green bar under it when chosen.</summary>
     public class UIVRIconButton : UIContainer
     {
-        private readonly Texture2D Picture;
+        public Texture2D Picture;
         private readonly float Size;
         private bool Hover;
-        public bool Selected;
+        public bool Selected, Disabled;
+        /// <summary>The picture is a strip of this many frames (the game's button states): only the first is drawn.</summary>
+        public int Frames = 1;
         public event Action OnClick;
 
         public UIVRIconButton(Texture2D picture, float size)
@@ -372,7 +498,7 @@ namespace Simitone.Client.VR
             {
                 if (type == UIMouseEventType.MouseOver) Hover = true;
                 else if (type == UIMouseEventType.MouseOut) Hover = false;
-                else if (type == UIMouseEventType.MouseUp && Hover) OnClick?.Invoke();
+                else if (type == UIMouseEventType.MouseUp && Hover && !Disabled) OnClick?.Invoke();
             });
         }
 
@@ -380,9 +506,13 @@ namespace Simitone.Client.VR
         {
             if (!Visible) return;
             var px = TextureGenerator.GetPxWhite(batch.GraphicsDevice);
-            if (Hover) DrawLocalTexture(batch, px, null, Vector2.Zero, new Vector2(Size, Size), Color.White * 0.12f);
-            if (Picture != null) DrawLocalTexture(batch, Picture, null, Vector2.Zero, new Vector2(Size / Picture.Width, Size / Picture.Height),
-                Selected || Hover ? Color.White : Color.White * 0.6f);
+            if (Hover && !Disabled) DrawLocalTexture(batch, px, null, Vector2.Zero, new Vector2(Size, Size), Color.White * 0.12f);
+            if (Picture != null)
+            {
+                var frame = new Rectangle(0, 0, Picture.Width / Math.Max(1, Frames), Picture.Height);
+                DrawLocalTexture(batch, Picture, frame, Vector2.Zero, new Vector2(Size / frame.Width, Size / frame.Height),
+                    Disabled ? Color.White * 0.25f : Selected || Hover ? Color.White : Color.White * 0.6f);
+            }
             if (Selected) DrawLocalTexture(batch, px, null, new Vector2(6, Size + 4), new Vector2(Size - 12, 5), UIStyle.Current.SecondaryText);
             base.Draw(batch);
         }
