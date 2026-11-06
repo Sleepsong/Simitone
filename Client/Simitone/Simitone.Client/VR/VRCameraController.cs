@@ -615,7 +615,10 @@ namespace Simitone.Client.VR
                 // game's own floor buttons (on the desk catalogue) move you too.
                 var bp = Lot(world);
                 if (BuildLevelSet > 0 && world.State.Level != BuildLevelSet && bp != null)
+                {
+                    DropLid(false); // (the game changed floors)
                     PlayerLevel = (sbyte)MathHelper.Clamp(world.State.Level, 1, bp.Stories);
+                }
                 if (world.State.Level != PlayerLevel) world.State.Level = PlayerLevel;
                 BuildLevelSet = PlayerLevel;
                 world.State.DrawRoofs = false;
@@ -701,6 +704,13 @@ namespace Simitone.Client.VR
             var bp = Lot(world);
             if (bp == null || bp.Cutaway == null || bp.Cutaway.Length != bp.Width * bp.Height) return;
             var mode = BuildMode || InDollhouse ? Settings.BuildWalls : VRWallView.Up;
+            if (InDollhouse && mode == VRWallView.Cutaway)
+            {
+                // the dollhouse cuts away the walls facing you, room by room, as the game does (the bridge does it: it
+                // needs the game's rooms); work this one out afresh when that stops
+                CutawayMode = (VRWallView)(-1);
+                return;
+            }
             // (around where you place; in the dollhouse, around where you point)
             var focusValid = BuildMode && CursorValid || InDollhouse && DollhouseFocusValid;
             var focus = BuildMode && CursorValid ? CursorTarget : DollhouseFocus;

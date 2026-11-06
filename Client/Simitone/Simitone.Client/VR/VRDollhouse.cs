@@ -26,13 +26,17 @@ namespace Simitone.Client.VR
     ///    below. They stop what they're doing (as when you cancel their actions) and, once they have, the game moves
     ///    them there (<see cref="VMNetMoveObjectCmd"/>, which moves Sims in The Sims 1, as its "moveobjects" cheat
     ///    does); until then they're drawn where you put them. If they can't go there, they come back.
+    ///  - <b>the edge of the floor shown</b> (round its outside, where the walls below it end): you lift that floor off like
+    ///    a dollhouse lid and see the one below (which is now the floor you play on). Let go of it near its place and it
+    ///    goes back on; anywhere else (beside the house, on the table) it stays there until you take it again. Changing
+    ///    floors puts it back.
     ///  - <b>nothing</b>: you hold the model itself (see <see cref="VRCameraController"/>): it moves with your hand, and
     ///    with both hands it turns and resizes.
     /// </summary>
     public sealed class VRDollhouse
     {
-        private enum Hold { None, Model, Furniture, Sim }
-        private enum Step { None, WaitForBuyMode, Aim, Press, Carry, PlaceDown, PlaceUp, Check }
+        private enum Hold { None, Model, Furniture, Sim, Lid }
+        private enum Step { None, WaitForBuyMode, Aim, Press, FromCatalogue, Carry, PlaceDown, PlaceUp, Check }
 
         private readonly Hold[] Holds = new Hold[2];
         private readonly bool[] GripWas = new bool[2];
@@ -43,6 +47,7 @@ namespace Simitone.Client.VR
         private int FurnitureHand = -1;
         private bool AutoBuy;
         private float TurnReference;
+        private FSO.SimAntics.Entities.VMMultitileGroup CarriedGroup;
 
         // Sims
         private VMAvatar Lifted;
@@ -52,6 +57,18 @@ namespace Simitone.Client.VR
         private float DropWait, CancelWait, MoveWait;
         private bool MoveSent;
 
+        // the floor lifted off like a lid
+        private int LidHand = -1;
+
+        // touch: what each hand is in (an object's or Sim's ID), since when, where it went in, and whether it gripped
+        private readonly short[] Touching = new short[2];
+        private readonly float[] TouchTime = new float[2];
+        private readonly Vector3[] TouchEntry = new Vector3[2];
+        private readonly bool[] TouchGripped = new bool[2];
+        private short Tapped;
+
+        /// <summary>A fingertip only touches what it's really on (metres): less than a grab reaches.</summary>
+        private const float TouchReach = 0.008f;
         /// <summary>How far your hand reaches into what it grabs (metres, in your room).</summary>
         private const float GrabReach = 0.025f;
         /// <summary>How far below the hand a Sim's feet hang (world units: you hold them by the scruff).</summary>
@@ -88,8 +105,62 @@ namespace Simitone.Client.VR
                 }
                 camera.DragHands[hand] = Holds[hand] == Hold.Model;
             }
+            if (LidHand >= 0)
+            {
+                if (camera.LidFloor == 0) { Holds[LidHand] = Hold.None; LidHand = -1; } // (put back by a floor change)
+                else camera.MoveLid(camera.HandPoint(LidHand));
+            }
             UpdateFurniture(screen, world, camera, lc);
-            UpdateSims(vm, world, camera, dt);
+            UpdateSims(screen, world, camera, input, dt);
+            UpdateTouch(screen, world, camera, input, pointerHand, dt);
+        }
+
+        /// <summary>A fingertip tapped a Sim or an object (live mode): the bridge opens its pie menu.</summary>
+        public bool ConsumeTap(out short id)
+        {
+            id = Tapped;
+            Tapped = 0;
+            return id != 0;
+        }
+
+        /// <summary>
+        /// Touch: a hand going into furniture or a Sim gives a light tick; the pointing hand's fingertip poking one and
+        /// coming straight back out (within a third of a second, near where it went in, without squeezing) is a tap,
+        /// which opens its pie menu as pointing at it and pulling the trigger does. A hand sweeping through things
+        /// doesn't tap them: it comes out somewhere else.
+        /// </summary>
+        private void UpdateTouch(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input, int pointerHand, float dt)
+        {
+            var reach = TouchReach * camera.UnitsPerMetre;
+            for (int hand = 0; hand < 2; hand++)
+            {
+                if (!camera.HandValid(hand) || Holds[hand] != Hold.None)
+                {
+                    Touching[hand] = 0;
+                    continue;
+                }
+                var point = camera.HandPoint(hand);
+                var sim = SimAt(screen.vm, camera, point, reach);
+                var id = sim != null ? sim.ObjectID : FurnitureAt(world, camera, point, reach);
+                if (id == Touching[hand])
+                {
+                    if (id != 0)
+                    {
+                        TouchTime[hand] += dt;
+                        TouchGripped[hand] |= GripWas[hand];
+                    }
+                    continue;
+                }
+                var left = Touching[hand];
+                if (left != 0 && hand == pointerHand && TouchTime[hand] < 0.35f && !TouchGripped[hand]
+                    && Vector3.Distance(point, TouchEntry[hand]) < 0.02f * camera.UnitsPerMetre && screen.LotControl.LiveMode)
+                    Tapped = left;
+                if (id != 0) Buzz(hand, input, 0.12f, 0.008f); // (brushing past something)
+                Touching[hand] = id;
+                TouchTime[hand] = 0;
+                TouchEntry[hand] = point;
+                TouchGripped[hand] = false;
+            }
         }
 
         /// <summary>A hand's grip, with a little hysteresis on the analogue one.</summary>
@@ -112,6 +183,25 @@ namespace Simitone.Client.VR
             if (hand == pointerHand && (SimitoneVR.OverlayHasPointer || SimitoneVR.PieMenuOpen)) return Hold.None;
             var point = camera.HandPoint(hand);
             var reach = GrabReach * camera.UnitsPerMetre;
+
+            // an item on the catalogue tablet (in the other hand): pull it out and carry it into the house
+            if (hand == pointerHand && FurnitureStep == Step.None && lc.CustomControl == null)
+            {
+                var item = SimitoneVR.TabletItemAt(RoomHandPoint(input, hand), 0.03f);
+                var catalogue = SimitoneVR.CatalogSource;
+                if (item >= 0 && catalogue != null)
+                {
+                    if (catalogue.SelectedItem != item) catalogue.ChooseItem(item);
+                    FurnitureHand = hand;
+                    TurnReference = camera.HandYaw(hand);
+                    FurnitureStep = Step.FromCatalogue;
+                    StepFrames = 0;
+                    camera.HandCursor = point;
+                    HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                    Buzz(hand, input, 0.35f, 0.03f);
+                    return Hold.Furniture;
+                }
+            }
 
             // a Sim (live mode: in buy and build the game is paused, and they couldn't be moved)
             if (lc.LiveMode && Lifted == null && Dropping == null)
@@ -150,6 +240,19 @@ namespace Simitone.Client.VR
                 Buzz(hand, input, 0.3f, 0.03f);
                 return Hold.Furniture;
             }
+            // the edge of the floor shown (or of the one already off): lift it off
+            // (not while carrying something else: it's yours, whichever floor it came from)
+            if (LidHand < 0 && FurnitureStep == Step.None && Lifted == null && Dropping == null && camera.AtLidEdge(world, point))
+            {
+                camera.TakeLid(world, point);
+                if (camera.LidFloor > 0)
+                {
+                    LidHand = hand;
+                    HITVM.Get()?.PlaySoundEvent(UISounds.ObjectRotate);
+                    Buzz(hand, input, 0.35f, 0.04f);
+                    return Hold.Lid;
+                }
+            }
             return Hold.Model;
         }
 
@@ -166,6 +269,13 @@ namespace Simitone.Client.VR
                 case Hold.Sim:
                     if (hand == SimHand) PutDownSim(screen.vm, world, camera, hand);
                     break;
+                case Hold.Lid:
+                    if (hand != LidHand) break;
+                    LidHand = -1;
+                    var back = camera.ReleaseLid();
+                    HITVM.Get()?.PlaySoundEvent(back ? UISounds.ObjectPlace : UISounds.ObjectMovePlace);
+                    Buzz(hand, SimitoneVR.Runtime?.Input, 0.25f, 0.03f);
+                    break;
             }
         }
 
@@ -177,6 +287,7 @@ namespace Simitone.Client.VR
                 GripWas[hand] = false;
                 if (camera != null) camera.DragHands[hand] = false;
             }
+            LidHand = -1; // (the lid itself goes back on when the dollhouse ends)
             if (FurnitureStep != Step.None)
             {
                 // carrying something when you left the dollhouse: it goes back where it was
@@ -269,10 +380,17 @@ namespace Simitone.Client.VR
                     SimitoneVR.ForcedWorldButton = false;
                     if (StepFrames >= 2) Next(Step.Press);
                     break;
+                case Step.FromCatalogue:
+                    // (the catalogue makes the new object to place; it's in your hand once it's there)
+                    SimitoneVR.ForcedWorldButton = false;
+                    if (holder.Holding != null) { CarriedGroup = holder.Holding.Group; Next(Step.Carry); }
+                    else if (StepFrames > 30) FinishFurniture(screen, world, camera);
+                    break;
                 case Step.Press:
                     SimitoneVR.ForcedWorldButton = true;
                     if (holder.Holding != null)
                     {
+                        CarriedGroup = holder.Holding.Group;
                         Next(Step.Carry);
                         SimitoneVR.Log("dollhouse: picked up " + holder.Holding.Group.BaseObject);
                         Buzz(hand, input, 0.4f, 0.04f);
@@ -310,17 +428,30 @@ namespace Simitone.Client.VR
                     break;
                 case Step.Check:
                     if (StepFrames < 2) break;
-                    if (holder.Holding != null)
+                    if (holder.Holding != null && holder.Holding.Group == CarriedGroup)
                     {
-                        // it can't go there: back where it was (the game said why, as a tip)
+                        // it can't go there: back where it was, or back in the catalogue (the game said why, as a tip)
                         holder.Cancel();
                         Buzz(hand, input, 0.6f, 0.1f);
                         SimitoneVR.Log("dollhouse: couldn't put it there; it went back");
                     }
-                    else Buzz(hand, input, 0.3f, 0.03f);
+                    else
+                    {
+                        // put down (bought, if it came from the catalogue, which hands you another copy: not into your hand)
+                        if (holder.Holding != null) holder.Cancel();
+                        Buzz(hand, input, 0.3f, 0.03f);
+                    }
                     FinishFurniture(screen, world, camera);
                     break;
             }
+        }
+
+        /// <summary>A hand's point in your room (tracking space): a little ahead of the middle of your fist.</summary>
+        private static Vector3 RoomHandPoint(VRInput input, int hand)
+        {
+            var grip = hand == 0 ? input.LeftGrip : input.RightGrip;
+            var aim = hand == 0 ? input.LeftAim : input.RightAim;
+            return grip.Position + Vector3.Transform(-Vector3.UnitZ, (aim.Valid ? aim : grip).Orientation) * 0.04f;
         }
 
         private void Next(Step step)
@@ -333,6 +464,7 @@ namespace Simitone.Client.VR
         {
             FurnitureStep = Step.None;
             FurnitureHand = -1;
+            CarriedGroup = null;
             SimitoneVR.ForcedWorldButton = null;
             if (camera != null) camera.HandCursor = null;
             if (world != null) world.HeldLift = 0;
@@ -360,11 +492,14 @@ namespace Simitone.Client.VR
 
         // ------------------------------------------------------------------ Sims
 
-        private void UpdateSims(VM vm, VRLotWorld world, VRCameraController camera, float dt)
+        private void UpdateSims(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input, float dt)
         {
+            var vm = screen.vm;
             if (Lifted != null)
             {
                 if (Lifted.Dead || SimHand < 0) { Lifted = null; world.LiftedSim = null; }
+                else if (Vector3.Distance(RoomHandPoint(input, SimHand), SimitoneVR.HeadPoseTracking().Position) < 0.2f)
+                    HopInto(screen, world, camera, input);
                 else
                 {
                     world.LiftedSim = Lifted.WorldUI as AvatarComponent;
@@ -372,6 +507,7 @@ namespace Simitone.Client.VR
                     KeepStopping(vm, Lifted, dt);
                 }
             }
+            world.LiftedDangling = Lifted != null;
             if (Dropping == null) return;
             if (Dropping.Dead) { Dropping = null; world.LiftedSim = null; return; }
             var running = vm.SpeedMultiplier > 0; // (paused, the game can't move them yet)
@@ -415,6 +551,35 @@ namespace Simitone.Client.VR
                 Dropping = null;
                 world.LiftedSim = null;
             }
+        }
+
+        /// <summary>
+        /// You brought the Sim you're holding up to your face: you become them (one of your family: they're selected and
+        /// you play as them, in first person), or, for anyone else, the observer standing beside them.
+        /// </summary>
+        private void HopInto(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input)
+        {
+            var sim = Lifted;
+            var vm = screen.vm;
+            Holds[SimHand] = Hold.None; // (letting go of the grip afterwards does nothing)
+            Buzz(SimHand, input, 0.5f, 0.06f);
+            Lifted = null;
+            SimHand = -1;
+            world.LiftedSim = null;
+            var family = vm.TS1State?.CurrentFamily;
+            if (family != null && family.RuntimeSubset.Contains(sim.Object.OBJ.GUID))
+            {
+                if (screen.LotControl.ActiveEntity != sim) vm.SendCommand(new VMNetChangeControlCmd { TargetID = sim.ObjectID });
+                SimitoneVR.PlayMode = VRPlayMode.Sim;
+            }
+            else
+            {
+                var p = sim.Position;
+                camera.DollhouseLeaveTile = new Vector2(p.x / 16f, p.y / 16f) + new Vector2(0.7f, 0.7f);
+                SimitoneVR.PlayMode = VRPlayMode.Observer;
+            }
+            HITVM.Get()?.PlaySoundEvent(UISounds.Whoosh);
+            SimitoneVR.Log("dollhouse: hopped into " + sim.Name + " (" + SimitoneVR.PlayMode + ")");
         }
 
         /// <summary>Lets go of a Sim over the floor below the hand: they're drawn standing there until the game moves them.</summary>

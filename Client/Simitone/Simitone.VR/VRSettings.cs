@@ -54,8 +54,9 @@ namespace Simitone.VR
     /// </summary>
     public class VRSettings
     {
-        /// <summary>How you start on a lot: as your Sim (first person, walking them) or as a free observer.</summary>
-        public VRPlayMode PlayMode = VRPlayMode.Sim;
+        /// <summary>How you start on a lot: the dollhouse (a giant over the lot as a table-top model), as your Sim (first
+        /// person, walking them) or as a free observer.</summary>
+        public VRPlayMode PlayMode = VRPlayMode.Dollhouse;
         /// <summary>Multiplier on the runtime's recommended per-eye resolution. Lower this on the Steam Frame if frame rate suffers.</summary>
         public float RenderScale = 1.0f;
         /// <summary>FreeSO world units per real-world metre. 3 = one TS1 tile per metre, i.e. life size.</summary>

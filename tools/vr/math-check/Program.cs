@@ -241,6 +241,36 @@ static class Program
                 $"a tile is {3f / fit * 100:0.00} cm");
         }
 
+        // ---- the dollhouse lid: a plane in the world, as the clip plane of a view (VRMath.ClipPlane), for a view moved
+        // with the lid: points of the house above the lifted floor's underside are kept wherever the view puts them.
+        // The view is the dollhouse's: a 64-tile lot 1.3 m across (148 units a metre), seen from 0.65 m above and
+        // 0.75 m away, with the stereo pass's near plane (half of 5 cm). Clip space can't place the plane much closer
+        // than a few thousandths of a unit at that near plane; the lid is clipped 0.02 units under its floor.
+        {
+            const float unitsPerMetre = 3f * 64 / 1.3f, near = 0.05f * unitsPerMetre * 0.5f;
+            var eye = new Vector3(96, 0.65f * unitsPerMetre, 96 + 0.75f * unitsPerMetre);
+            var lidView = Matrix.CreateLookAt(eye, new Vector3(96, 0, 96), Vector3.Up);
+            var lidProjection = Matrix.CreatePerspectiveOffCenter(-1.0f * near, 0.9f * near, -0.95f * near, 0.85f * near, near, 1000);
+            var lid = Matrix.CreateTranslation(new Vector3(12, 7.5f, -4)); // (the lid moved by the hand)
+            var viewProjection = lid * lidView * lidProjection;
+            const float baseY = 8.85f; // the second floor's underside
+            var plane = new Vector4(0, 1, 0, -baseY);
+            var clip = VRMath.ClipPlane(plane, viewProjection);
+            float worst = 0;
+            bool sidesRight = true;
+            var random = new Random(3);
+            for (int i = 0; i < 400; i++)
+            {
+                var p = new Vector3((float)random.NextDouble() * 192, (float)random.NextDouble() * 30, (float)random.NextDouble() * 192);
+                var c = Vector4.Transform(new Vector4(p, 1), viewProjection);
+                var distance = Vector4.Dot(c, clip);
+                worst = Math.Max(worst, Math.Abs(distance - (p.Y - baseY)));
+                if ((distance >= 0) != (p.Y >= baseY) && Math.Abs(p.Y - baseY) > 0.005f) sidesRight = false;
+            }
+            Check("dollhouse lid: the clip plane keeps what's above the lifted floor, as the moved view draws it", sidesRight && worst < 0.005f,
+                $"largest difference from the height above the floor {worst:0.00000} units");
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }

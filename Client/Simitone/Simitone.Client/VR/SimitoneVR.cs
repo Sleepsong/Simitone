@@ -122,6 +122,9 @@ namespace Simitone.Client.VR
         public static bool CatalogInHand => Settings.Catalogue == VRCatalogStyle.Hand;
         /// <summary>The catalogue tablet is in your hand now.</summary>
         public static bool TabletShown => Tablet?.Shown == true;
+
+        /// <summary>The catalogue item whose tile a fingertip (tracking space) is on, or -1 (see <see cref="VRCatalogTablet.ItemAt"/>).</summary>
+        public static int TabletItemAt(Vector3 point, float reach) => Tablet?.Shown == true ? Tablet.ItemAt(point, reach) : -1;
         private static Vector3 PieAnchor;
         private static bool PieAnchorChanged;
         private static FSO.Client.UI.Framework.UIElement PieRegionOwner;
@@ -1206,6 +1209,20 @@ namespace Simitone.Client.VR
         }
 
         public static bool ConsumePauseRequest() => Consume(ref PauseRequested);
+
+        private static int SpeedSetRequested = -1;
+        private static bool RefitRequested;
+        /// <summary>The speed dial on the wrist: set the game's speed (0 paused, 1-3).</summary>
+        public static void RequestSpeed(int speed) => SpeedSetRequested = speed;
+        public static int ConsumeSpeedSet()
+        {
+            var s = SpeedSetRequested;
+            SpeedSetRequested = -1;
+            return s;
+        }
+        /// <summary>The VR menu's "fit the dollhouse to me".</summary>
+        public static void RequestDollhouseRefit() => RefitRequested = true;
+        public static bool ConsumeDollhouseRefit() => Consume(ref RefitRequested);
         public static bool ConsumeSpeedRequest() => Consume(ref SpeedRequested);
         public static bool ConsumeModeSwitch() => Consume(ref ModeSwitchRequested);
         public static bool ConsumeNextSim() => Consume(ref NextSimRequested);

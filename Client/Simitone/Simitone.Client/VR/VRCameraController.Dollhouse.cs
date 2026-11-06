@@ -1,5 +1,6 @@
 using System;
 using FSO.LotView;
+using FSO.LotView.Model;
 using Microsoft.Xna.Framework;
 using Simitone.VR;
 
@@ -14,7 +15,8 @@ namespace Simitone.Client.VR
     ///    also turns with them and grows or shrinks as they move apart or together (a tile from 0.75 to 25 cm);
     ///  - the left stick slides it, the right stick turns it (as turning does elsewhere) and shows a floor up or down;
     ///  - the floor shown is <see cref="PlayerLevel"/> (floors above it and the roof are hidden, as in the game);
-    ///  - the walls follow the buy/build wall setting, cut away around where you point.
+    ///  - the walls facing you are cut away (the game's own room cut);
+    ///  - the floor shown can be lifted off like a lid (<see cref="LidFloor"/>): you see the one below, and put it back.
     /// What the hands hold (the model, furniture, Sims) is decided by <see cref="VRDollhouse"/>, through
     /// <see cref="DragHands"/> and <see cref="HandCursor"/>.
     /// </summary>
@@ -48,6 +50,147 @@ namespace Simitone.Client.VR
         public Vector3? HandCursor;
         /// <summary>How far above the hand the picking camera starts (world units): what's just above the hand isn't picked.</summary>
         private const float HandPickAbove = 0.3f;
+
+        /// <summary>Where to stand when the dollhouse ends (a tile), instead of where you were looking: set by hopping in.</summary>
+        public Vector2? DollhouseLeaveTile;
+        private float LeanTime;
+        private bool LeanInRequested;
+
+        // ---- the floor lifted off like a lid
+        /// <summary>
+        /// The floor lifted off the house (0 for none). While it's off the floor below is the one shown (and played on),
+        /// and the lifted one is drawn moved by <see cref="LidOffset"/> (see <see cref="VRLotWorld"/>).
+        /// </summary>
+        public sbyte LidFloor { get; private set; }
+        /// <summary>How far the lifted floor is from its place (world units).</summary>
+        public Vector3 LidOffset { get; private set; }
+        /// <summary>The height of the lifted floor's underside (world units): what's above it lifts.</summary>
+        public float LidBase { get; private set; }
+        private Vector3 LidGrabOffset, LidGrabPoint;
+        private bool LidReturning;
+        /// <summary>Let go of this close to its place (metres, as you see it), the lifted floor goes back on.</summary>
+        public const float LidSnap = 0.07f;
+
+        /// <summary>
+        /// Whether a hand at <paramref name="point"/> (world units) is on the edge of a floor that lifts off: round the
+        /// outside of the floor shown (above the ground floor) at its height, where the walls below it end; or of the floor
+        /// already off, where it is now.
+        /// </summary>
+        public bool AtLidEdge(World world, Vector3 point)
+        {
+            var floor = LidFloor > 0 ? LidFloor : PlayerLevel;
+            var local = LidFloor > 0 ? point - LidOffset : point;
+            return floor >= 2 && LidEdgeTile(world, local, floor) != null;
+        }
+
+        /// <summary>
+        /// A tile of the house at <paramref name="floor"/> (floor or walls) near <paramref name="local"/> (world units, the
+        /// floor in its place), if that point is at the floor's height and near its outside edge (a tile of the house and
+        /// one without within reach); null otherwise.
+        /// </summary>
+        private Vector2? LidEdgeTile(World world, Vector3 local, sbyte floor)
+        {
+            var bp = Lot(world);
+            if (bp == null || floor > bp.Stories) return null;
+            var height = LevelHeightTiles * TileUnits;
+            var centre = new Vector2(local.X, local.Z) / TileUnits;
+            var dy = local.Y - FloorHeight(world, centre, floor);
+            if (dy < -0.35f * height || dy > 0.4f * height) return null;
+            // (about 2 cm each way, as you see it, and at least a tile)
+            var reach = Math.Max(1, (int)Math.Ceiling(0.02f * Scale / TileUnits));
+            int cx = (int)Math.Floor(centre.X), cy = (int)Math.Floor(centre.Y);
+            Vector2? house = null;
+            var outside = false;
+            var best = float.MaxValue;
+            for (int y = cy - reach; y <= cy + reach; y++)
+            {
+                for (int x = cx - reach; x <= cx + reach; x++)
+                {
+                    var tile = new Vector2(x + 0.5f, y + 0.5f);
+                    if (!InBounds(bp, x, y) || !PartOfFloor(bp, x, y, floor)) { outside = true; continue; }
+                    var d = Vector2.DistanceSquared(tile, centre);
+                    if (d < best) { best = d; house = tile; }
+                }
+            }
+            return outside ? house : null;
+        }
+
+        private static bool PartOfFloor(Blueprint bp, int x, int y, sbyte floor)
+            => bp.GetFloor((short)x, (short)y, floor).Pattern != 0 || bp.GetWall((short)x, (short)y, floor).Segments != 0;
+
+        /// <summary>A hand took hold of the lid's edge at <paramref name="point"/> (world units): lifts the floor shown off.</summary>
+        public void TakeLid(World world, Vector3 point)
+        {
+            if (LidFloor == 0)
+            {
+                var tile = LidEdgeTile(world, point, PlayerLevel);
+                if (PlayerLevel < 2 || tile == null) return;
+                LidFloor = PlayerLevel;
+                LidBase = FloorHeight(world, tile.Value, LidFloor);
+                LidOffset = Vector3.Zero;
+                PlayerLevel--;
+                FloorsUsedRefresh = 0;
+                SimitoneVR.Log($"dollhouse: floor {LidFloor} lifted off");
+            }
+            LidReturning = false;
+            LidGrabOffset = LidOffset;
+            LidGrabPoint = point;
+        }
+
+        /// <summary>The hand holding the lid is at <paramref name="point"/> (world units): the lid moves with it.</summary>
+        public void MoveLid(Vector3 point)
+        {
+            if (LidFloor == 0) return;
+            var offset = LidGrabOffset + point - LidGrabPoint;
+            offset.Y = Math.Max(offset.Y, -LidBase); // (no lower than the ground: it can be set down on the table)
+            LidOffset = offset;
+        }
+
+        /// <summary>The lid was let go: close to its place it goes back on; anywhere else it stays where it was put.</summary>
+        public bool ReleaseLid()
+        {
+            if (LidFloor == 0) return true;
+            LidReturning = LidOffset.Length() < LidSnap * Scale;
+            return LidReturning;
+        }
+
+        /// <summary>The lid is back on at once (changing floors, leaving the dollhouse): its floor is shown again.</summary>
+        public void DropLid(bool showIt)
+        {
+            if (LidFloor == 0) return;
+            if (showIt) PlayerLevel = LidFloor;
+            LidFloor = 0;
+            LidOffset = Vector3.Zero;
+            LidReturning = false;
+            FloorsUsedRefresh = 0;
+        }
+
+        private void UpdateLid(float dt)
+        {
+            if (!LidReturning || LidFloor == 0) return;
+            LidOffset *= (float)Math.Exp(-dt * 14);
+            if (LidOffset.Length() < 0.001f * Scale)
+            {
+                SimitoneVR.Log($"dollhouse: floor {LidFloor} back on");
+                DropLid(true);
+                SimitoneVR.Runtime?.Haptic(true, 0.3f, 0.03f);
+                SimitoneVR.Runtime?.Haptic(false, 0.3f, 0.03f);
+            }
+        }
+
+        /// <summary>You put your head into a room for a moment: the bridge makes you the observer there.</summary>
+        public bool ConsumeLeanIn()
+        {
+            var r = LeanInRequested;
+            LeanInRequested = false;
+            return r;
+        }
+
+        /// <summary>Fits the dollhouse in front of you again, from where you are now (e.g. after sitting down).</summary>
+        public void RefitDollhouse()
+        {
+            if (InDollhouse && World != null && !DollhouseSwitching) Blink(() => EnterDollhouse(World));
+        }
 
         /// <summary>World units per metre of your room: <see cref="VRSettings.WorldScale"/>, or the dollhouse's.</summary>
         public float UnitsPerMetre => Scale;
@@ -83,6 +226,7 @@ namespace Simitone.Client.VR
             if (bp == null) return;
             InDollhouse = true;
             DragMask = 0;
+            DropLid(true);
             DollhouseScale = FitScale(Math.Max(bp.Width, bp.Height));
             var head = SimitoneVR.HeadPoseTracking();
             var headTrack = head.Valid ? head.Position : new Vector3(0, Settings.FallbackEyeHeight, 0);
@@ -106,8 +250,10 @@ namespace Simitone.Client.VR
             InDollhouse = false;
             DragMask = 0;
             HandCursor = null;
+            DropLid(false);
             var bp = Lot(world);
-            var tile = new Vector2(target.X, target.Z) / TileUnits;
+            var tile = DollhouseLeaveTile ?? new Vector2(target.X, target.Z) / TileUnits;
+            DollhouseLeaveTile = null;
             if (bp != null) tile = Vector2.Clamp(tile, new Vector2(1), new Vector2(bp.Width - 1, bp.Height - 1));
             FloorInitialised = false;
             PlaceHead(tile, HeadWorldYaw);
@@ -137,7 +283,12 @@ namespace Simitone.Client.VR
                 LevelLatched = true;
             }
             else if (Math.Abs(turnY) < 0.3f) LevelLatched = false;
-            if (levelChange != 0) ChangeLevel(world, new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits, levelChange, SimitoneVR.Runtime);
+            if (levelChange != 0)
+            {
+                DropLid(false); // (the lid goes back on: up a floor shows it, down one hides it)
+                ChangeLevel(world, new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits, levelChange, SimitoneVR.Runtime);
+            }
+            UpdateLid(dt);
 
             // ---- the left stick slides the model (you move over it)
             var move = MoveIntent;
@@ -153,6 +304,25 @@ namespace Simitone.Client.VR
             // ---- the hands holding the model
             if (active) UpdateDollhouseDrag(input);
             else DragMask = 0;
+
+            // ---- your head in a room of the floor shown (below its ceiling, over its floor) for half a second: you go
+            // in, as the observer, standing there
+            var bpLean = Lot(world);
+            var headTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
+            var inRoom = false;
+            if (bpLean != null && headTile.X > 0 && headTile.Y > 0 && headTile.X < bpLean.Width && headTile.Y < bpLean.Height
+                && HasFloor(world, headTile, PlayerLevel))
+            {
+                var floor = FloorHeight(world, headTile, PlayerLevel);
+                inRoom = HeadWorld.Y > floor + 0.5f && HeadWorld.Y < floor + 0.85f * LevelHeightTiles * TileUnits;
+            }
+            LeanTime = inRoom && DragMask == 0 ? LeanTime + dt : 0;
+            if (LeanTime > 0.5f)
+            {
+                LeanTime = 0;
+                DollhouseLeaveTile = headTile;
+                LeanInRequested = true;
+            }
 
             // ---- where you're pointing, on the floor shown (or looking, without a pointer)
             var floorY = (PlayerLevel - 1) * LevelHeightTiles * TileUnits;

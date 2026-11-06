@@ -89,6 +89,14 @@ namespace Simitone.Client.VR
             return true;
         }
 
+        /// <summary>The pixel a point (tracking space) is over, and how far in front of the panel it is (metres). False if it's off the panel.</summary>
+        public bool PointAt(Vector3 point, out Vector2 pixel, out float distance)
+        {
+            var uv = VRMath.PointOnPlane(point, PanelPosition, PanelOrientation, WidthMetres, WidthMetres * Height / Width, out distance);
+            pixel = new Vector2(uv.X * Width, uv.Y * Height);
+            return Shown && VRMath.Inside(uv);
+        }
+
         /// <summary>The panel's mouse: at a pixel (or away from the panel), with the trigger and grip as its buttons.</summary>
         public void SetMouse(Vector2? pixel, bool left, bool right)
         {

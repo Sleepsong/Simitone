@@ -33,6 +33,7 @@ namespace Simitone.Client.VR
         private float GazeLostFor = 10;
         private const float GazeSmoothing = 50, GazeReturn = 9; // per second
         private string LastMode;
+        private GLMultiview PassMultiview; // (while a single-pass stereo pass draws)
 
         private static readonly BlendState WriteAlphaOnly = new BlendState
         {
@@ -131,8 +132,13 @@ namespace Simitone.Client.VR
                 PPXDepthEngine.SetPPXTarget(outA, null, true, clear);
                 mv.Begin(target, VRMath.ClipDelta(viewProjection, a.View * a.Projection(near, far)),
                     VRMath.ClipDelta(viewProjection, b.View * b.Projection(near, far)));
+                PassMultiview = mv;
                 try { drawWorld(); }
-                finally { mv.End(); }
+                finally
+                {
+                    PassMultiview = null;
+                    mv.End();
+                }
                 mv.CopyLayer(target, 0, outA);
                 mv.CopyLayer(target, 1, outB);
                 return;
@@ -144,6 +150,25 @@ namespace Simitone.Client.VR
             PPXDepthEngine.SetPPXTarget(outB, null, true, clear);
             drawWorld();
         }
+
+        /// <summary>
+        /// What's drawn now can be clipped to one side of a plane: a single-pass stereo pass is drawing, whose shaders
+        /// do it. (Drawing each eye separately uses the game's shaders as they are, which can't.)
+        /// </summary>
+        public bool CanClip => PassMultiview != null;
+
+        /// <summary>
+        /// Until <see cref="ClearClipPlane"/>, only what's on the kept side of <paramref name="worldPlane"/> (where
+        /// dot(plane, (p, 1)) >= 0) is drawn, for draws through <paramref name="viewProjection"/>. False if it can't be.
+        /// </summary>
+        public bool SetClipPlane(Vector4 worldPlane, Matrix viewProjection)
+        {
+            if (PassMultiview == null) return false;
+            PassMultiview.SetClipPlane(VRMath.ClipPlane(worldPlane, viewProjection));
+            return true;
+        }
+
+        public void ClearClipPlane() => PassMultiview?.SetClipPlane(null);
 
         /// <summary>The soft view stretched over the eye, the sharp square blended in where it belongs, and their depth.</summary>
         private void Composite(RenderTarget2D eye, RenderTarget2D soft, RenderTarget2D sharp, Rectangle rect)

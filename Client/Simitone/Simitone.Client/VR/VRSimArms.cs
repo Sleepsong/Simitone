@@ -79,6 +79,89 @@ namespace Simitone.Client.VR
             set = want.Value;
         }
 
+        private sealed class Legs
+        {
+            public Skeleton Skeleton;
+            public int LeftHip = -1, RightHip = -1;
+            public int[] LeftSet, RightSet;
+        }
+        private Legs CurrentLegs;
+
+        /// <summary>
+        /// A Sim held up in the dollhouse kicks their legs: each thigh (and everything below it) swings forward and back
+        /// from the hip, the two in turn, over the game's own animation, for drawing only (as <see cref="Apply"/>).
+        /// </summary>
+        public void Kick(AvatarComponent avatar, float time)
+        {
+            var model = avatar?.Avatar;
+            var skeleton = model?.Skeleton;
+            if (skeleton?.Bones == null || SkelBonesField == null) return;
+            if (!(SkelBonesField.GetValue(model) is Matrix[] bones) || bones.Length != skeleton.Bones.Length) return;
+            if (!ReferenceEquals(bones, LastArray))
+            {
+                LastArray = bones;
+                if (Animated.Length != bones.Length)
+                {
+                    Animated = new Matrix[bones.Length];
+                    AnimatedBones = new Matrix[bones.Length];
+                }
+                Array.Copy(bones, Animated, bones.Length);
+                for (int i = 0; i < bones.Length; i++) AnimatedBones[i] = skeleton.Bones[i].AbsoluteMatrix;
+            }
+            else
+            {
+                // (not animated again since last frame: start from the game's pose, not last frame's kick)
+                Array.Copy(Animated, bones, bones.Length);
+                for (int i = 0; i < bones.Length; i++)
+                {
+                    skeleton.Bones[i].AbsoluteMatrix = AnimatedBones[i];
+                    skeleton.Bones[i].AbsolutePosition = AnimatedBones[i].Translation;
+                }
+            }
+            KickPose(skeleton, bones, time);
+        }
+
+        /// <summary>
+        /// The kick itself, on a pose (<paramref name="bones"/>: each bone's matrix in the model, as the skeleton's):
+        /// the legs swung about the line through the hips, about 25 degrees each way, in turn, 1.6 times a second.
+        /// False for a skeleton without legs.
+        /// </summary>
+        public bool KickPose(Skeleton skeleton, Matrix[] bones, float time)
+        {
+            var legs = LegsFor(skeleton);
+            if (legs == null) return false;
+            var across = bones[legs.LeftHip].Translation - bones[legs.RightHip].Translation;
+            if (across.LengthSquared() < 1e-6f) return false;
+            across.Normalize();
+            var swing = 0.45f * (float)Math.Sin(time * MathHelper.TwoPi * 1.6f);
+            Rotate(bones, skeleton, legs.LeftSet, bones[legs.LeftHip].Translation, Quaternion.CreateFromAxisAngle(across, swing));
+            Rotate(bones, skeleton, legs.RightSet, bones[legs.RightHip].Translation, Quaternion.CreateFromAxisAngle(across, -swing));
+            return true;
+        }
+
+        /// <summary>The hips (the joint above the knee above each foot), found as the arms are; null if there are no feet.</summary>
+        private Legs LegsFor(Skeleton skeleton)
+        {
+            if (CurrentLegs != null && CurrentLegs.Skeleton == skeleton) return CurrentLegs.LeftHip >= 0 ? CurrentLegs : null;
+            CurrentLegs = new Legs { Skeleton = skeleton };
+            var index = new Dictionary<Bone, int>();
+            for (int i = 0; i < skeleton.Bones.Length; i++) index[skeleton.Bones[i]] = i;
+            Bone Hip(string foot)
+            {
+                var f = skeleton.GetBone(foot);
+                var knee = f == null ? null : Joint(skeleton, f, f.AbsolutePosition);
+                return knee == null ? null : Joint(skeleton, knee, knee.AbsolutePosition);
+            }
+            var left = Hip("L_FOOT");
+            var right = Hip("R_FOOT");
+            if (left == null || right == null || !index.ContainsKey(left) || !index.ContainsKey(right)) return null;
+            CurrentLegs.LeftHip = index[left];
+            CurrentLegs.RightHip = index[right];
+            CurrentLegs.LeftSet = Below(left, index);
+            CurrentLegs.RightSet = Below(right, index);
+            return CurrentLegs;
+        }
+
         /// <summary>Gives the hands back to the game's poses.</summary>
         public void Release()
         {

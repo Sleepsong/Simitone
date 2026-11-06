@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using FSO.Client;
 using FSO.Client.UI.Controls;
 using FSO.Client.UI.Framework;
+using FSO.Common.Rendering.Framework.IO;
 using FSO.Common.Rendering.Framework.Model;
+using FSO.Common.Utils;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Simitone.Client.UI.Controls;
@@ -242,13 +244,14 @@ namespace Simitone.Client.VR
     public class VRNeedsPanel : VRUIPanel
     {
         private const int QueueTop = 34, MotivesTop = 250, RowHeight = 58;
-        private const int PanelWidth = 420, PanelHeight = MotivesTop + 4 * RowHeight + 80;
+        private const int PanelWidth = 420, DialTop = MotivesTop + 4 * RowHeight + 76, PanelHeight = DialTop + 142;
         private static readonly string[] MotiveNames = { "Hunger", "Comfort", "Hygiene", "Bladder", "Energy", "Fun", "Social", "Room" };
 
         private readonly UILabel NameLabel, ActionLabel;
         private readonly UIContainer QueueArea;
         private readonly List<(ushort uid, UIInteraction ui, bool cancelled)> QueueUI = new List<(ushort, UIInteraction, bool)>();
         private readonly UIMotiveBar[] Bars = new UIMotiveBar[8];
+        private readonly UIVRSpeedDial Dial;
 
         public VRNeedsPanel() : base(PanelWidth, PanelHeight, 0.09f)
         {
@@ -289,13 +292,28 @@ namespace Simitone.Client.VR
             menuLabel.Size = new Vector2(200, 75);
             menuLabel.Position = new Vector2(100, MotivesTop + 4 * RowHeight - 10);
             Add(menuLabel);
+
+            // the game's speed, as a dial: pause, normal, fast, fastest
+            var speedLabel = VRUI.Label("Speed", 19, UIStyle.Current.Text, TextAlignment.Left | TextAlignment.Middle);
+            speedLabel.Size = new Vector2(100, 60);
+            speedLabel.Position = new Vector2(16, DialTop + 40);
+            Add(speedLabel);
+            Dial = new UIVRSpeedDial { Position = DialPosition };
+            Dial.OnSet += speed => SimitoneVR.RequestSpeed(speed);
+            Add(Dial);
         }
+
+        private static readonly Vector2 DialPosition = new Vector2(150, DialTop);
+
+        /// <summary>Where a speed's stop on the dial is (0 pause to 3 fastest), in the panel's pixels.</summary>
+        public static Vector2 DialStop(int speed) => DialPosition + UIVRSpeedDial.Stop(speed);
 
         protected override void Refresh(UpdateState state)
         {
             var data = SimitoneVR.HudProvider?.Invoke();
             if (data == null || !data.Valid) return;
             if (NameLabel.Caption != data.SimName) NameLabel.Caption = data.SimName ?? "";
+            Dial.Speed = data.Speed;
             for (int i = 0; i < 8; i++) Bars[i].MotiveValue = (int)data.Motives[i];
             var action = data.QueueCount > 0 ? data.Queue[0].Name : "";
             if (ActionLabel.Caption != action) ActionLabel.Caption = action;
@@ -332,6 +350,78 @@ namespace Simitone.Client.VR
                     QueueUI[i] = (uid, ui, true);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// The game's speed as a dial: its four speed buttons (pause, normal, fast, fastest) around an arc, the current one
+    /// lit and the needle pointing at it. Point at one and pull the trigger. Dimmed in buy and build, where the game is
+    /// paused anyway.
+    /// </summary>
+    public class UIVRSpeedDial : UIContainer
+    {
+        private const float Radius = 78;
+        private static readonly Vector2 Centre = new Vector2(120, 104);
+        private static readonly string[] IconNames = { "speedbtn_4.png", "speedbtn_1.png", "speedbtn_2.png", "speedbtn_3.png" };
+        private readonly Texture2D[] Icons = new Texture2D[4];
+        private readonly bool[] Hover = new bool[4];
+        /// <summary>0 paused, 1-3 speed, -1 buy/build/options.</summary>
+        public int Speed = 1;
+        public event Action<int> OnSet;
+
+        public UIVRSpeedDial()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                Icons[i] = VRUI.CustomUI(IconNames[i]);
+                var stop = i;
+                var at = Stop(i);
+                ListenForMouse(new Rectangle((int)at.X - 24, (int)at.Y - 26, 48, 52), (type, state) =>
+                {
+                    if (type == UIMouseEventType.MouseOver) Hover[stop] = true;
+                    else if (type == UIMouseEventType.MouseOut) Hover[stop] = false;
+                    else if (type == UIMouseEventType.MouseUp && Hover[stop] && Speed >= 0 && Speed != stop)
+                    {
+                        OnSet?.Invoke(stop);
+                        FSO.HIT.HITVM.Get()?.PlaySoundEvent(FSO.Client.UI.Model.UISounds.Click);
+                    }
+                });
+            }
+        }
+
+        /// <summary>Where a stop sits: on an arc over the knob, pause on the left to fastest on the right.</summary>
+        public static Vector2 Stop(int i)
+        {
+            var angle = MathHelper.Pi - i * MathHelper.Pi / 3;
+            return Centre + new Vector2((float)Math.Cos(angle), -(float)Math.Sin(angle)) * Radius;
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
+            if (!Visible) return;
+            var enabled = Speed >= 0;
+            var dim = enabled ? 1f : 0.35f;
+            var knob = VRUI.CustomUI("pswitch_icon_bg.png");
+            var px = TextureGenerator.GetPxWhite(batch.GraphicsDevice);
+            DrawLocalTexture(batch, knob, null, Centre - new Vector2(30), new Vector2(60f / knob.Width), new Color(104, 164, 184) * dim);
+            if (enabled)
+            {
+                // the needle, from the knob to the current speed
+                var to = Stop(Speed) - Centre;
+                var angle = (float)Math.Atan2(to.Y, to.X);
+                DrawLocalTexture(batch, px, null, Centre, new Vector2(Radius - 30, 6), UIStyle.Current.SecondaryText, angle, new Vector2(0, 0.5f));
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                var icon = Icons[i];
+                if (icon == null) continue;
+                var lit = enabled && i == Speed;
+                var frame = new Rectangle(lit ? icon.Width / 2 : 0, 0, icon.Width / 2, icon.Height);
+                var scale = (Hover[i] && enabled ? 1.35f : 1.2f);
+                var size = new Vector2(frame.Width, frame.Height) * scale;
+                DrawLocalTexture(batch, icon, frame, Stop(i) - size / 2, new Vector2(scale), Color.White * dim);
+            }
+            base.Draw(batch);
         }
     }
 }

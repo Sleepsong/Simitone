@@ -318,6 +318,23 @@ namespace Simitone.Client.VR
             }
         }
 
+        /// <summary>
+        /// The item whose tile a point (a fingertip, tracking space) is on, within <paramref name="reach"/> metres of the
+        /// tablet's face: for pulling it out with your hand. -1 for none.
+        /// </summary>
+        public int ItemAt(Vector3 point, float reach)
+        {
+            if (Source == null || HeldShown || !PointAt(point, out var pixel, out var distance) || Math.Abs(distance) > reach) return -1;
+            for (int i = 0; i < PerPage; i++)
+            {
+                var tile = Tiles[i];
+                if (!tile.Visible) continue;
+                var r = new Rectangle((int)tile.X, (int)tile.Y, TileW, TileH);
+                if (r.Contains((int)pixel.X, (int)pixel.Y)) return Page * PerPage + i;
+            }
+            return -1;
+        }
+
         private void SetHeldShown(bool shown)
         {
             HeldShown = shown;

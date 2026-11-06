@@ -107,6 +107,52 @@ namespace Simitone.VR
             => Matrix.Invert(viewProjectionFrom) * viewProjectionTo;
 
         /// <summary>
+        /// A plane in the world (a point p is on its kept side when dot(plane, (p, 1)) >= 0) as the same plane in the clip
+        /// space of a view-projection (row vectors, as XNA): dot(result, (p, 1) * viewProjection) = dot(plane, (p, 1)).
+        /// For clipping drawing to one side of it in a shader (<see cref="Graphics.GLMultiview.SetClipPlane"/>).
+        /// </summary>
+        public static Vector4 ClipPlane(Vector4 worldPlane, Matrix viewProjection)
+        {
+            // result = plane * inverse(viewProjection)^T; the inverse in double precision (a perspective projection's,
+            // inverted in floats, is off by a few hundredths of a unit at the lot's distances: a visible seam)
+            var m = new double[4, 8];
+            for (int r = 0; r < 4; r++)
+            {
+                for (int c = 0; c < 4; c++) m[r, c] = Element(viewProjection, r, c);
+                m[r, 4 + r] = 1;
+            }
+            for (int col = 0; col < 4; col++)
+            {
+                var pivot = col;
+                for (int r = col + 1; r < 4; r++) if (Math.Abs(m[r, col]) > Math.Abs(m[pivot, col])) pivot = r;
+                if (Math.Abs(m[pivot, col]) < 1e-30) return Vector4.Zero; // (no inverse: nothing clipped)
+                if (pivot != col)
+                    for (int c = 0; c < 8; c++) (m[pivot, c], m[col, c]) = (m[col, c], m[pivot, c]);
+                var scale = 1 / m[col, col];
+                for (int c = 0; c < 8; c++) m[col, c] *= scale;
+                for (int r = 0; r < 4; r++)
+                {
+                    if (r == col || m[r, col] == 0) continue;
+                    var f = m[r, col];
+                    for (int c = 0; c < 8; c++) m[r, c] -= f * m[col, c];
+                }
+            }
+            double[] p = { worldPlane.X, worldPlane.Y, worldPlane.Z, worldPlane.W };
+            var result = new double[4];
+            for (int j = 0; j < 4; j++)
+                for (int i = 0; i < 4; i++) result[j] += p[i] * m[j, 4 + i]; // (inverse[j, i]: the transpose)
+            return new Vector4((float)result[0], (float)result[1], (float)result[2], (float)result[3]);
+        }
+
+        private static double Element(Matrix m, int row, int column) => (row * 4 + column) switch
+        {
+            0 => m.M11, 1 => m.M12, 2 => m.M13, 3 => m.M14,
+            4 => m.M21, 5 => m.M22, 6 => m.M23, 7 => m.M24,
+            8 => m.M31, 9 => m.M32, 10 => m.M33, 11 => m.M34,
+            _ => row == 3 ? (column == 0 ? m.M41 : column == 1 ? m.M42 : column == 2 ? m.M43 : m.M44) : 0
+        };
+
+        /// <summary>
         /// A smaller view inside <paramref name="eye"/> (same viewpoint): a square of half-size
         /// <paramref name="halfTangent"/> centred on <paramref name="centre"/> (tangents), slid back inside the eye's
         /// field of view if it would cross an edge. Used for the sharp centre of foveated rendering.
@@ -192,6 +238,17 @@ namespace Simitone.VR
         }
 
         public static bool Inside(Vector2 uv) => uv.X >= 0 && uv.X <= 1 && uv.Y >= 0 && uv.Y <= 1;
+
+        /// <summary>
+        /// Where a point is over a panel (as <see cref="RayPlane"/>'s uv: 0..1 left to right and top to bottom) and how far
+        /// in front of it (metres; negative behind).
+        /// </summary>
+        public static Vector2 PointOnPlane(Vector3 point, Vector3 position, Quaternion orientation, float width, float height, out float distance)
+        {
+            var local = Vector3.Transform(point - position, Quaternion.Inverse(orientation));
+            distance = local.Z;
+            return new Vector2(local.X / width + 0.5f, 0.5f - local.Y / height);
+        }
 
         /// <summary>A direction's tangents in a view (x / -z, y / -z); null if it points behind.</summary>
         public static Vector2? Tangents(in ViewFrustum view, Vector3 worldDirection)

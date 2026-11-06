@@ -15,6 +15,8 @@ namespace Simitone.VR.Graphics
     /// position times the eye's clip-space delta (<see cref="VRMath.ClipDelta"/>), from a uniform block. Everything
     /// else the shader computes is unchanged. Attribute locations are pinned to the original program's, since
     /// MonoGame caches them per shader. Returns null if the shader doesn't look like MonoGame's.
+    /// It also writes a clip distance (that position dotted with a plane from the same block, see
+    /// <see cref="Simitone.VR.VRMath.ClipPlane"/>), which only clips while GL_CLIP_DISTANCE0 is on (<see cref="GLMultiview.SetClipPlane"/>).
     /// </summary>
     public static class MultiviewShaderPatch
     {
@@ -41,7 +43,9 @@ namespace Simitone.VR.Graphics
                 }
                 if (!inserted && trimmed == FixupLine)
                 {
-                    // (before MonoGame's own clip-space fix-ups, which are linear and the same for both eyes)
+                    // (before MonoGame's own clip-space fix-ups, which are linear and the same for both eyes; the clip
+                    // distance from the shared view's position, as the plane is given for it)
+                    body.Append("\tgl_ClipDistance[0] = dot(gl_Position, simitone_clip);\n");
                     body.Append("\tgl_Position += simitone_stereo_delta[int(gl_ViewID_OVR)] * gl_Position;\n");
                     inserted = true;
                 }
@@ -57,8 +61,8 @@ namespace Simitone.VR.Graphics
             header.Append("#extension GL_ARB_explicit_attrib_location : require\n");
             foreach (var e in extensions) header.Append(e).Append('\n');
             header.Append("layout(num_views = 2) in;\n");
-            // (each eye's delta minus identity: an unset block reads as zeros, i.e. no change)
-            header.Append($"layout(std140, binding = {StereoBinding}) uniform SimitoneStereo {{ mat4 simitone_stereo_delta[2]; }};\n");
+            // (each eye's delta minus identity: an unset block reads as zeros, i.e. no change; then the clip plane)
+            header.Append($"layout(std140, binding = {StereoBinding}) uniform SimitoneStereo {{ mat4 simitone_stereo_delta[2]; vec4 simitone_clip; }};\n");
             return header.ToString() + body;
         }
     }
@@ -101,7 +105,7 @@ namespace Simitone.VR.Graphics
         private readonly List<(object shader, object handle)> Swapped = new List<(object, object)>();
         private uint Ubo;
         private int SavedDraw, SavedRead;
-        private bool InPass;
+        private bool InPass, Clipping;
         private int TrivialFragment;
 
         // MonoGame internals
@@ -119,7 +123,9 @@ namespace Simitone.VR.Graphics
             GL_FRAMEBUFFER_COMPLETE = 0x8CD5, GL_UNIFORM_BUFFER = 0x8A11, GL_UNIFORM_BUFFER_BINDING = 0x8A28, GL_DYNAMIC_DRAW = 0x88E8,
             GL_VERTEX_SHADER = 0x8B31, GL_FRAGMENT_SHADER = 0x8B30, GL_COMPILE_STATUS = 0x8B81, GL_LINK_STATUS = 0x8B82,
             GL_INFO_LOG_LENGTH = 0x8B84, GL_EXTENSIONS = 0x1F03, GL_NUM_EXTENSIONS = 0x821D, GL_COLOR_BUFFER_BIT = 0x4000,
-            GL_DEPTH_BUFFER_BIT = 0x100, GL_STENCIL_BUFFER_BIT = 0x400, GL_SCISSOR_TEST = 0x0C11, GL_FRAMEBUFFER_SRGB = 0x8DB9;
+            GL_DEPTH_BUFFER_BIT = 0x100, GL_STENCIL_BUFFER_BIT = 0x400, GL_SCISSOR_TEST = 0x0C11, GL_FRAMEBUFFER_SRGB = 0x8DB9,
+            GL_CLIP_DISTANCE0 = 0x3000;
+        private const int UboSize = 144; // two mat4 (the eyes' deltas), then the clip plane (vec4)
 
         private static delegate* unmanaged<uint, int*, void> glGetIntegerv;
         private static delegate* unmanaged<uint, uint, byte*> glGetStringi;
@@ -159,7 +165,7 @@ namespace Simitone.VR.Graphics
             glGenBuffers(1, &id);
             Ubo = id;
             glBindBuffer(GL_UNIFORM_BUFFER, Ubo);
-            glBufferData(GL_UNIFORM_BUFFER, 128, null, GL_DYNAMIC_DRAW);
+            glBufferData(GL_UNIFORM_BUFFER, UboSize, null, GL_DYNAMIC_DRAW);
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
         }
 
@@ -492,11 +498,12 @@ namespace Simitone.VR.Graphics
         public void Begin(Target target, Matrix left, Matrix right)
         {
             if (InPass) throw new InvalidOperationException("stereo pass already running");
-            float* data = stackalloc float[32];
+            float* data = stackalloc float[36];
             Write(data, left - Matrix.Identity);
             Write(data + 16, right - Matrix.Identity);
+            data[32] = data[33] = data[34] = data[35] = 0; // (no clip plane)
             glBindBuffer(GL_UNIFORM_BUFFER, Ubo);
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, 128, data);
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, UboSize, data);
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
             glBindBufferBase(GL_UNIFORM_BUFFER, (uint)MultiviewShaderPatch.StereoBinding, Ubo);
 
@@ -521,10 +528,30 @@ namespace Simitone.VR.Graphics
             InPass = true;
         }
 
+        /// <summary>
+        /// Clips what's drawn from now on in this pass to one side of a plane, given in the clip space of the view the
+        /// pass is drawn for (<see cref="Simitone.VR.VRMath.ClipPlane"/> makes it from a plane in the world): what's on the side where
+        /// the plane's dot product is negative isn't drawn. Null stops clipping. Only during a pass (<see cref="Begin"/>),
+        /// where every shader is a variant that writes the clip distance.
+        /// </summary>
+        public void SetClipPlane(Vector4? plane)
+        {
+            if (!InPass) return;
+            var p = plane ?? Vector4.Zero;
+            float* data = stackalloc float[4] { p.X, p.Y, p.Z, p.W };
+            glBindBuffer(GL_UNIFORM_BUFFER, Ubo);
+            glBufferSubData(GL_UNIFORM_BUFFER, 128, 16, data);
+            glBindBuffer(GL_UNIFORM_BUFFER, 0);
+            if (plane != null && !Clipping) glEnable(GL_CLIP_DISTANCE0);
+            else if (plane == null && Clipping) glDisable(GL_CLIP_DISTANCE0);
+            Clipping = plane != null;
+        }
+
         /// <summary>Ends the stereo pass: MonoGame's own shaders and framebuffer are back.</summary>
         public void End()
         {
             if (!InPass) return;
+            SetClipPlane(null);
             InPass = false;
             foreach (var (shader, handle) in Swapped) ShaderHandle.SetValue(shader, handle);
             Swapped.Clear();

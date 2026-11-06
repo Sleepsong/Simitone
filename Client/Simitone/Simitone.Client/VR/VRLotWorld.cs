@@ -45,6 +45,10 @@ namespace Simitone.Client.VR
         /// </summary>
         public FSO.LotView.Components.AvatarComponent LiftedSim;
         public Vector3 LiftedFeet;
+        /// <summary>Set by the dollhouse: the lifted Sim is dangling from your hand (they kick their legs).</summary>
+        public bool LiftedDangling;
+        private readonly VRSimArms Kicker = new VRSimArms();
+        private float KickTime;
         private FSO.LotView.Components.AvatarComponent LiftRestore;
         private Vector3 LiftRestorePosition;
         private FSO.LotView.Components.EntityComponent LiftRestoreContainer;
@@ -53,6 +57,8 @@ namespace Simitone.Client.VR
         private Vector3 GlideShown;
         private readonly System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent part, Vector3 position)> GlideRestore
             = new System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent, Vector3)>();
+        private readonly System.Collections.Generic.List<FSO.LotView.Components.EntityComponent> HiddenForLid
+            = new System.Collections.Generic.List<FSO.LotView.Components.EntityComponent>();
         private int FramesSinceInit;
         private bool AutoEntered;
 
@@ -207,10 +213,12 @@ namespace Simitone.Client.VR
                 Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime);
                 ApplyGlide(SimitoneVR.FrameDelta);
                 ApplyLift();
+                if (LiftedSim != null && LiftedDangling) Kicker.Kick(LiftedSim, KickTime += SimitoneVR.FrameDelta);
                 Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
                     base.InternalDraw(device);
+                    DrawLid(device);
                 });
 
                 // then what's drawn over it, per eye
@@ -248,6 +256,67 @@ namespace Simitone.Client.VR
                 MirrorBatch.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.LinearClamp, DepthStencilState.None, RasterizerState.CullNone);
                 MirrorBatch.Draw(src, new Rectangle(pos.ToPoint(), size.ToPoint()), Color.White);
                 MirrorBatch.End();
+            }
+        }
+
+        /// <summary>
+        /// The floor lifted off the dollhouse (<see cref="VRCameraController.LidFloor"/>), where your hand has it. The lot
+        /// was just drawn with the floor below it shown (so without it); now it's drawn again with every floor up to the
+        /// lifted one, from a view moved the opposite way to the lid (so the house is drawn moved with it), and clipped to
+        /// what's above the lifted floor's underside: just that floor, its walls, furniture and Sims, in the air. No sky
+        /// and no clear, so it lands in the same picture. Clipping needs single-pass stereo's shaders: drawing each eye
+        /// separately, the lifted floor isn't drawn while it's off.
+        /// </summary>
+        private void DrawLid(GraphicsDevice device)
+        {
+            var vr = VRCamera;
+            var floor = vr.LidFloor;
+            if (floor < 2 || Stereo == null || !Stereo.CanClip || Architecture == null || Entities == null) return;
+            var cam = vr.EyeCamera;
+            var view = cam.View;
+            var projection = cam.Projection;
+            var moved = Matrix.CreateTranslation(vr.LidOffset) * view;
+            // (a hair under the floor, so the floor itself is all there; the tops of the walls below it are that hair)
+            if (!Stereo.SetClipPlane(new Vector4(0, 1, 0, -(vr.LidBase - 0.02f)), moved * projection)) return;
+            var level = State.Level;
+            var roofs = State.DrawRoofs;
+            var framePerDraw = State.FramePerDraw;
+            cam.SetCustom(moved, projection);
+            // what a hand holds below the lid (drawn where the hand is, already) isn't part of it, however high it's held
+            HiddenForLid.Clear();
+            if (LiftedSim != null && LiftedSim.Visible) HiddenForLid.Add(LiftedSim);
+            if (Held != null)
+                foreach (var obj in Held.Objects)
+                    if (obj.WorldUI is FSO.LotView.Components.EntityComponent part && part.Visible && obj.Position.Level < floor) HiddenForLid.Add(part);
+            foreach (var part in HiddenForLid) part.Visible = false;
+            try
+            {
+                State.SilentLevel = floor; // (the walls on it were made whole: it isn't the floor shown, which is cut)
+                State.DrawRoofs = false;
+                State.FramePerDraw = 0;    // (the lot's draw already moved its animations on this frame)
+                device.RasterizerState = RasterizerState.CullNone;
+                device.DepthStencilState = DepthStencilState.Default;
+                State._2D.OutputDepth = true;
+                State._2D.Begin(State.Camera2D);
+                State._2D.ResetMatrices(device.Viewport.Width, device.Viewport.Height);
+                // as World.InternalDraw, less the clear, the lighting (done) and the sky
+                Architecture.Draw2D(device, State);
+                State.PrepareCamera();
+                Entities.DrawAvatars(device, State);
+                Entities.Draw(device, State);
+                Entities.DrawAvatarTransparency(device, State);
+                State._2D.OutputDepth = false;
+            }
+            finally
+            {
+                Stereo.ClearClipPlane();
+                foreach (var part in HiddenForLid) part.Visible = true;
+                HiddenForLid.Clear();
+                State.SilentLevel = level;
+                State.DrawRoofs = roofs;
+                State.FramePerDraw = framePerDraw;
+                cam.SetCustom(view, projection);
+                State.PrepareCamera(); // (culling and the view as they were)
             }
         }
 

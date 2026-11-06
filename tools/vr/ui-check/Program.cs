@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using FSO.Client;
 using FSO.Client.UI;
 using FSO.Client.UI.Controls;
@@ -40,6 +41,9 @@ class UIGame : FSO.Common.Rendering.Framework.Game
     private UILayer UI;
     private int Frame;
     private readonly List<(string name, VRUIPanel panel, Action before)> Shots = new List<(string, VRUIPanel, Action)>();
+    /// <summary>What a shot does on each of its frames (by frame number), e.g. pressing a button, before it's taken.</summary>
+    private readonly Dictionary<string, Action<int>> During = new Dictionary<string, Action<int>>();
+    private bool DialFailed;
     private int Shot;
     private int ShotFrame;
     private VRCatalogThumbnails CatalogThumbs;
@@ -130,6 +134,25 @@ class UIGame : FSO.Common.Rendering.Framework.Game
 
         Shots.Add(("watch", wrists.Watch, () => wrists.Watch.Show()));
         Shots.Add(("needs", wrists.Needs, () => wrists.Needs.Show()));
+        // the speed dial on it: point at the fastest stop and pull the trigger
+        Shots.Add(("needs-dial", wrists.Needs, () =>
+        {
+            SimitoneVR.ConsumeSpeedSet();
+            wrists.Needs.Show();
+            wrists.Needs.SetMouse(VRNeedsPanel.DialStop(3), false, false);
+        }));
+        During["needs-dial"] = frame =>
+        {
+            var at = VRNeedsPanel.DialStop(3);
+            if (frame == 20) wrists.Needs.SetMouse(at, true, false);
+            if (frame == 24) wrists.Needs.SetMouse(at, false, false);
+            if (frame == 49)
+            {
+                var set = SimitoneVR.ConsumeSpeedSet();
+                Console.WriteLine($"{(set == 3 ? "ok  " : "FAIL")} wrist: the speed dial: pointing at the fastest stop and pulling the trigger asks for speed 3: asked for {set}");
+                if (set != 3) DialFailed = true;
+            }
+        };
         Shots.Add(("menu", menu, () => menu.Show()));
         Shots.Add(("setup-2", setup, () => setup.ShowPage(1)));
         Shots.Add(("setup-3", setup, () => setup.ShowPage(2)));
@@ -209,6 +232,7 @@ class UIGame : FSO.Common.Rendering.Framework.Game
                 if (CatalogCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("catalogue picture checks failed");
                 if (BundledCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("bundled controller model checks failed");
                 if (SoundCheck.Run() > 0) throw new Exception("3D sound checks failed");
+                if (DialFailed) throw new Exception("the speed dial check failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();
@@ -216,6 +240,7 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             }
             var (name, panel, before) = Shots[Shot];
             if (ShotFrame == 0) before();
+            if (During.TryGetValue(name, out var during)) during(ShotFrame);
             // let it settle: the UI layer updates and renders it, and its open animations finish
             if (++ShotFrame < 50) return;
             var image = panel.Image;
@@ -265,6 +290,10 @@ static class ArmCheck
             B(side + "_ARM2", side + "_ARM1", 0.9f * sx, 0, 0); // forearm, from the elbow
             B(side + "_HAND", side + "_ARM2", 0.8f * sx, 0, 0); // hand, from the wrist
             B(side + "_FINGER0", side + "_HAND", 0.3f * sx, 0, 0);
+            B(side + "_LEG", "PELVIS", 0.35f * sx, -0.2f, 0);  // hip
+            B(side + "_LEG1", side + "_LEG", 0, -1.4f, 0);       // knee
+            B(side + "_FOOT", side + "_LEG1", 0, -1.3f, 0);      // ankle
+            B(side + "_TOE0", side + "_FOOT", 0, -0.1f, -0.3f);
         }
         var skeleton = new FSO.Vitaboy.Skeleton { Name = "check", Bones = list.ToArray() };
         skeleton.BuildBoneDictionary();
@@ -392,6 +421,24 @@ static class ArmCheck
             var m0 = Matrices(s0);
             arms.Solve(s0, m0, 0, target, forward, null, Vector3.Zero);
             Check("weight 0: the arm is unchanged", P(s0, m0, "L_HAND") == before, "unchanged");
+        }
+
+        // ---- a Sim held up in the dollhouse kicks their legs (VRSimArms.KickPose): at the top of a swing the feet go
+        // opposite ways, forward and back, from hips that stay where they are, and the rest of them is untouched
+        {
+            var s = MakeSkeleton();
+            var m = Matrices(s);
+            var before = (Matrix[])m.Clone();
+            var kicked = new VRSimArms().KickPose(s, m, 1 / (4 * 1.6f)); // (a quarter of a kick: the furthest swing)
+            Vector3 Moved(string name) => P(s, m, name) - before[s.GetBone(name).Index].Translation;
+            var left = Moved("L_FOOT");
+            var right = Moved("R_FOOT");
+            var legLength = Vector3.Distance(P(s, m, "L_LEG"), P(s, m, "L_FOOT"));
+            var restLength = Vector3.Distance(before[s.GetBone("L_LEG").Index].Translation, before[s.GetBone("L_FOOT").Index].Translation);
+            var rest = Moved("L_LEG").Length() + Moved("R_LEG").Length() + Moved("HEAD").Length() + Moved("L_HAND").Length();
+            Check("a lifted Sim kicks: the feet swing opposite ways from still hips", kicked && left.Z * right.Z < 0
+                && Math.Abs(left.Z) > 1f && Math.Abs(left.Z + right.Z) < 1e-3f && Math.Abs(legLength - restLength) < 1e-3f && rest < 1e-4f,
+                $"left foot {left.Z:0.00}, right foot {right.Z:0.00} units forward; leg {legLength:0.000} long (was {restLength:0.000}); the rest moved {rest:0.0000}");
         }
 
         // ---- a skeleton without arms is left alone
@@ -713,6 +760,33 @@ static class MultiviewCheck
             blue.count == 4096 && yellowOverRed.count > 500 && yellowOverRed.count < 1200,
             $"{blue.count} blue px in front (all of it); {yellowOverRed.count} yellow px, only where the red quad isn't");
 
+        // a clip plane (the dollhouse's lifted floor): only what's on its kept side is drawn, in both layers, and only
+        // until it's cleared; here the left half of the shared view (x <= 0 in its clip space)
+        gd.SetRenderTarget(normal);
+        mv.Begin(target, Matrix.Identity, shift);
+        gd.Clear(Color.Black);
+        mv.SetClipPlane(Simitone.VR.VRMath.ClipPlane(new Vector4(-1, 0, 0, 0), Matrix.Identity));
+        basic.World = basic.View = basic.Projection = Matrix.Identity;
+        gd.DepthStencilState = DepthStencilState.Default;
+        gd.RasterizerState = RasterizerState.CullNone;
+        foreach (var pass in basic.CurrentTechnique.Passes) { pass.Apply(); gd.DrawUserPrimitives(PrimitiveType.TriangleStrip, quad, 0, 2); }
+        mv.SetClipPlane(null);
+        var lower = Array.ConvertAll(quad, v => new VertexPositionColor(v.Position + new Vector3(0, -0.6f, 0), Color.Blue));
+        foreach (var pass in basic.CurrentTechnique.Passes) { pass.Apply(); gd.DrawUserPrimitives(PrimitiveType.TriangleStrip, lower, 0, 2); }
+        mv.End();
+        mv.CopyLayer(target, 0, left);
+        mv.CopyLayer(target, 1, right);
+        var clipErrors = mv.LastError();
+        var cl = Find(left, Red);
+        var cr = Find(right, Red);
+        var bl = Find(left, c => c.B > 200 && c.R < 50 && c.G < 50);
+        Check("a clip plane cuts what's drawn in both layers", cl.count > 1500 && cl.count < 2300 && Math.Abs(cl.centre.X - 112) < 2
+            && cr.count == cl.count && Math.Abs(cr.centre.X - cl.centre.X - 64) < 2,
+            $"left {cl.count} px at {cl.centre}, right {cr.count} px at {cr.centre} (half the quad: about 2048 px, its middle 16 px left of the quad's)");
+        Check("and only until it's cleared", bl.count > 3000, $"{bl.count} px of the next quad, uncut");
+        Check("no GL errors with clipping", clipErrors == 0, $"0x{clipErrors:x}");
+        using (var f = File.Create(Path.Combine(outDir, "multiview-clipped-left.png"))) left.SaveAsPng(f, size, size);
+
         // and normal drawing still works after the pass
         gd.SetRenderTarget(normal);
         Scene();
@@ -877,6 +951,76 @@ static class StereoCheck
         Render(false, VRFoveation.Light, null, out var fov2Mode, out var fov2Passes, "stereo-foveated-two-pass.png");
         Check("foveated without single pass draws four times (centre, no eye tracking)", fov2Passes == 4 && fov2Mode.Contains("centre"),
             $"{fov2Passes} draws a frame ({fov2Mode})");
+
+        // the dollhouse lid (VRLotWorld.DrawLid): the house below drawn, then everything drawn again from a view moved
+        // with the lid and clipped to what's above its floor. Boxes above a cut and boxes below it: drawn that way in
+        // a single pass, it must look the same as drawing the boxes below, and the boxes above moved, separately per eye
+        var cut = head.Y - 0.5f * w;
+        var lift = new Vector3(0.3f, 0.5f, -0.1f) * w;
+        var lower = new List<VertexPositionColor>();
+        var upper = new List<VertexPositionColor>();
+        for (int i = 0; i < scene.Length; i += 36)
+        {
+            float lo = float.MaxValue, hi = float.MinValue;
+            for (int k = i; k < i + 36 && k < scene.Length; k++) { lo = Math.Min(lo, scene[k].Position.Y); hi = Math.Max(hi, scene[k].Position.Y); }
+            var box = new ArraySegment<VertexPositionColor>(scene, i, Math.Min(36, scene.Length - i));
+            if (hi < cut - 0.05f) lower.AddRange(box);
+            else if (lo > cut + 0.05f) upper.AddRange(box);
+        }
+        var lowerBoxes = lower.ToArray();
+        var both = lower.Concat(upper).ToArray();
+        var upperBoxes = upper.ToArray();
+        void Boxes(VertexPositionColor[] boxes, Matrix world)
+        {
+            if (boxes.Length == 0) return;
+            effect.World = world;
+            effect.View = cam.View;
+            effect.Projection = cam.Projection;
+            gd.DepthStencilState = DepthStencilState.Default;
+            gd.RasterizerState = RasterizerState.CullNone;
+            gd.BlendState = BlendState.Opaque;
+            foreach (var pass in effect.CurrentTechnique.Passes) { pass.Apply(); gd.DrawUserPrimitives(PrimitiveType.TriangleList, boxes, 0, boxes.Length / 3); }
+        }
+        var refused = false;
+        Color[][] RenderLid(bool singlePass, bool reference, string file)
+        {
+            settings.SinglePassStereo = singlePass;
+            settings.Foveation = VRFoveation.Off;
+            var eyes = Eyes();
+            renderer.Render(cam, eyes, new Color(40, 50, 70), null, () =>
+            {
+                gd.Clear(new Color(40, 50, 70));
+                Boxes(lowerBoxes, Matrix.Identity);
+                if (reference) { Boxes(upperBoxes, Matrix.CreateTranslation(lift)); return; }
+                var view = cam.View;
+                var projection = cam.Projection;
+                var moved = Matrix.CreateTranslation(lift) * view;
+                if (!renderer.SetClipPlane(new Vector4(0, 1, 0, -cut), moved * projection)) { refused = true; return; }
+                cam.SetCustom(moved, projection);
+                Boxes(both, Matrix.Identity);
+                renderer.ClearClipPlane();
+                cam.SetCustom(view, projection);
+            });
+            gd.SetRenderTarget(null);
+            var result = new Color[2][];
+            for (int i = 0; i < 2; i++) { result[i] = new Color[W * H]; eyes[i].GetData(result[i]); }
+            using (var f = File.Create(Path.Combine(outDir, file))) { SideBySide(gd, eyes).SaveAsPng(f, W * 2, H); }
+            foreach (var e in eyes) e.Dispose();
+            return result;
+        }
+        var lidReference = RenderLid(false, true, "stereo-lid-reference.png");
+        var lidSingle = RenderLid(true, false, "stereo-lid.png");
+        for (int i = 0; i < 2; i++)
+        {
+            var (differing, mean) = Compare(lidReference[i], lidSingle[i]);
+            Check($"the lid: drawn again moved and clipped, it's where it was moved to, and nothing else is ({(i == 0 ? "left" : "right")} eye)",
+                differing < 0.003f && mean < 1f && !refused,
+                $"{lowerBoxes.Length / 36} boxes below the cut, {upperBoxes.Length / 36} above; {differing * 100:0.000}% of pixels differ, mean error {mean:0.00}/255");
+        }
+        var moved0 = Compare(lidSingle[0], single[0]).differing;
+        Check("the lid: it did move", moved0 > 0.01f, $"{moved0 * 100:0.0}% of the left eye differs from the scene unmoved");
+        RenderLid(false, false, "stereo-lid-two-pass.png");
+        Check("the lid: drawing each eye separately can't clip, and says so", refused, refused ? "SetClipPlane refused" : "it didn't refuse");
         return Failures;
     }
 

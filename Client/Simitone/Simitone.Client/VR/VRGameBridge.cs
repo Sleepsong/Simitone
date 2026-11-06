@@ -193,6 +193,15 @@ namespace Simitone.Client.VR
             var inDollhouse = immersive && camera.InDollhouse;
             SimitoneVR.Dollhouse = inDollhouse;
             Dollhouse.Update(Screen, world, camera, input, inDollhouse, UpdateDelta);
+            if (Dollhouse.ConsumeTap(out var tapped)) OpenPieFor(lc, camera, vm.GetObjectById(tapped), state);
+            if (camera.ConsumeLeanIn() && inDollhouse)
+            {
+                // you put your head into a room: in you go, as the observer
+                SimitoneVR.PlayMode = VRPlayMode.Observer;
+                HITVM.Get()?.PlaySoundEvent(UISounds.Whoosh);
+                SimitoneVR.Log("dollhouse: leaned into a room");
+            }
+            UpdateDollhouseCutaway(vm, world, camera, inDollhouse);
             SimitoneVR.DollhouseAutoBuy = Dollhouse.AutoBuyMode;
             UpdateBuildMode(camera, lc, immersive && vrBuild);
 
@@ -803,6 +812,23 @@ namespace Simitone.Client.VR
             if (lc.PieMenuOpen) SimitoneVR.Runtime?.Haptic(true, 0.35f, 0.03f);
         }
 
+        /// <summary>
+        /// Opens an object's or Sim's pie menu over it, as pointing at it and pulling the trigger does (a fingertip tap
+        /// in the dollhouse).
+        /// </summary>
+        private static void OpenPieFor(Simitone.Client.UI.Panels.UILotControl lc, VRCameraController camera, VMEntity target, UpdateState state)
+        {
+            if (target == null || target.Dead || lc.PieMenuOpen || !lc.LiveMode) return;
+            var pp = GameFacade.GraphicsDevice.PresentationParameters;
+            var centre = new Vector2(pp.BackBufferWidth, pp.BackBufferHeight) / 2 / FSOEnvironment.DPIScaleFactor;
+            var vp = target.VisualPosition;
+            SimitoneVR.SetPieAnchor(camera.WorldToTracking(new Vector3(vp.X * VRCameraController.TileUnits,
+                vp.Z * VRCameraController.TileUnits + 1.5f, vp.Y * VRCameraController.TileUnits)));
+            var p = target.Position;
+            lc.OpenPieMenu(target, new Vector2(p.x / 16f, p.y / 16f), centre, state);
+            if (lc.PieMenuOpen) SimitoneVR.Runtime?.Haptic(true, 0.35f, 0.03f);
+        }
+
         private static bool RayHitsSphere(Vector3 start, Vector3 dir, Vector3 centre, float radius, out float distance)
         {
             distance = Vector3.Dot(centre - start, dir);
@@ -840,6 +866,45 @@ namespace Simitone.Client.VR
             // (the tablet in your hand drives it unseen).
             var showFrontend = vrBuild && !SimitoneVR.CatalogInHand && !SimitoneVR.DollhouseAutoBuy;
             if (immersive && frontend != null && frontend.Visible != showFrontend) frontend.Visible = showFrontend;
+        }
+
+        private sbyte CutLevel = -1;
+        private FSO.LotView.WorldRotation CutRotation;
+        private float CutAge;
+
+        /// <summary>
+        /// The dollhouse's cutaway: the walls of every room on the floor shown that face you are cut away, as the game's
+        /// cutaway mode does (its own room cut, VMArchitectureTools.GenerateRoomCut), from the side you're looking at
+        /// the model from; worked out again when you go round to another side, change floor, or every second (rooms
+        /// change as you build).
+        /// </summary>
+        private void UpdateDollhouseCutaway(VM vm, VRLotWorld world, VRCameraController camera, bool inDollhouse)
+        {
+            var bp = world.LotBlueprint;
+            if (!inDollhouse || SimitoneVR.Settings.BuildWalls != VRWallView.Cutaway || bp == null || vm.Context?.RoomInfo == null)
+            {
+                CutLevel = -1;
+                return;
+            }
+            var level = world.State.Level;
+            var rotation = world.State.CutRotation;
+            CutAge += UpdateDelta;
+            if (level == CutLevel && rotation == CutRotation && CutAge < 1f) return;
+            CutLevel = level;
+            CutRotation = rotation;
+            CutAge = 0;
+            var rooms = new System.Collections.Generic.HashSet<uint>();
+            foreach (var info in vm.Context.RoomInfo)
+                if (!info.Room.IsOutside && info.Room.Floor == level - 1) rooms.Add(info.Room.RoomID);
+            try
+            {
+                bp.Cutaway = FSO.SimAntics.Utils.VMArchitectureTools.GenerateRoomCut(vm.Context.Architecture, level, rotation, rooms);
+                bp.Changes.SetFlag(FSO.LotView.BlueprintGlobalChanges.WALL_CUT_CHANGED);
+            }
+            catch (Exception e)
+            {
+                SimitoneVR.Log("dollhouse cutaway: " + e.Message);
+            }
         }
 
         /// <summary>Buy/build mode in first person: what the camera's cursor does, rotating, and grabbing.</summary>
@@ -939,7 +1004,16 @@ namespace Simitone.Client.VR
 
             var pause = SimitoneVR.ConsumePauseRequest();
             var speed = SimitoneVR.ConsumeSpeedRequest();
+            var dial = SimitoneVR.ConsumeSpeedSet();
+            if (SimitoneVR.ConsumeDollhouseRefit()) camera.RefitDollhouse();
             if (vm.SpeedMultiplier < 0) return; // -1 = build/buy/options mode
+            if (dial >= 0)
+            {
+                // the wrist's speed dial
+                if (dial == 0 && CurrentSpeed(vm) > 0) SpeedBeforePause = CurrentSpeed(vm);
+                Screen.ChangeSpeedTo(dial);
+                return;
+            }
             var current = CurrentSpeed(vm);
             if (pause)
             {
