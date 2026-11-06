@@ -313,6 +313,22 @@ namespace Simitone.Client.UI.Screens
         /// <summary>Whether a flashing button is lit now (twice a second, half the time).</summary>
         public static bool FlashOn => (Environment.TickCount / 500) % 2 == 0;
 
+        /// <summary>
+        /// Flashes the speed 3 button between its selected and plain look while ultra is on, and puts it back once when
+        /// it goes off. It's left alone otherwise, so the pad's highlight (ForceState 2) can use it. Returns whether
+        /// it's flashing.
+        /// </summary>
+        public static bool FlashSpeed3(UIButton button, bool ultra, bool wasFlashing)
+        {
+            if (ultra)
+            {
+                if (button.ForceState != 2) button.ForceState = FlashOn ? 1 : 0;
+                return true;
+            }
+            if (wasFlashing && (button.ForceState == 0 || button.ForceState == 1)) button.ForceState = -1;
+            return false;
+        }
+
         private void UpdateAutoFastForward()
         {
             var family = vm?.TS1State?.CurrentFamily;

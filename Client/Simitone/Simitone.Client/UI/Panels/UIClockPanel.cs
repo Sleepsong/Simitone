@@ -51,6 +51,8 @@ namespace Simitone.Client.UI.Panels
         public VM VM;
         public bool Hidden;
 
+        private bool SpeedFlashing;
+
         public UIClockPanel(VM vm) : base()
         {
             VM = vm;
@@ -151,8 +153,7 @@ namespace Simitone.Client.UI.Panels
                 LastSpeed = speed;
             }
             //at ultra speed by itself (everyone away or asleep), speed 3 flashes, as in TS1
-            var ultra = (UIScreen.Current as TS1GameScreen)?.UltraSpeed == true;
-            Btns[2].ForceState = ultra ? (TS1GameScreen.FlashOn ? 1 : 0) : -1;
+            SpeedFlashing = TS1GameScreen.FlashSpeed3(Btns[2], (UIScreen.Current as TS1GameScreen)?.UltraSpeed == true, SpeedFlashing);
             base.Update(state);
         }
 
