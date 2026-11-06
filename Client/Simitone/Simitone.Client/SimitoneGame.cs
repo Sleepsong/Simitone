@@ -170,6 +170,9 @@ namespace Simitone.Client
             FSO.SimAntics.Engine.VMTravelLog.SessionHeader = "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args;
             if (Utils.LaunchFlags.TravelLog)
                 FSO.SimAntics.Engine.VMTravelLog.Path = System.IO.Path.Combine(FSOEnvironment.UserDir, "travel.log");
+            //-soundlog: every sound the game asks for and what came of it
+            if (Utils.LaunchFlags.SoundLog)
+                Utils.SoundLog.Start(System.IO.Path.Combine(FSOEnvironment.UserDir, "sound.log"), "Simitone " + SimitoneVersion.Current + ", args: " + FSOEnvironment.Args);
             
             base.Initialize();
 

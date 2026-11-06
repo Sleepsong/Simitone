@@ -21,6 +21,9 @@ namespace Simitone.Client.Utils
         /// <summary>-travellog: write travel.log, the step-by-step trace of trips between lots (see TRAVEL_FIXES.md).</summary>
         public static bool TravelLog => Has("travellog");
 
+        /// <summary>-soundlog: write sound.log, every sound the game asks for and what came of it (see Utils.SoundLog).</summary>
+        public static bool SoundLog => Has("soundlog");
+
         public static bool Has(string flag) => Parse(FSOEnvironment.Args).Contains(flag.ToLowerInvariant());
 
         /// <summary>The switches in a command line, lower case, without their dashes.</summary>
