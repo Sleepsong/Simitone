@@ -272,7 +272,9 @@ Simitone finds The Sims 1 installation in this priority order:
 **Options:** open the options dialog from the **...** button on the neighbourhood screen, or from
 **Options > Settings** while on a lot. The **Graphics** tab changes lighting quality, anti-aliasing,
 3D mode, windowed/fullscreen, window size and refresh rate; **Sound & Controls** sets music, sound
-effect, voice and ambience volume and edge scrolling. Changes apply immediately (turning 3D mode
+effect, voice and ambience volume and edge scrolling; **Game** turns **Live Picture in Picture** on or
+off: in full 3D, event popups show a live, close view of the Sim or object they're about, as the
+original game did, instead of a still picture (on by default). Changes apply immediately (turning 3D mode
 on or off takes effect after a restart) and are saved to `config.ini`.
 
 **Other Options:**

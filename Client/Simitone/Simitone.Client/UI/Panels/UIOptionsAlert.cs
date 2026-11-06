@@ -20,9 +20,10 @@ using System.Linq;
 namespace Simitone.Client.UI.Panels
 {
     /// <summary>
-    /// Options dialog with two tabs:
+    /// Options dialog with three tabs:
     ///  - Graphics: lighting, AA, 3D mode, display mode, window size, refresh rate.
     ///  - Sound &amp; Controls: music/sound effect/voice/ambience volume, edge scrolling.
+    ///  - Game: Live Picture in Picture (event popups show a live view, in full 3D).
     /// Changes apply immediately where the engine allows it and are saved to config.ini.
     /// Opened from Options > Settings on a lot, and from the "..." button on the neighbourhood.
     /// </summary>
@@ -37,7 +38,8 @@ namespace Simitone.Client.UI.Panels
         // windowed size to return to after fullscreen (GraphicsWidth/Height track the current size)
         private Point WindowedSize;
 
-        private static readonly string[] TabNames = new string[] { "Graphics", "Sound & Controls" };
+        private static readonly string[] TabNames = new string[] { "Graphics", "Sound & Controls", "Game" };
+        private const int TabWidth = 280;
         private const float TabScale = 0.6f;
 
         private static readonly Point[] Resolutions = new Point[]
@@ -157,6 +159,15 @@ namespace Simitone.Client.UI.Panels
                 () => new List<Tuple<string, int>>() { Tuple.Create("On", 1), Tuple.Create("Off", 0) },
                 () => settings.EdgeScroll ? 1 : 0,
                 (v) => settings.EdgeScroll = v == 1);
+
+            // --- Game ---
+
+            //TS1's Live Picture in Picture: event popups show a live view of the Sim or object they're about (full 3D only)
+            AddRow(2, "Live Picture in Picture",
+                () => new List<Tuple<string, int>>() { Tuple.Create("On", 1), Tuple.Create("Off", 0) },
+                () => settings.LivePIP ? 1 : 0,
+                (v) => settings.LivePIP = v == 1,
+                () => settings.GlobalGraphicsMode == 2);
 
             NoteLabel = new UILabel();
             NoteLabel.Alignment = TextAlignment.Center | TextAlignment.Middle;
@@ -279,17 +290,17 @@ namespace Simitone.Client.UI.Panels
                 btn.CaptionStyle.Color = active ? UIStyle.Current.GreenBtnTxt : UIStyle.Current.BtnTxt;
                 btn.CaptionStyle.HighlightedColor = btn.CaptionStyle.Color;
                 btn.CaptionStyle.SelectedColor = btn.CaptionStyle.Color;
-                btn.Width = 300 / TabScale;
+                btn.Width = TabWidth / TabScale;
             }
             Refresh();
         }
 
         private void Layout()
         {
-            var tabWidth = 300;
+            var tabsLeft = Width / 2 - (TabButtons.Count * TabWidth + (TabButtons.Count - 1) * 20) / 2;
             for (int i = 0; i < TabButtons.Count; i++)
             {
-                TabButtons[i].Position = new Vector2(Width / 2 - tabWidth - 10 + i * (tabWidth + 20), 85);
+                TabButtons[i].Position = new Vector2(tabsLeft + i * (TabWidth + 20), 85);
             }
 
             // two columns of up to three settings per tab
