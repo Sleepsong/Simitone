@@ -251,7 +251,8 @@ not just left from right. `Sound3D=False` gives the game's left/right panning.
 **Tips.** Whatever the game shows as a tooltip beside the mouse floats over what you're pointing at instead: a
 Sim's name, an object's sale price, why something can't be placed.
 
-**Flat screen.** A (or Tab) switches between first person and the normal game on a floating screen, where the
+**Flat screen.** A held for half a second (or Tab) switches from first person to the normal game on a floating screen (a
+buzz says it has; a tap does nothing, so it isn't done by mistake), and a press of A goes back, where the
 laser pointer is your mouse. Options mode switches to the flat screen automatically and comes back to first
 person when you're done. With `VRBuildMode=False`, buy and build use the flat screen too.
 
@@ -311,7 +312,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Right trigger while looking at the watch | Read the oldest waiting message | Same | Same | n/a |
 | Left stick held while your Sim is busy | Cancel their actions and take over | n/a | n/a | n/a |
 | Right grip | Back a level of a pie menu (closes it at the top); right click on menus | Same | Cancel (put back) | Right click |
-| A | Flat screen | Flat screen | Flat screen | First person |
+| A (hold ½ s) | Flat screen | Flat screen | Flat screen | First person (press) |
 | B | Switch to observer | Switch to the dollhouse | Sell / delete what you hold; else the next of your Sim / observer / dollhouse | Recentre the screen |
 | X | Pause / resume | Pause / resume | n/a | Pause / resume |
 | Y | Next Sim in the family | Next Sim in the family | n/a | Next Sim in the family |
@@ -405,7 +406,8 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 | `VRPieMenus` | True | Pie menus drawn for VR (the game's buttons and your Sim's head, sized for a headset). `False` shows the game's 2D pie menu on a panel |
 | `ArcReach` | 7 | Starting launch speed of the placement arc, m/s (the right stick changes it while placing) |
 | `WristDisplays` | Auto | `Auto` (when you look at your wrist), `Always` or `Off` |
-| `SimHeadSmoothing` | 8 | How quickly the view follows your Sim's position (per second). Lower is smoother but laggier |
+| `WristOtherSide` | False | Put the wrist displays on the other side of the wrist (*Wrist side* in the VR menu): for a controller whose grip pose has the back of the hand the other way round from the OpenXR rule. The Steam Frame's controllers are turned round already |
+| `SimHeadSmoothing` | 20 | How quickly the view follows your Sim's position (per second) while they move on their own; while you steer them it follows exactly. Lower is smoother but laggier |
 | `LeanLimit` | 0.3 | How far (m) you can lean away from your Sim's head before the view drags along |
 | `MirrorEye` | Left (Frame: None) | Eye shown in the desktop window: `Left`, `Right`, `None` |
 | `NearClip` | 0.05 | Near clip plane, metres |

@@ -113,10 +113,16 @@ namespace Simitone.VR
         /// <summary>Clock (right wrist) and needs (left wrist): Auto shows them when you turn your wrist to look.</summary>
         public VRWristMode WristDisplays = VRWristMode.Auto;
         /// <summary>
+        /// The wrist displays go on the other side of the wrist from where the controller's grip pose says the back of the
+        /// hand is (the OpenXR rule): for runtimes and controllers that have it the other way round. (The Steam Frame's
+        /// controllers are known to, and are turned round already; this turns them round again.)
+        /// </summary>
+        public bool WristOtherSide = false;
+        /// <summary>
         /// How quickly the view follows your Sim's head (per second). Lower is smoother but laggier; the head bone
         /// bobs with every animation, so following it exactly is uncomfortable.
         /// </summary>
-        public float SimHeadSmoothing = 8f;
+        public float SimHeadSmoothing = 20f;
         /// <summary>How far (metres) you can lean away from your Sim's head before the view drags along with you.</summary>
         public float LeanLimit = 0.3f;
         /// <summary>See <see cref="VRSimActionView"/>.</summary>

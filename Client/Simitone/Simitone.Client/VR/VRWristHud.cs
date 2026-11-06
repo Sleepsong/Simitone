@@ -68,7 +68,9 @@ namespace Simitone.Client.VR
 
         /// <summary>Places and shows (or hides) the displays from the hand and head poses (tracking space). Once per frame.</summary>
         /// <param name="needsAllowed">False hides the needs display (the catalogue tablet is in that hand).</param>
-        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true)
+        /// <param name="otherSide">Put them on the other side of the wrist from where the grip pose says the back of the
+        /// hand is (a runtime or controller with that axis the other way round).</param>
+        public void UpdatePlacement(VRInput input, VRPose head, VRWristMode mode, bool needsAllowed = true, bool otherSide = false)
         {
             WatchFacing = false;
             bool watch = false, needs = false;
@@ -78,8 +80,9 @@ namespace Simitone.Client.VR
                 // The display sits on the back of the wrist, a little behind the grip, reading along the forearm.
                 // The watch is on the pointing hand's wrist and the needs (which you point at) on the other: right and
                 // left, swapped when left-handed.
-                var rightWrist = (offset: new Vector3(-0.035f, 0.005f, 0.085f), yaw: -MathHelper.PiOver2);
-                var leftWrist = (offset: new Vector3(0.035f, 0.005f, 0.085f), yaw: MathHelper.PiOver2);
+                var side = otherSide ? -1f : 1f;
+                var rightWrist = (offset: new Vector3(-0.035f * side, 0.005f, 0.085f), yaw: -MathHelper.PiOver2 * side);
+                var leftWrist = (offset: new Vector3(0.035f * side, 0.005f, 0.085f), yaw: MathHelper.PiOver2 * side);
                 var watchSide = input.LeftHanded ? leftWrist : rightWrist;
                 var needsSide = input.LeftHanded ? rightWrist : leftWrist;
                 watch = Place(Watch, input.PointerGrip, head, watchSide.offset, watchSide.yaw, mode, out var watchFacing);

@@ -474,8 +474,16 @@ namespace Simitone.Client.VR
 
             if (inputActive)
             {
-                if (input.ToggleView.Pressed && world != null)
+                // to the flat screen only with A held for half a second (a tap is too easy to make by mistake, and it takes
+                // you out of VR); back into first person with a press
+                ToggleHeldFor = input.ToggleView.Down ? ToggleHeldFor + FrameDelta : 0;
+                var toFlat = immersive && ToggleHeldFor >= 0.5f && ToggleHeldFor - FrameDelta < 0.5f;
+                var toFirstPerson = !immersive && input.ToggleView.Pressed;
+                if ((toFlat || toFirstPerson) && world != null)
+                {
+                    if (toFlat) Runtime.Haptic(true, 0.4f, 0.04f);
                     GameThread.NextUpdate(_ => world.ToggleImmersive());
+                }
                 if (input.SwitchMode.Pressed)
                 {
                     if (immersive) ModeSwitchRequested = true;
@@ -505,7 +513,8 @@ namespace Simitone.Client.VR
                 if (!Tablet.Shown) Tablet.Show();
             }
             else if (Tablet?.Shown == true) Tablet.Hide();
-            if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays, needsAllowed: !tabletWanted);
+            if (immersive) Wrists?.UpdatePlacement(input, LastHead, Settings.WristDisplays, needsAllowed: !tabletWanted,
+                otherSide: Settings.WristOtherSide != WristFlippedByController());
             else Wrists?.HideAll();
             // the VR pie menu, over what you pointed at
             if (vrPie && LastHead.Valid)
@@ -728,6 +737,17 @@ namespace Simitone.Client.VR
         }
 
         private static bool PanelsRecentre;
+        private static float ToggleHeldFor;
+
+        /// <summary>
+        /// The controllers in use put the back of the hand on the other side from the OpenXR rule, as SteamVR's Steam
+        /// Frame controllers do (the wrist displays were on the inside of the wrist).
+        /// </summary>
+        private static bool WristFlippedByController()
+        {
+            var profiles = Runtime?.HandProfiles;
+            return profiles != null && (profiles[0].Contains("/valve/frame_controller") || profiles[1].Contains("/valve/frame_controller"));
+        }
         private static float PointerHitDistance; // (metres to what the pointer's on: a panel or the screen; 0 for nothing)
         private static VRControllerRenderer HandsRenderer;
         private static BasicEffect HandsEffect;

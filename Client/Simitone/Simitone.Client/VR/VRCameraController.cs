@@ -913,7 +913,9 @@ namespace Simitone.Client.VR
                 Teleported = true;
             }
             // Horizontally the Sim's position rather than the head bone, so walk cycles and idle animations don't sway you.
-            var follow = 1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing));
+            // The game draws that position moving smoothly between its ticks, so while you steer it's followed exactly
+            // (any lag leaves your body walking ahead of you); otherwise eased a little (SimHeadSmoothing per second).
+            var follow = SimSteering ? 1f : 1f - (float)Math.Exp(-dt * Math.Max(0.5f, settings.SimHeadSmoothing));
             var carriedFrom = SmoothedSimHead;
             SmoothedSimHead.X += (target.X - SmoothedSimHead.X) * follow;
             SmoothedSimHead.Z += (target.Z - SmoothedSimHead.Z) * follow;
