@@ -1040,6 +1040,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
         public static short[] WallStyleIDs =
         {
             0x1, //wall
+            (short)FSO.Content.WorldWallProvider.HalfWallStyle, //half wall (The Sims 2's)
             0x2, //picket fence
             0xD, //iron fence
             0xC, //privacy fence
@@ -1049,6 +1050,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
         public static short[] WallStylePatterns =
         {
             0, //wall
+            0, //half wall: wallpapered like a wall
             248, //picket fence
             250, //iron fence
             249, //privacy fence

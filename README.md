@@ -39,6 +39,9 @@ On modern operating systems, The Sims has a few nagging issues that make it less
   Use them like `moveobjects`: TS1's objects were made for tile centres and four directions, so Sims may take odd
   routes to, or fail to use, an object that's off the grid or diagonal, and objects that need a wall treat a diagonal
   as facing north. In 2D, a diagonal object shows its nearest straight sprite.
+- **Half walls from The Sims 2** - in build mode's walls and fences, next to the wall. A low wall, a little above
+  counter height, that you can wallpaper like a wall. Sims can't walk through it, but like a fence it doesn't divide
+  a room. In 2D it looks like a wall in walls-down mode.
 
 # How to Install
 
