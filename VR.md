@@ -125,7 +125,9 @@ loads. It asks:
 - standing or seated;
 - how strong the vignette is.
 
-Each choice applies at once, and the current one is highlighted. NEXT and BACK move between pages (the grip also
+If the setup (or the VR menu) is out of view, more than 60 degrees round from where you face, for a second and a
+half, it comes back in front of you; B on the flat screen brings it back too. Each choice applies at once, and the
+current one is highlighted. NEXT and BACK move between pages (the grip also
 goes back), and START at the end saves it (`ComfortSetupDone=True`). Run it again from the VR menu or the Options
 panel's VR button.
 
@@ -339,7 +341,10 @@ one hasn't got one). It applies at once.
 
 Bindings are suggested for the **Steam Frame controllers** (`XR_VALVE_frame_controller_interaction`; that extension
 isn't in the public registry, so Simitone asks SteamVR which of the usual button names it has, one at a time, logs
-them, and binds each action to the first that's there),
+them, and binds each action to the first that's there. SteamVR 2.18 reports a gamepad-like pair: the right controller
+has A, B, X, Y and a menu button, the left a D-pad and a view button. So on the Frame, A, B, X and Y are all on the
+right controller (A flat screen, B observer / recentre, X pause, Y next Sim), the right menu button opens the VR menu,
+and left-handed play uses the left D-pad (down, right) for the pointing hand's buttons),
 **Oculus Touch**, **Valve Index** (A/B on the walking hand act as X/Y), **HTC Vive** wands (trackpads move and
 turn) and the KHR simple controller. SteamVR lets you rebind everything in its controller binding UI; the two
 layouts are the action sets "Simitone" and "Simitone (left-handed)".

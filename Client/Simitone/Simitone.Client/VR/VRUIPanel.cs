@@ -67,13 +67,34 @@ namespace Simitone.Client.VR
             Invalidated = true; // redraw every frame while shown: small panels, and it keeps animations moving
         }
 
+        private float PlacedDistance = 1, PlacedDrop, PlacedTilt;
+
         /// <summary>Puts the panel in front of the head, a little below eye level, tilted back by <paramref name="tiltDegrees"/>.</summary>
         public void PlaceInFront(VRPose head, float distance, float drop, float tiltDegrees)
         {
+            PlacedDistance = distance;
+            PlacedDrop = drop;
+            PlacedTilt = tiltDegrees;
             var yaw = Quaternion.CreateFromAxisAngle(Vector3.Up, VRMath.Yaw(head.Orientation));
             var forward = Vector3.Transform(-Vector3.UnitZ, yaw);
             PanelOrientation = yaw * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-tiltDegrees));
             PanelPosition = head.Position + forward * distance - new Vector3(0, drop, 0);
+        }
+
+        /// <summary>Puts it in front of the head again, as it was last placed (distance, height and tilt).</summary>
+        public void BringInFront(VRPose head)
+        {
+            if (head.Valid) PlaceInFront(head, PlacedDistance, PlacedDrop, PlacedTilt);
+        }
+
+        /// <summary>How far round from where the head faces the panel is (degrees, about the vertical; 0 straight ahead).</summary>
+        public float DegreesFromFacing(VRPose head)
+        {
+            if (!head.Valid) return 0;
+            var to = PanelPosition - head.Position;
+            to.Y = 0;
+            if (to.LengthSquared() < 1e-6f) return 0;
+            return Math.Abs(MathHelper.ToDegrees(MathHelper.WrapAngle(VRMath.Yaw(to) - VRMath.Yaw(head.Orientation))));
         }
 
         /// <summary>Where a controller ray meets the panel, in its pixels, and how far away (metres). False if it misses.</summary>

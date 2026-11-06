@@ -479,7 +479,12 @@ namespace Simitone.Client.VR
                 if (input.SwitchMode.Pressed)
                 {
                     if (immersive) ModeSwitchRequested = true;
-                    else ScreenPoseDirty = true; // B on the flat screen: bring it back in front of you
+                    else
+                    {
+                        // B on the flat screen: bring it back in front of you, and the setup or menu if it's open
+                        ScreenPoseDirty = true;
+                        PanelsRecentre = true;
+                    }
                 }
                 if (input.Pause.Pressed) PauseRequested = true;
                 if (input.Speed.Pressed) SpeedRequested = true;
@@ -524,6 +529,7 @@ namespace Simitone.Client.VR
                 SetupRequested = false;
                 SetupShownThisSession = true;
                 NeedsRelease = true;
+                Log("comfort setup opened in front of you");
             }
             // the VR menu: the left menu button, F9, or the VR options button on the left wrist
             if (Menu != null && !SetupOpen && ((inputActive && input.Menu.Pressed) || KeyboardMenuToggle || MenuRequested))
@@ -531,8 +537,15 @@ namespace Simitone.Client.VR
                 if (Menu.IsOpen) Menu.Close();
                 else Menu.OpenAt(LastHead);
                 NeedsRelease = true;
+                Log(Menu.IsOpen ? "VR menu opened" : "VR menu closed");
             }
             KeyboardMenuToggle = MenuRequested = false;
+            // The setup and the menu stay where they opened; if that's out of view (you turned away, or the headset
+            // hadn't settled when it opened), they come back in front of you, as does B on the flat screen. While one's
+            // open it has the pointer, so one you can't see would leave you stuck.
+            KeepInView(Setup, SetupOpen, ref SetupAwayFor, "comfort setup");
+            KeepInView(Menu, Menu?.IsOpen == true, ref MenuAwayFor, "VR menu");
+            PanelsRecentre = false;
             // the keyboard: whenever a text box is waiting for typing (until Hide)
             var target = KeyboardTarget;
             if (Keyboard != null)
@@ -681,10 +694,41 @@ namespace Simitone.Client.VR
                 PointerLeft = PointerRight = false;
                 PointerActive = true;
             }
+            if (inputActive && (input.Select.Pressed || input.Secondary.Pressed) && PressesLogged < 40)
+            {
+                // (for vr.log: what a press was on, when the controls don't seem to do anything)
+                PressesLogged++;
+                var on = pointed != null ? $"the {pointed.GetType().Name} panel at {pointedPixel.X:0},{pointedPixel.Y:0}"
+                    : PointerActive && CursorOnSurface ? $"the {(immersive ? "panel" : "screen")} at {PointerPixel.X},{PointerPixel.Y}"
+                    : PointerActive ? $"the game at {PointerPixel.X},{PointerPixel.Y}" : "nothing";
+                var grip = input.LeftHanded ? input.LeftGrip : input.RightGrip;
+                var bend = aim.Valid && grip.Valid
+                    ? MathHelper.ToDegrees((float)Math.Acos(MathHelper.Clamp(Vector3.Dot(aim.Forward, Vector3.Transform(-Vector3.UnitZ, grip.Orientation)), -1, 1)))
+                    : float.NaN;
+                Log($"{(input.Select.Pressed ? "trigger" : "grip")} pressed on {on}" +
+                    $" ({(immersive ? "in the lot" : "flat screen")}{(OverlayOpen ? ", setup or menu open" : "")}{(NeedsRelease ? ", waiting for release" : "")}" +
+                    $", aim {(aim.Valid ? $"{aim.Forward.X:0.00},{aim.Forward.Y:0.00},{aim.Forward.Z:0.00}, {bend:0} degrees from the hand's" : "not tracked")})");
+            }
             if (vrCamera != null) vrCamera.CursorPixel = WorldCursorPixel(gd).ToVector2() / FSOEnvironment.DPIScaleFactor;
             UpdateTip(immersive ? vrCamera : null);
 
             // (the panels themselves are drawn by the UI layer, into their own textures, during the frame)
+        }
+
+        private static bool PanelsRecentre;
+        private static float SetupAwayFor, MenuAwayFor;
+        private static int PressesLogged;
+
+        /// <summary>An open panel out of view (more than 60 degrees round) for a second and a half comes back in front.</summary>
+        private static void KeepInView(VRUIPanel panel, bool open, ref float awayFor, string name)
+        {
+            if (panel == null || !open || !LastHead.Valid) { awayFor = 0; return; }
+            var degrees = panel.DegreesFromFacing(LastHead);
+            awayFor = degrees > 60 ? awayFor + FrameDelta : 0;
+            if (!PanelsRecentre && awayFor < 1.5f) return;
+            panel.BringInFront(LastHead);
+            awayFor = 0;
+            Log($"{name} brought back in front of you (it was {degrees:0} degrees round)");
         }
 
         public static void EndDraw(GraphicsDevice gd)

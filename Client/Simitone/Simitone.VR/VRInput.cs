@@ -292,10 +292,14 @@ namespace Simitone.VR
             Bind(r.Sprint, off + "input/thumbstick/click", off + "input/trackpad/click");
             string First(string hand) => hand == R ? "a" : "x";
             string Second(string hand) => hand == R ? "b" : "y";
-            var domFirst = Pick(dom + "input/" + First(dom) + "/click", dom + "input/a/click");
-            var domSecond = Pick(dom + "input/" + Second(dom) + "/click", dom + "input/b/click");
-            var offFirst = Pick(off + "input/" + First(off) + "/click", off + "input/a/click");
-            var offSecond = Pick(off + "input/" + Second(off) + "/click", off + "input/b/click");
+            // (the Steam Frame's right controller has all four, A B X Y, as a gamepad does, and the left a D-pad: so on
+            // the right hand X and Y pause and go to the next Sim; a hand without face buttons uses its D-pad)
+            var domFirst = Pick(dom + "input/" + First(dom) + "/click", dom + "input/a/click", dom + "input/dpad_down/click");
+            var domSecond = Pick(dom + "input/" + Second(dom) + "/click", dom + "input/b/click", dom + "input/dpad_right/click");
+            var offFirst = Pick(off + "input/" + First(off) + "/click", off + "input/a/click", dom + "input/x/click", off + "input/dpad_down/click");
+            var offSecond = Pick(off + "input/" + Second(off) + "/click", off + "input/b/click", dom + "input/y/click", off + "input/dpad_right/click");
+            if (offFirst == domFirst) offFirst = Pick(off + "input/dpad_down/click");
+            if (offSecond == domSecond) offSecond = Pick(off + "input/dpad_right/click");
             var stickClick = Pick(dom + "input/thumbstick/click", dom + "input/trackpad/click");
             if (domFirst != null)
             {
