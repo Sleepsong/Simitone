@@ -1025,11 +1025,51 @@ namespace Simitone.Client.UI.Screens
             var thumb = World.GetLotThumb(GameFacade.GraphicsDevice, (tex) => roofless = FSO.Common.Utils.TextureUtils.Decimate(tex, GameFacade.GraphicsDevice, 2, false));
             thumb = FSO.Common.Utils.TextureUtils.Decimate(thumb, GameFacade.GraphicsDevice, 2, false);
 
-            var tPNG = GeneratePNG(thumb);
+            //the neighbourhood map's picture of the lot sometimes comes out with its floors and roof black (see LotPictureGuard)
+            PNG keepRoof = null, keepRoofless = null;
+            bool Broken(out string stats)
+            {
+                var withRoof = Utils.LotPictureGuard.LooksBroken(thumb, out var roofStats);
+                var without = Utils.LotPictureGuard.LooksBroken(roofless, out var rooflessStats);
+                stats = "with roof " + roofStats + ", without " + rooflessStats;
+                return withRoof || without;
+            }
+            try
+            {
+                if (Broken(out var stats))
+                {
+                    var why = Utils.LotPictureGuard.Describe(World, vm);
+                    roofless = null;
+                    thumb = World.GetLotThumb(GameFacade.GraphicsDevice, (tex) => roofless = FSO.Common.Utils.TextureUtils.Decimate(tex, GameFacade.GraphicsDevice, 2, false));
+                    thumb = FSO.Common.Utils.TextureUtils.Decimate(thumb, GameFacade.GraphicsDevice, 2, false);
+                    var again = Broken(out var stats2);
+                    if (again)
+                    {
+                        //keep the picture the house had, if Simitone saved one; the map needs one, so otherwise this one stays
+                        var old = Content.Get().Neighborhood.GetHouse(vm.GetGlobalValue(10));
+                        var oldRoof = old?.Get<PNG>(513);
+                        var oldRoofless = old?.Get<PNG>(512);
+                        if (oldRoof?.data != null && oldRoofless?.data != null)
+                        {
+                            keepRoof = new PNG() { data = oldRoof.data };
+                            keepRoofless = new PNG() { data = oldRoofless.data };
+                        }
+                    }
+                    Utils.LotPictureGuard.Note?.Invoke("The lot's picture came out with black floors and roof (" + stats + "). Rendered again: "
+                        + (again ? stats2 + ", still broken; " + ((keepRoof != null) ? "kept the picture it had." : "it had none to keep, so this one is saved.")
+                            : "fine.") + " Renderer: " + why);
+                }
+            }
+            catch (Exception)
+            {
+                //the picture's check must never stop a save
+            }
+
+            var tPNG = (keepRoof != null) ? DescribePNG(keepRoof) : GeneratePNG(thumb);
             tPNG.ChunkID = 513;
             iff.AddChunk(tPNG);
 
-            var rPNG = GeneratePNG(roofless);
+            var rPNG = (keepRoofless != null) ? DescribePNG(keepRoofless) : GeneratePNG(roofless);
             rPNG.ChunkID = 512;
             iff.AddChunk(rPNG);
 
@@ -1051,6 +1091,12 @@ namespace Simitone.Client.UI.Screens
                 png.data = stream.ToArray();
             }
 
+            return DescribePNG(png);
+        }
+
+        /// <summary>Labels a lot picture chunk as GeneratePNG does.</summary>
+        private PNG DescribePNG(PNG png)
+        {
             png.ChunkLabel = "Lot Thumbnail";
             png.ChunkProcessed = true;
             png.ChunkType = "PNG_";
