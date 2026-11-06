@@ -33,6 +33,12 @@ On modern operating systems, The Sims has a few nagging issues that make it less
   -  Catalog search for build and buy mode. (Help wanted for the UI) 
 - *Volcanic*, a program which allows you to examine, modify and create new game objects. (from FreeSO, Windows-only)
 - **Cosmetic weather system** - Rain, snow, hail, and storms, toggled via the cheat console (Ctrl+Shift+C). See [WEATHER_IMPLEMENTATION.md](WEATHER_IMPLEMENTATION.md) for details.
+- **Build cheats from The Sims 2** (full 3D only, in the cheat console): `offgrid on` places objects right under
+  the cursor instead of snapping them to the middle of a tile, and `rotate45 on` turns them 45 degrees at a time
+  instead of 90 (`off` turns either back off; they last until the game closes). Objects placed with them stay put.
+  Use them like `moveobjects`: TS1's objects were made for tile centres and four directions, so Sims may take odd
+  routes to, or fail to use, an object that's off the grid or diagonal, and objects that need a wall treat a diagonal
+  as facing north. In 2D, a diagonal object shows its nearest straight sprite.
 
 # How to Install
 

@@ -130,9 +130,13 @@ namespace Simitone.Client.UI.Panels
             if (!Holding.IsBought && !vm.PlatformState.CanPlaceNewUserObject(vm)) status = VMPlacementError.TooManyObjectsOnTheLot;
             else
             {
+                //the middle of the tile under the cursor; with the offgrid cheat (3D), right under the cursor, to a sixteenth of a tile
+                var target = Utils.BuildCheats.OffGridActive(World)
+                    ? new LotTilePos((short)Math.Round(pos.X * 16), (short)Math.Round(pos.Y * 16), World.State.Level)
+                    : LotTilePos.FromBigTile((short)pos.X, (short)pos.Y, World.State.Level);
                 for (int i = 0; i < 4; i++)
                 {
-                    status = Holding.Group.ChangePosition(LotTilePos.FromBigTile((short)pos.X, (short)pos.Y, World.State.Level), dir, vm.Context, VMPlaceRequestFlags.UserPlacement).Status;
+                    status = Holding.Group.ChangePosition(target, dir, vm.Context, VMPlaceRequestFlags.UserPlacement).Status;
                     if (status != VMPlacementError.MustBeAgainstWall) break;
                     dir = (Direction)((((int)dir << 6) & 255) | ((int)dir >> 2));
                 }
@@ -386,7 +390,10 @@ namespace Simitone.Client.UI.Panels
                         var dir = Math.Atan2(vec.Y, vec.X);
                         dir += Math.PI / 2;
                         if (dir < 0) dir += Math.PI * 2;
-                        var newDir = (Direction)(1 << (((int)Math.Round(dir / (Math.PI / 2)) % 4) * 2));
+                        //four directions; eight with the rotate45 cheat (3D)
+                        var newDir = Utils.BuildCheats.Rotate45Active(World)
+                            ? (Direction)(1 << ((int)Math.Round(dir / (Math.PI / 4)) % 8))
+                            : (Direction)(1 << (((int)Math.Round(dir / (Math.PI / 2)) % 4) * 2));
 
                         if (newDir != Holding.Dir || MouseClicked)
                         {
@@ -570,6 +577,8 @@ namespace Simitone.Client.UI.Panels
 
         public void RotateObject(int notches)
         {
+            //a quarter turn is two notches; with the rotate45 cheat (3D), it's one: 45 degrees
+            if (Utils.BuildCheats.Rotate45Active(World) && Math.Abs(notches) == 2) notches /= 2;
             Direction newDir;
             if (notches > 0)
             {

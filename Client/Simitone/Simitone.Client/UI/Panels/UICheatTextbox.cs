@@ -144,6 +144,15 @@ namespace Simitone.Client.UI.Panels
                 return;
             }
 
+            //build cheats in the spirit of The Sims 2's, for full 3D: offgrid and rotate45 (Utils.BuildCheats)
+            if (Simitone.Client.Utils.BuildCheats.TryCommand(trimRepetitions(commandString), out var buildDone))
+            {
+                FSO.HIT.HITVM.Get().PlaySoundEvent(buildDone ? UISounds.Click : UISounds.Error);
+                baseTextbox.CurrentText = "";
+                shouldHide = buildDone;
+                return;
+            }
+
             // Handle weather commands separately (they don't use VMCheatContext)
             if (trimRepetitions(commandString).StartsWith("weather", StringComparison.OrdinalIgnoreCase))
             {
