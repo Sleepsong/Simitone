@@ -414,14 +414,16 @@ namespace Simitone.Client.UI.Panels
                 }
                 else
                 {
-                    var tilePos = World.EstTileAtPosWithScroll(new Vector2(mpos.X, mpos.Y) / FSOEnvironment.DPIScaleFactor) + Holding.TilePosOffset;
+                    // on touch screens the held object sits at the screen centre (mpos is in UI units there)
+                    var holdPos = FSOEnvironment.SoftwareKeyboard ? new Vector2(mpos.X, mpos.Y) * FSOEnvironment.DPIScaleFactor : new Vector2(mpos.X, mpos.Y);
+                    var tilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(holdPos)) + Holding.TilePosOffset;
                     MoveSelected(tilePos, 1);
                 }
             }
             else if (MouseClicked)
             {
                 //not holding an object, but one can be selected
-                var newHover = World.GetObjectIDAtScreenPos(state.MouseState.X, state.MouseState.Y, GameFacade.GraphicsDevice);
+                var newHover = World.GetObjectIDAtScreenTap(state.MouseState.Position, GameFacade.GraphicsDevice);
 
                 // Eyedropper mode - pick object GUID or architecture pattern
                 // Priority: Objects (doors/windows in walls) → Walls → Floors
@@ -450,7 +452,7 @@ namespace Simitone.Client.UI.Panels
                     if (!handled)
                     {
                         var tilePos = World.EstTileAtPosWithScroll(
-                            new Vector2(state.MouseState.X, state.MouseState.Y) / FSOEnvironment.DPIScaleFactor);
+                            World.ScreenToWorldPx(new Vector2(state.MouseState.X, state.MouseState.Y)));
                         var tileX = (short)Math.Floor(tilePos.X);
                         var tileY = (short)Math.Floor(tilePos.Y);
                         var level = World.State.Level;
@@ -484,7 +486,7 @@ namespace Simitone.Client.UI.Panels
                         Holding.CanDelete = canDelete;
                         Holding.MoveTarget = newHover;
                         var estBase = state.MouseState.Position; //FSOEnvironment.SoftwareKeyboard ? new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2) : state.MouseState.Position;
-                        Holding.TilePosOffset = new Vector2(objBasePos.x / 16f, objBasePos.y / 16f) - World.EstTileAtPosWithScroll(new Vector2(estBase.X, estBase.Y) / FSOEnvironment.DPIScaleFactor);
+                        Holding.TilePosOffset = new Vector2(objBasePos.x / 16f, objBasePos.y / 16f) - World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(estBase.X, estBase.Y)));
                         if (OnPickup != null) OnPickup(Holding, state);
                         //ExecuteEntryPoint(12); //User Pickup
                         if (FSOEnvironment.SoftwareKeyboard) MouseIsDown = false;

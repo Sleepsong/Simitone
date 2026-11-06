@@ -135,7 +135,7 @@ namespace Simitone.Client.UI.Panels
                             {
                                 Mode = -1;
                                 var screenMiddle = new Point(GameFacade.Screens.CurrentUIScreen.ScreenWidth / 2, GameFacade.Screens.CurrentUIScreen.ScreenHeight / 2);
-                                Master.ShowPieMenu(((TapPoint - screenMiddle).ToVector2() / Master.World.BackbufferScale).ToPoint() + screenMiddle, state);
+                                Master.ShowPieMenu(TapPoint, state); //(ShowPieMenu allows for the zoom)
                             }
                             else
                             {
@@ -148,7 +148,7 @@ namespace Simitone.Client.UI.Panels
                                 {
                                     Mode = 3;
                                     var screenMiddle = new Point(GameFacade.Screens.CurrentUIScreen.ScreenWidth / 2, GameFacade.Screens.CurrentUIScreen.ScreenHeight / 2);
-                                    Master.ShowPieMenu(((TapPoint - screenMiddle).ToVector2() / Master.World.BackbufferScale).ToPoint() + screenMiddle, state);
+                                    Master.ShowPieMenu(TapPoint, state); //(ShowPieMenu allows for the zoom)
                                 }
                             }
                         }

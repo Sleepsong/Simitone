@@ -15,6 +15,7 @@ using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Screens;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace Simitone.Client.UI.Panels
@@ -73,6 +74,15 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        // phones and tablets (touch): only the 3D mode and volumes. Lighting above Off needs a blend mode phone
+        // graphics don't have (it crashes), anti-aliasing is too heavy at phone resolutions, and the window,
+        // refresh rate and edge scrolling settings don't apply.
+        private static bool Mobile => FSOEnvironment.SoftwareKeyboard;
+        // on phones, 3D is turned off at startup by an empty file named "2d" in the user folder
+        private static string TwoDMarker => Path.Combine(FSOEnvironment.UserDir, "2d");
+        private int Columns => Mobile ? 4 : 2;
+        private static readonly bool StartFastDepth2D = GlobalSettings.Default.FastDepth2D; //(applies at start-up)
+
         public UIOptionsAlert()
         {
             Caption = "Options";
@@ -97,11 +107,13 @@ namespace Simitone.Client.UI.Panels
 
             // --- Graphics ---
 
+            if (!Mobile)
             AddRow(0, "Lighting",
                 () => Choices("Off", "Advanced", "Advanced + Shadows", "Ultra"),
                 () => Math.Max(0, settings.LightingMode),
                 (v) => { settings.LightingMode = v; ApplyWorldConfig(); });
 
+            if (!Mobile)
             AddRow(0, "Anti-Aliasing",
                 () =>
                 {
@@ -115,26 +127,36 @@ namespace Simitone.Client.UI.Panels
 
             AddRow(0, "3D Mode",
                 () => Choices("Off (2D)", "Hybrid (3D Walls)", "Full 3D"),
-                () => settings.GlobalGraphicsMode,
-                (v) =>
-                {
-                    settings.GlobalGraphicsMode = v;
-                    // switching between the two 3D modes is live; turning 3D on/off needs a restart
-                    // because 3D content is only loaded at startup.
-                    if (FSOEnvironment.Enable3D && v > 0) GraphicsModeControl.ChangeMode((GlobalGraphicsMode)v);
-                });
+                CurrentGraphicsMode,
+                SetGraphicsMode);
 
+            // (on PCs in the second tab, which has room for it)
+            AddRow(Mobile ? 0 : 1, "Show FPS",
+                () => new List<Tuple<string, int>>() { Tuple.Create("Off", 0), Tuple.Create("On", 1) },
+                () => settings.ShowFPS ? 1 : 0,
+                (v) => settings.ShowFPS = v == 1);
+
+            // phones, 2D: one-pass depth (framebuffer fetch) or the older two-pass way, in case the fast one misdraws
+            if (Mobile)
+            AddRow(0, "2D Drawing",
+                () => new List<Tuple<string, int>>() { Tuple.Create("Fast", 1), Tuple.Create("Compatible", 0) },
+                () => settings.FastDepth2D ? 1 : 0,
+                (v) => settings.FastDepth2D = v == 1);
+
+            if (!Mobile)
             AddRow(0, "Display",
                 () => new List<Tuple<string, int>>() { Tuple.Create("Windowed", 1), Tuple.Create("Fullscreen", 0) },
                 () => settings.Windowed ? 1 : 0,
                 (v) => SetDisplayMode(v == 1, WindowedSize));
 
+            if (!Mobile)
             AddRow(0, "Window Size",
                 () => WindowSizes().Select((x, i) => Tuple.Create(x.X + "x" + x.Y, i)).ToList(),
                 () => WindowSizes().IndexOf(WindowedSize),
                 (v) => SetDisplayMode(true, WindowSizes()[v]),
                 () => settings.Windowed);
 
+            if (!Mobile)
             AddRow(0, "Refresh Rate",
                 () =>
                 {
@@ -153,6 +175,7 @@ namespace Simitone.Client.UI.Panels
             AddVolumeRow("Voices", HITVolumeGroup.VOX, () => settings.VoxVolume, (v) => settings.VoxVolume = (byte)v);
             AddVolumeRow("Ambience", HITVolumeGroup.AMBIENCE, () => settings.AmbienceVolume, (v) => settings.AmbienceVolume = (byte)v);
 
+            if (!Mobile)
             AddRow(1, "Edge Scrolling",
                 () => new List<Tuple<string, int>>() { Tuple.Create("On", 1), Tuple.Create("Off", 0) },
                 () => settings.EdgeScroll ? 1 : 0,
@@ -173,6 +196,41 @@ namespace Simitone.Client.UI.Panels
             Layout();
             SetTab(0);
         }
+
+        private static int CurrentGraphicsMode()
+        {
+            var settings = GlobalSettings.Default;
+            if (Mobile)
+            {
+                if (File.Exists(TwoDMarker)) return 0;
+                return (settings.GlobalGraphicsMode == 1) ? 1 : 2; //3D starts as Full 3D unless Hybrid was picked
+            }
+            return settings.GlobalGraphicsMode;
+        }
+
+        private static void SetGraphicsMode(int v)
+        {
+            var settings = GlobalSettings.Default;
+            if (Mobile)
+            {
+                try
+                {
+                    if (v == 0) File.WriteAllText(TwoDMarker, "");
+                    else if (File.Exists(TwoDMarker)) File.Delete(TwoDMarker);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Couldn't change the 2D setting: " + e.Message);
+                }
+                if (v > 0) settings.GlobalGraphicsMode = v; //(2D keeps the last 3D mode for switching back)
+            }
+            else settings.GlobalGraphicsMode = v;
+            // switching between the two 3D modes is live; turning 3D on/off needs a restart
+            // because 3D content is only loaded at startup.
+            if (FSOEnvironment.Enable3D && v > 0) GraphicsModeControl.ChangeMode((GlobalGraphicsMode)v);
+        }
+
+        private static bool Wants3D => Mobile ? !File.Exists(TwoDMarker) : GlobalSettings.Default.GlobalGraphicsMode > 0;
 
         /// <summary>
         /// Preset window sizes that fit on the display, plus the current size if it isn't a preset.
@@ -292,18 +350,25 @@ namespace Simitone.Client.UI.Panels
                 TabButtons[i].Position = new Vector2(Width / 2 - tabWidth - 10 + i * (tabWidth + 20), 85);
             }
 
-            // two columns of up to three settings per tab
-            var colWidth = Math.Min(460, Width / 2 - 40);
+            // two columns of up to three settings per tab (four columns on phones, whose screens are short)
+            var columns = Columns;
+            var colWidth = ColumnWidth;
+            var stepWidth = Mobile ? 90 : 100;
             var tabIndex = new Dictionary<int, int>();
+            var tabCounts = Rows.GroupBy(x => x.Tab).ToDictionary(x => x.Key, x => x.Count());
+            var lines = tabCounts.Values.Select(x => (x + columns - 1) / columns).DefaultIfEmpty(1).Max();
             foreach (var row in Rows)
             {
                 int i;
                 tabIndex.TryGetValue(row.Tab, out i);
                 tabIndex[row.Tab] = i + 1;
 
-                var centerX = (i % 2 == 0) ? Width / 4 : (Width * 3) / 4;
+                var col = i % columns;
+                var shift = 0;
+                if (Mobile) shift = columns - Math.Min(columns, tabCounts[row.Tab] - (i / columns) * columns); //centre short lines
+                var centerX = (Width * (2 * col + 1 + shift)) / (2 * columns);
                 var left = centerX - colWidth / 2;
-                var y = 160 + (i / 2) * 130;
+                var y = 160 + (i / columns) * 130;
                 row.Label.Position = new Vector2(left, y);
                 row.Label.Size = new Vector2(colWidth, 30);
                 if (row.Button != null)
@@ -314,17 +379,21 @@ namespace Simitone.Client.UI.Panels
                 else
                 {
                     row.Minus.Position = new Vector2(left, y + 30);
-                    row.Minus.Width = 100;
-                    row.Plus.Position = new Vector2(left + colWidth - 100, y + 30);
-                    row.Plus.Width = 100;
-                    row.Value.Position = new Vector2(left + 100, y + 30);
-                    row.Value.Size = new Vector2(colWidth - 200, 100);
+                    row.Minus.Width = stepWidth;
+                    row.Plus.Position = new Vector2(left + colWidth - stepWidth, y + 30);
+                    row.Plus.Width = stepWidth;
+                    row.Value.Position = new Vector2(left + stepWidth, y + 30);
+                    row.Value.Size = new Vector2(colWidth - stepWidth * 2, 100);
                 }
             }
-            NoteLabel.Position = new Vector2(0, 560);
+            var noteY = 160 + lines * 130 + 10;
+            NoteLabel.Position = new Vector2(0, noteY);
             NoteLabel.Size = new Vector2(Width, 25);
-            DoneButton.Position = new Vector2((Width - DoneButton.Width) / 2, 590);
+            DoneButton.Position = new Vector2((Width - DoneButton.Width) / 2, noteY + 30);
+            if (Mobile) SetHeight(noteY + 140);
         }
+
+        private int ColumnWidth => Math.Min(460, Width / Columns - 40);
 
         private void Refresh()
         {
@@ -336,7 +405,7 @@ namespace Simitone.Client.UI.Panels
                     var current = list.FirstOrDefault(x => x.Item2 == row.Current());
                     row.Button.Caption = current?.Item1 ?? list[0].Item1;
                     row.Button.Disabled = row.Enabled != null && !row.Enabled();
-                    row.Button.Width = Math.Min(460, Width / 2 - 40);
+                    row.Button.Width = ColumnWidth;
                 }
                 else
                 {
@@ -344,14 +413,17 @@ namespace Simitone.Client.UI.Panels
                     row.Value.Caption = (value * 10) + "%";
                     row.Minus.Disabled = value <= 0;
                     row.Plus.Disabled = value >= 10;
-                    row.Minus.Width = row.Plus.Width = 100;
+                    row.Minus.Width = row.Plus.Width = Mobile ? 90 : 100;
                 }
             }
 
-            var restart = (GlobalSettings.Default.GlobalGraphicsMode > 0) != FSOEnvironment.Enable3D;
+            var restart = Wants3D != FSOEnvironment.Enable3D;
+            var restartDrawing = Mobile && GlobalSettings.Default.FastDepth2D != StartFastDepth2D;
             NoteLabel.Caption = restart
                 ? "Restart Simitone to turn 3D mode " + (FSOEnvironment.Enable3D ? "off." : "on.")
+                : restartDrawing ? "Restart Simitone to change how 2D is drawn."
                 : "Changes are saved automatically.";
+            restart |= restartDrawing;
             NoteLabel.CaptionStyle.Color = restart ? UIStyle.Current.NegMoney : UIStyle.Current.DialogText * 0.7f;
         }
 

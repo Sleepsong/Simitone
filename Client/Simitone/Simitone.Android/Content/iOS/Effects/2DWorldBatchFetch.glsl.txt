@@ -1,0 +1,1000 @@
+@@shader 0 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+const vec4 ps_c0 = vec4(-1.0, -0.0, 0.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+uniform sampler2D ps_s0;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+
+void main()
+{
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_oC0.xyz = ps_r0.www * ps_r0.xyz;
+	ps_r1 = ((-abs(ps_r0.w) >= 0.0) ? ps_c0.xxxx : ps_c0.yyyy);
+	ps_oC0.w = ps_r0.w;
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+}
+@@shader 1 vertex
+#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision mediump int;
+#endif
+
+uniform vec4 vs_uniforms_vec4[4];
+uniform vec4 posFixup;
+#define vs_c0 vs_uniforms_vec4[0]
+#define vs_c1 vs_uniforms_vec4[1]
+#define vs_c2 vs_uniforms_vec4[2]
+#define vs_c3 vs_uniforms_vec4[3]
+in vec4 vs_v0;
+#define vs_o0 gl_Position
+in vec4 vs_v1;
+out vec4 vTexCoord0;
+#define vs_o1 vTexCoord0
+in vec4 vs_v2;
+out vec4 vTexCoord1;
+#define vs_o2 vTexCoord1
+
+void main()
+{
+	vs_o0.x = dot(vs_v0, vs_c0);
+	vs_o0.y = dot(vs_v0, vs_c1);
+	vs_o0.z = dot(vs_v0, vs_c2);
+	vs_o0.w = dot(vs_v0, vs_c3);
+	vs_o1.xy = vs_v1.xy;
+	vs_o2.x = vs_v2.x;
+	gl_Position.y = gl_Position.y * posFixup.y;
+	gl_Position.xy += posFixup.zw * gl_Position.ww;
+	gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+}
+@@shader 2 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+const vec4 ps_c0 = vec4(0.003922, 0.0, 0.0, 0.0);
+const vec4 ps_c1 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+uniform sampler2D ps_s0;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord1;
+#define ps_v1 vTexCoord1
+
+void main()
+{
+	ps_r0 = ps_c1 * ps_v1.xxxx;
+	ps_r0 = fract(ps_r0);
+	ps_oC0.xyz = (ps_r0.yzw * -ps_c0.xxx) + ps_r0.xyz;
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_r0.x = ps_r0.w * ps_c1.y;
+	ps_r1.x = min(ps_r0.x, ps_c1.x);
+	ps_r0 = ((-abs(ps_r1.x) >= 0.0) ? -ps_c1.xxxx : -ps_c1.wwww);
+	ps_oC0.w = ps_r1.x;
+	if (any(lessThan(ps_r0.xyz, vec3(0.0)))) discard;
+}
+@@shader 3 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[1];
+const vec4 ps_c1 = vec4(-1.0, -0.0, 256.0, 0.0);
+const vec4 ps_c2 = vec4(-255.0, -254.0, -253.0, 2.5);
+const vec4 ps_c3 = vec4(0.2989, 0.587, 0.114, 0.0);
+const vec4 ps_c4 = vec4(1.0, 0.003922, 0.000015, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+#define ps_c0 ps_uniforms_vec4[0]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord3;
+#define ps_v1 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v2 vTexCoord4
+in vec4 vTexCoord5;
+#define ps_v3 vTexCoord5
+in vec4 vTexCoord6;
+#define ps_v4 vTexCoord6
+
+void main()
+{
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_r1 = ((-abs(ps_r0.w) >= 0.0) ? ps_c1.xxxx : ps_c1.yyyy);
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	ps_r1.xy = ps_c1.zz * ps_v3.yx;
+	ps_r1.zw = fract(ps_r1.xy);
+	ps_r1.xy = -ps_r1.zw + ps_r1.xy;
+	ps_r1.xz = ps_r1.xy + ps_c2.xy;
+	ps_r1.x = ((-abs(ps_r1.x) >= 0.0) ? -ps_c1.x : -ps_c1.y);
+	ps_r1.z = ((-abs(ps_r1.z) >= 0.0) ? ps_r1.x : ps_c1.w);
+	if (ps_r1.z != -ps_r1.z) {
+		ps_r0.xyz = -ps_r0.xyz + -ps_c1.xxx;
+	} else {
+		ps_r1.y = ps_r1.y + ps_c2.z;
+		ps_r1.x = ((-abs(ps_r1.y) >= 0.0) ? ps_r1.x : ps_c1.w);
+		if (ps_r1.x != -ps_r1.x) {
+			ps_r0.z = dot(ps_r0.xyz, ps_c3.xyz);
+			ps_r0.xyz = ps_r0.zzz;
+		} else {
+			if (ps_v3.x == ps_c1.w) {
+			} else {
+				ps_r1 = texture(ps_s2, ps_v3.xy);
+				ps_r0 = ps_r0 * ps_r1;
+			}
+		}
+	}
+	ps_r0.xyz = ps_r0.www * ps_r0.xyz;
+	ps_oC0 = ps_r0;
+	ps_r0 = texture(ps_s1, ps_v0.xy);
+	ps_r0.x = -ps_r0.x + -ps_c1.x;
+	ps_r0.x = ps_r0.x * ps_v2.x;
+	ps_r0.x = (ps_r0.x * ps_c2.w) + ps_v1.x;
+	ps_r1 = fsDepth;
+	ps_r0.y = dot(ps_r1.xyz, ps_c4.xyz);
+	ps_r0.x = -ps_r0.x + ps_r0.y;
+	ps_r0.x = ((ps_r0.x >= 0.0) ? ps_c1.y : ps_c1.x);
+	ps_r0.w = ps_c1.w;
+	ps_r0 = ((-ps_c0.x >= 0.0) ? ps_r0.xxxx : ps_r0.wwww);
+	if (any(lessThan(ps_r0.xyz, vec3(0.0)))) discard;
+}
+@@shader 4 vertex
+#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision mediump int;
+#endif
+
+uniform vec4 vs_uniforms_vec4[10];
+uniform vec4 posFixup;
+const vec4 vs_c10 = vec4(1.0, 0.5, -0.5, 0.0);
+const vec4 vs_c11 = vec4(-2.0, 1.0, -0.5, 0.0);
+const vec4 vs_c12 = vec4(0.0, 0.0, 0.0, 0.0);
+vec4 vs_r0;
+vec4 vs_r1;
+vec4 vs_r2;
+vec4 vs_r3;
+#define vs_c0 vs_uniforms_vec4[0]
+#define vs_c1 vs_uniforms_vec4[1]
+#define vs_c2 vs_uniforms_vec4[2]
+#define vs_c3 vs_uniforms_vec4[3]
+#define vs_c4 vs_uniforms_vec4[4]
+#define vs_c5 vs_uniforms_vec4[5]
+#define vs_c6 vs_uniforms_vec4[6]
+#define vs_c7 vs_uniforms_vec4[7]
+#define vs_c8 vs_uniforms_vec4[8]
+#define vs_c9 vs_uniforms_vec4[9]
+in vec4 vs_v0;
+#define vs_o0 gl_Position
+in vec4 vs_v1;
+out vec4 vTexCoord0;
+#define vs_o1 vTexCoord0
+in vec4 vs_v2;
+out vec4 vTexCoord2;
+#define vs_o2 vTexCoord2
+in vec4 vs_v3;
+out vec4 vTexCoord3;
+#define vs_o3 vTexCoord3
+in vec4 vs_v4;
+out vec4 vTexCoord4;
+#define vs_o4 vTexCoord4
+out vec4 vTexCoord5;
+#define vs_o5 vTexCoord5
+out vec4 vTexCoord6;
+#define vs_o6 vTexCoord6
+
+void main()
+{
+	vs_o0.z = dot(vs_v0, vs_c2);
+	vs_o0.w = dot(vs_v0, vs_c3);
+	vs_r0.xy = vs_c11.xx + vs_v4.xy;
+	vs_r0.xy = vec2(greaterThanEqual(-abs(vs_r0.xy), abs(vs_r0.xy)));
+	vs_r0.x = vs_r0.y * vs_r0.x;
+	vs_r0.y = vs_c11.y + vs_v3.x;
+	vs_r0.y = float(-abs(vs_r0.y) >= abs(vs_r0.y));
+	vs_r0.x = vs_r0.y * vs_r0.x;
+	vs_r0.xy = vs_r0.xx * vs_v1.xy;
+	vs_o1.xy = (vs_r0.xy * vs_c11.zz) + vs_v1.xy;
+	vs_r0 = (vs_v2.xyzx * vs_c11.yyyw) + vs_c11.wwwy;
+	vs_r0 = vs_r0 + vs_c9;
+	vs_r1.xz = vs_r0.xz + vs_c8.xz;
+	vs_r1.yw = vs_r0.yw;
+	vs_r2.x = dot(vs_r1, vs_c5);
+	vs_r2.x = vs_r2.x * vs_c12.x;
+	vs_r2.y = dot(vs_r1, vs_c4);
+	vs_r2.x = (vs_r2.y * vs_c12.x) + vs_r2.x;
+	vs_r3.y = dot(vs_r1, vs_c7);
+	vs_r1.x = dot(vs_r1, vs_c6);
+	vs_r1.y = 1.0 / vs_r3.y;
+	vs_r3.x = (vs_r1.x * vs_r1.y) + -vs_r2.x;
+	vs_r1.x = dot(vs_r0, vs_c5);
+	vs_r1.x = vs_r1.x * vs_c12.x;
+	vs_r1.y = dot(vs_r0, vs_c4);
+	vs_r1.x = (vs_r1.y * vs_c12.x) + vs_r1.x;
+	vs_r1.y = dot(vs_r0, vs_c6);
+	vs_r0.y = dot(vs_r0, vs_c7);
+	vs_r0.z = 1.0 / vs_r0.y;
+	vs_r0.x = (vs_r1.y * vs_r0.z) + -vs_r1.x;
+	vs_o4.xy = -vs_r0.xy + vs_r3.xy;
+	vs_o3.xy = vs_r0.xy;
+	vs_r0.x = dot(vs_v0, vs_c0);
+	vs_r0.y = dot(vs_v0, vs_c1);
+	vs_o0.xy = vs_r0.xy;
+	vs_o6 = (vs_r0.xyxy * vs_c10.xxyz) + vs_c10.wwyy;
+	vs_o2.xy = vs_v3.xy;
+	vs_o5.xy = vs_v4.xy;
+	gl_Position.y = gl_Position.y * posFixup.y;
+	gl_Position.xy += posFixup.zw * gl_Position.ww;
+	gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+}
+@@shader 5 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[1];
+const vec4 ps_c1 = vec4(-1.0, -0.0, 1.0, 2.5);
+const vec4 ps_c2 = vec4(1.0, 0.003922, 0.000015, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+#define ps_c0 ps_uniforms_vec4[0]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+uniform sampler2D ps_s4;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord3;
+#define ps_v1 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v2 vTexCoord4
+in vec4 vTexCoord5;
+#define ps_v3 vTexCoord5
+in vec4 vTexCoord6;
+#define ps_v4 vTexCoord6
+
+void main()
+{
+	ps_r0 = texture(ps_s2, ps_v0.xy);
+	ps_r1 = ((-abs(ps_r0.w) >= 0.0) ? ps_c1.xxxx : ps_c1.yyyy);
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	ps_r1 = texture(ps_s0, ps_v0.xy);
+	ps_r2 = texture(ps_s3, ps_v3.xy);
+	ps_r1.xyz = ps_r1.xyz * ps_r2.xyz;
+	ps_r0.xyz = ps_r0.www * ps_r1.xyz;
+	ps_r1 = texture(ps_s1, ps_v0.xy);
+	ps_r1.x = -ps_r1.x + ps_c1.z;
+	ps_r1.x = ps_r1.x * ps_v2.x;
+	ps_r1.x = (ps_r1.x * ps_c1.w) + ps_v1.x;
+	ps_r2 = fsDepth;
+	ps_r1.y = dot(ps_r2.xyz, ps_c2.xyz);
+	ps_r1.x = -ps_r1.x + ps_r1.y;
+	ps_r1.x = ((ps_r1.x >= 0.0) ? ps_c1.y : ps_c1.x);
+	ps_r1.y = ps_c1.y;
+	ps_r1 = ((-ps_c0.x >= 0.0) ? ps_r1.xxxx : -ps_r1.yyyy);
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	ps_oC0 = ps_r0;
+}
+@@shader 6 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[2];
+const vec4 ps_c2 = vec4(-1.0, -0.5, 0.5, 0.503);
+const vec4 ps_c3 = vec4(-0.0, -1.0, 0.0, 0.01);
+const vec4 ps_c4 = vec4(2.5, 1.0, 0.003922, 0.000015);
+const vec4 ps_c5 = vec4(256.0, -255.0, -254.0, -253.0);
+const vec4 ps_c6 = vec4(0.2989, 0.587, 0.114, 0.0);
+const vec4 ps_c7 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+#define ps_c0 ps_uniforms_vec4[0]
+#define ps_c1 ps_uniforms_vec4[1]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord2;
+#define ps_v1 vTexCoord2
+in vec4 vTexCoord3;
+#define ps_v2 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v3 vTexCoord4
+in vec4 vTexCoord5;
+#define ps_v4 vTexCoord5
+in vec4 vTexCoord6;
+#define ps_v5 vTexCoord6
+
+highp vec4 fsPack(highp float d) {
+	highp vec4 e = fract(vec4(1.0, 255.0, 65025.0, 0.0) * d);
+	e.xyz -= e.yzw * (1.0 / 255.0);
+	e.w = 1.0;
+	return e;
+}
+
+void main()
+{
+	ps_r0.x = ps_c2.z + -ps_v0.y;
+	ps_r0.x = -abs(ps_r0.x) + ps_c2.w;
+	ps_r0.y = ps_c2.y + ps_v0.x;
+	ps_r0.x = -abs(ps_r0.y) + ps_r0.x;
+	ps_r0.x = ((ps_r0.x >= 0.0) ? ps_c3.x : ps_c3.y);
+	ps_r1.x = ps_c2.x;
+	ps_r0.y = ps_r1.x + ps_c1.x;
+	ps_r0 = ((ps_r0.y >= 0.0) ? ps_r0.xxxx : ps_c3.zzzz);
+	if (any(lessThan(ps_r0.xyz, vec3(0.0)))) discard;
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_r1.y = -ps_r0.w + ps_c3.w;
+	ps_r2 = ((ps_r1.y >= 0.0) ? ps_c3.yyyy : ps_c3.xxxx);
+	if (any(lessThan(ps_r2.xyz, vec3(0.0)))) discard;
+	ps_r2 = texture(ps_s1, ps_v0.xy);
+	ps_r1.y = -ps_r2.x + -ps_c2.x;
+	ps_r1.y = ps_r1.y * ps_v3.x;
+	ps_r1.y = (ps_r1.y * ps_c4.x) + ps_v2.x;
+	ps_r2 = fsDepth;
+	ps_r1.z = dot(ps_r2.xyz, ps_c4.yzw);
+	ps_r1.z = -ps_r1.y + ps_r1.z;
+	ps_r1.z = ((ps_r1.z >= 0.0) ? ps_c3.x : ps_c3.y);
+	ps_r2.z = ps_c3.z;
+	ps_r2 = ((-ps_c0.x >= 0.0) ? ps_r1.zzzz : ps_r2.zzzz);
+	if (any(lessThan(ps_r2.xyz, vec3(0.0)))) discard;
+	ps_r1.x = ps_r1.x + ps_c0.x;
+	highp float fsD = ps_r1.y;
+	if (-ps_r1.x != ps_r1.x) {
+		ps_r1.xz = ps_c5.xx * ps_v4.yx;
+		ps_r2.xy = fract(ps_r1.xz);
+		ps_r1.xz = ps_r1.xz + -ps_r2.xy;
+		ps_r1.xw = ps_r1.xz + ps_c5.yz;
+		ps_r1.x = ((-abs(ps_r1.x) >= 0.0) ? -ps_c3.y : -ps_c3.x);
+		ps_r1.w = ((-abs(ps_r1.w) >= 0.0) ? ps_r1.x : ps_c3.z);
+		if (ps_r1.w != -ps_r1.w) {
+			ps_r0.xyz = -ps_r0.xyz + -ps_c2.xxx;
+		} else {
+			ps_r1.z = ps_r1.z + ps_c5.w;
+			ps_r1.x = ((-abs(ps_r1.z) >= 0.0) ? ps_r1.x : ps_c3.z);
+			if (ps_r1.x != -ps_r1.x) {
+				ps_r0.z = dot(ps_r0.xyz, ps_c6.xyz);
+				ps_r0.xyz = ps_r0.zzz;
+			} else {
+				if (ps_v4.x != -ps_v4.x) {
+					ps_r2 = texture(ps_s2, ps_v4.xy);
+					ps_r0 = ps_r0 * ps_r2;
+				}
+			}
+		}
+		ps_r1.x = max(-ps_c2.x, ps_v1.x);
+		ps_r1.xzw = ps_r0.xyz * ps_r1.xxx;
+		ps_r0.xyz = ps_r0.www * ps_r1.xzw;
+		ps_oC0 = ps_r0;
+	} else {
+		ps_r0 = ps_r1.yyyy * ps_c7;
+		ps_r0 = fract(ps_r0);
+		ps_oC0.xyz = (ps_r0.yzw * -ps_c4.zzz) + ps_r0.xyz;
+		ps_oC0.w = -ps_c2.x;
+	}
+	fsDepth = fsPack(fsD);
+}
+@@shader 7 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[12];
+const vec4 ps_c12 = vec4(-1.0, -0.5, 0.5, 0.503);
+const vec4 ps_c13 = vec4(-0.0, -1.0, 0.0, 0.01);
+const vec4 ps_c14 = vec4(2.5, 1.0, 0.003922, 0.000015);
+const vec4 ps_c15 = vec4(256.0, -255.0, -254.0, -253.0);
+const vec4 ps_c16 = vec4(0.2989, 0.587, 0.114, 0.00001);
+const vec4 ps_c17 = vec4(0.0, -1.0, 1.0, 0.0);
+const vec4 ps_c18 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+vec4 ps_r3;
+vec4 ps_r4;
+vec4 ps_r5;
+vec4 ps_r6;
+#define ps_c0 ps_uniforms_vec4[0]
+#define ps_c1 ps_uniforms_vec4[1]
+#define ps_c2 ps_uniforms_vec4[2]
+#define ps_c3 ps_uniforms_vec4[3]
+#define ps_c4 ps_uniforms_vec4[4]
+#define ps_c5 ps_uniforms_vec4[5]
+#define ps_c6 ps_uniforms_vec4[6]
+#define ps_c7 ps_uniforms_vec4[7]
+#define ps_c8 ps_uniforms_vec4[8]
+#define ps_c9 ps_uniforms_vec4[9]
+#define ps_c10 ps_uniforms_vec4[10]
+#define ps_c11 ps_uniforms_vec4[11]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+uniform sampler2D ps_s4;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord2;
+#define ps_v1 vTexCoord2
+in vec4 vTexCoord3;
+#define ps_v2 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v3 vTexCoord4
+in vec4 vTexCoord5;
+#define ps_v4 vTexCoord5
+in vec4 vTexCoord6;
+#define ps_v5 vTexCoord6
+
+highp vec4 fsPack(highp float d) {
+	highp vec4 e = fract(vec4(1.0, 255.0, 65025.0, 0.0) * d);
+	e.xyz -= e.yzw * (1.0 / 255.0);
+	e.w = 1.0;
+	return e;
+}
+
+void main()
+{
+	ps_r0.x = ps_c12.z + -ps_v0.y;
+	ps_r0.x = -abs(ps_r0.x) + ps_c12.w;
+	ps_r0.y = ps_c12.y + ps_v0.x;
+	ps_r0.x = -abs(ps_r0.y) + ps_r0.x;
+	ps_r0.x = ((ps_r0.x >= 0.0) ? ps_c13.x : ps_c13.y);
+	ps_r1.x = ps_c12.x;
+	ps_r0.y = ps_r1.x + ps_c5.x;
+	ps_r0 = ((ps_r0.y >= 0.0) ? ps_r0.xxxx : ps_c13.zzzz);
+	if (any(lessThan(ps_r0.xyz, vec3(0.0)))) discard;
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_r1.y = -ps_r0.w + ps_c13.w;
+	ps_r2 = ((ps_r1.y >= 0.0) ? ps_c13.yyyy : ps_c13.xxxx);
+	if (any(lessThan(ps_r2.xyz, vec3(0.0)))) discard;
+	ps_r2 = texture(ps_s1, ps_v0.xy);
+	ps_r1.y = -ps_r2.x + -ps_c12.x;
+	ps_r1.y = ps_r1.y * ps_c14.x;
+	ps_r2.xy = ps_v3.xy;
+	ps_r1.yz = (ps_r1.yy * ps_r2.xy) + ps_v2.xy;
+	ps_r2 = fsDepth;
+	ps_r1.w = dot(ps_r2.xyz, ps_c14.yzw);
+	ps_r1.w = -ps_r1.y + ps_r1.w;
+	ps_r1.w = ((ps_r1.w >= 0.0) ? ps_c13.x : ps_c13.y);
+	ps_r2.z = ps_c13.z;
+	ps_r2 = ((-ps_c4.x >= 0.0) ? ps_r1.wwww : ps_r2.zzzz);
+	highp float fsD = ps_r1.y;
+	if (any(lessThan(ps_r2.xyz, vec3(0.0)))) discard;
+	ps_r2.z = ps_r1.z * ps_r1.y;
+	ps_r2.w = ps_r1.z;
+	ps_r2.xy = ps_v5.xy;
+	ps_r3.w = dot(ps_r2, ps_c3);
+	ps_r1.z = ps_c11.x * ps_v1.y;
+	ps_r1.z = ((ps_r1.z >= 0.0) ? ps_c11.x : -ps_c11.x);
+	ps_r1.w = 1.0 / ps_r1.z;
+	ps_r1.w = ps_r1.w * ps_v1.y;
+	ps_r1.w = fract(ps_r1.w);
+	ps_r4.x = ps_r1.w * ps_r1.z;
+	ps_r5.x = dot(ps_r0.xyz, ps_c16.xyz);
+	ps_r3.y = dot(ps_r2, ps_c0);
+	ps_r3.x = dot(ps_r2, ps_c1);
+	ps_r6.x = 1.0 / ps_c11.x;
+	ps_r6.y = 1.0 / ps_c11.y;
+	ps_r4.y = ps_r6.x * ps_v1.y;
+	ps_r1.zw = fract(ps_r4.xy);
+	ps_r1.zw = -ps_r1.zw + ps_r4.xy;
+	ps_r3.z = dot(ps_r2, ps_c2);
+	ps_r2.xz = ps_c9.xz;
+	ps_r2.xy = (ps_r3.yz * ps_r2.xz) + ps_c10.xy;
+	ps_r1.zw = (ps_r6.xy * ps_r1.zw) + ps_r2.xy;
+	ps_r2 = texture(ps_s2, ps_r1.zw);
+	ps_r1.zw = ((-ps_c5.x >= 0.0) ? ps_r2.xy : ps_r2.zw);
+	ps_r2.zw = ps_r2.xy + ps_c16.ww;
+	ps_r2.z = 1.0 / ps_r2.z;
+	ps_r1.z = ps_r1.z * ps_r2.z;
+	ps_r1.z = ps_r1.z * ps_r2.x;
+	ps_r2.x = 1.0 / ps_r2.w;
+	ps_r1.w = ps_r1.w * ps_r2.x;
+	ps_r1.w = ps_r1.w * ps_r2.y;
+	ps_r2.xyz = ps_c15.xxx * ps_v4.yxx;
+	ps_r4.xyz = fract(ps_r2.xzz);
+	ps_r2.xyz = ps_r2.xyz + -ps_r4.xyz;
+	ps_r2.xyz = ps_r2.xyz + ps_c15.yzw;
+	ps_r2.x = ((-abs(ps_r2.x) >= 0.0) ? ps_c13.y : ps_c13.x);
+	ps_r2.x = ((-abs(ps_r2.z) >= 0.0) ? ps_r2.x : ps_c13.z);
+	ps_r2.y = ((-abs(ps_r2.y) >= 0.0) ? ps_r2.x : ps_c13.z);
+	ps_r4 = ps_c7;
+	ps_r4 = -ps_r4 + ps_c6;
+	ps_r4 = (ps_r1.wwww * ps_r4) + ps_c7;
+	ps_r6 = mix(ps_r4, ps_c8, ps_r1.zzzz);
+	ps_r4 = ps_r0 * ps_r6;
+	ps_r4.xyz = (ps_r3.xzw * ps_c17.xxx) + ps_r4.xyz;
+	ps_r3 = ((-abs(ps_v4.x) >= 0.0) ? ps_r0 : ps_r4);
+	ps_r4 = texture(ps_s3, ps_v4.xy);
+	ps_r4 = ps_r0 * ps_r4;
+	ps_r3 = ((ps_v4.x >= 0.0) ? ps_r3 : ps_r4);
+	ps_r5.y = ps_r0.w;
+	ps_r3 = ((ps_r2.x >= 0.0) ? ps_r3 : ps_r5.xxxy);
+	ps_r0 = (ps_r0 * ps_c17.yyyz) + ps_c17.zzzw;
+	ps_r0 = ((ps_r2.y >= 0.0) ? ps_r3 : ps_r0);
+	ps_r1.z = max(-ps_c12.x, ps_v1.x);
+	ps_r2.xyz = ps_r0.xyz * ps_r1.zzz;
+	ps_r0.xyz = ps_r0.www * ps_r2.xyz;
+	ps_r1.x = ps_r1.x + ps_c4.x;
+	ps_r2.w = -ps_c12.x;
+	ps_r3 = ps_r1.yyyy * ps_c18;
+	ps_r3 = fract(ps_r3);
+	ps_r2.xyz = (ps_r3.yzw * -ps_c14.zzz) + ps_r3.xyz;
+	ps_oC0 = ((ps_r1.x >= 0.0) ? ps_r2 : ps_r0);
+	fsDepth = fsPack(fsD);
+}
+@@shader 8 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[1];
+const vec4 ps_c1 = vec4(0.01, -1.0, -0.0, 1.0);
+const vec4 ps_c2 = vec4(2.5, 1.0, 0.003922, 0.000015);
+const vec4 ps_c3 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+vec4 ps_r3;
+#define ps_c0 ps_uniforms_vec4[0]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+uniform sampler2D ps_s4;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord3;
+#define ps_v1 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v2 vTexCoord4
+in vec4 vTexCoord5;
+#define ps_v3 vTexCoord5
+in vec4 vTexCoord6;
+#define ps_v4 vTexCoord6
+
+highp vec4 fsPack(highp float d) {
+	highp vec4 e = fract(vec4(1.0, 255.0, 65025.0, 0.0) * d);
+	e.xyz -= e.yzw * (1.0 / 255.0);
+	e.w = 1.0;
+	return e;
+}
+
+void main()
+{
+	ps_r0 = texture(ps_s2, ps_v0.xy);
+	ps_r1.x = -ps_r0.w + ps_c1.x;
+	ps_r1 = ((ps_r1.x >= 0.0) ? ps_c1.yyyy : ps_c1.zzzz);
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	ps_r1 = texture(ps_s1, ps_v0.xy);
+	ps_r1.x = -ps_r1.x + ps_c1.w;
+	ps_r1.x = ps_r1.x * ps_v2.x;
+	ps_r1.x = (ps_r1.x * ps_c2.x) + ps_v1.x;
+	ps_r2 = fsDepth;
+	ps_r1.y = dot(ps_r2.xyz, ps_c2.yzw);
+	ps_r1.y = -ps_r1.x + ps_r1.y;
+	ps_r1.y = ((ps_r1.y >= 0.0) ? ps_c1.z : ps_c1.y);
+	ps_r2.yz = ps_c1.yz;
+	ps_r3 = ((-ps_c0.x >= 0.0) ? ps_r1.yyyy : -ps_r2.zzzz);
+	if (any(lessThan(ps_r3.xyz, vec3(0.0)))) discard;
+	ps_r1.y = ps_r2.y + ps_c0.x;
+	highp float fsD = ps_r1.x;
+	if (-ps_r1.y != ps_r1.y) {
+		ps_r2 = texture(ps_s0, ps_v0.xy);
+		ps_r0.xyz = ps_r2.xyz;
+		ps_r2 = texture(ps_s3, ps_v3.xy);
+		ps_r0 = ps_r0 * ps_r2;
+		ps_oC0.xyz = ps_r0.www * ps_r0.xyz;
+		ps_oC0.w = ps_r0.w;
+	} else {
+		ps_r0 = ps_r1.xxxx * ps_c3;
+		ps_r0 = fract(ps_r0);
+		ps_oC0.xyz = (ps_r0.yzw * -ps_c2.zzz) + ps_r0.xyz;
+		ps_oC0.w = ps_c1.w;
+	}
+	fsDepth = fsPack(fsD);
+}
+@@shader 9 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[12];
+const vec4 ps_c12 = vec4(0.01, -1.0, -0.0, 1.0);
+const vec4 ps_c13 = vec4(2.5, 1.0, 0.003922, 0.000015);
+const vec4 ps_c14 = vec4(0.0001, 1.0001, 2.0, -1.0);
+const vec4 ps_c15 = vec4(3.0, 0.00001, 0.0, 0.0);
+const vec4 ps_c16 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+vec4 ps_r3;
+vec4 ps_r4;
+vec4 ps_r5;
+vec4 ps_r6;
+#define ps_c0 ps_uniforms_vec4[0]
+#define ps_c1 ps_uniforms_vec4[1]
+#define ps_c2 ps_uniforms_vec4[2]
+#define ps_c3 ps_uniforms_vec4[3]
+#define ps_c4 ps_uniforms_vec4[4]
+#define ps_c5 ps_uniforms_vec4[5]
+#define ps_c6 ps_uniforms_vec4[6]
+#define ps_c7 ps_uniforms_vec4[7]
+#define ps_c8 ps_uniforms_vec4[8]
+#define ps_c9 ps_uniforms_vec4[9]
+#define ps_c10 ps_uniforms_vec4[10]
+#define ps_c11 ps_uniforms_vec4[11]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+uniform sampler2D ps_s3;
+uniform sampler2D ps_s4;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord2;
+#define ps_v1 vTexCoord2
+in vec4 vTexCoord3;
+#define ps_v2 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v3 vTexCoord4
+in vec4 vTexCoord6;
+#define ps_v4 vTexCoord6
+
+highp vec4 fsPack(highp float d) {
+	highp vec4 e = fract(vec4(1.0, 255.0, 65025.0, 0.0) * d);
+	e.xyz -= e.yzw * (1.0 / 255.0);
+	e.w = 1.0;
+	return e;
+}
+
+void main()
+{
+	ps_r0 = texture(ps_s2, ps_v0.xy);
+	ps_r1.x = -ps_r0.w + ps_c12.x;
+	ps_r1 = ((ps_r1.x >= 0.0) ? ps_c12.yyyy : ps_c12.zzzz);
+	if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	ps_r1 = texture(ps_s1, ps_v0.xy);
+	ps_r1.x = -ps_r1.x + ps_c12.w;
+	ps_r1.x = ps_r1.x * ps_c13.x;
+	ps_r2.xy = ps_v3.xy;
+	ps_r1.xy = (ps_r1.xx * ps_r2.xy) + ps_v2.xy;
+	ps_r2 = fsDepth;
+	ps_r1.z = dot(ps_r2.xyz, ps_c13.yzw);
+	ps_r1.z = -ps_r1.x + ps_r1.z;
+	ps_r1.z = ((ps_r1.z >= 0.0) ? ps_c12.z : ps_c12.y);
+	ps_r2.yz = ps_c12.yz;
+	ps_r3 = ((-ps_c4.x >= 0.0) ? ps_r1.zzzz : -ps_r2.zzzz);
+	highp float fsD = ps_r1.x;
+	if (any(lessThan(ps_r3.xyz, vec3(0.0)))) discard;
+	ps_r3.z = ps_r1.y * ps_r1.x;
+	ps_r3.w = ps_r1.y;
+	ps_r3.xy = ps_v4.xy;
+	ps_r4.w = dot(ps_r3, ps_c3);
+	ps_r1.y = dot(ps_r3, ps_c1);
+	ps_r4.y = ps_r1.y + -ps_v1.x;
+	ps_r1.y = ps_r4.y * ps_c8.y;
+	ps_r1.z = fract(ps_r1.y);
+	ps_r1.z = -ps_r1.z + ps_r1.y;
+	ps_r1.zw = ps_r1.zz + ps_c14.xy;
+	ps_r2.x = ps_r1.z * ps_c10.x;
+	ps_r2.x = ((ps_r2.x >= 0.0) ? ps_c10.x : -ps_c10.x);
+	ps_r2.z = 1.0 / ps_r2.x;
+	ps_r2.z = ps_r1.z * ps_r2.z;
+	ps_r2.z = fract(ps_r2.z);
+	ps_r5.x = ps_r2.z * ps_r2.x;
+	ps_r6.x = 1.0 / ps_c10.x;
+	ps_r5.y = ps_r1.z * ps_r6.x;
+	ps_r4.x = dot(ps_r3, ps_c0);
+	ps_r6.y = 1.0 / ps_c10.y;
+	ps_r2.xz = fract(ps_r5.xy);
+	ps_r2.xz = -ps_r2.xz + ps_r5.xy;
+	ps_r4.z = dot(ps_r3, ps_c2);
+	ps_r3.xz = ps_c8.xz;
+	ps_r3.xy = (ps_r4.xz * ps_r3.xz) + ps_c9.xy;
+	ps_r2.xz = (ps_r6.xy * ps_r2.xz) + ps_r3.xy;
+	ps_r2.w = min(ps_r1.w, ps_c11.x);
+	ps_r5.y = ps_r6.x * ps_r2.w;
+	ps_r1.z = ((ps_r1.y >= 0.0) ? ps_c12.w : ps_c12.y);
+	ps_r1.y = ps_r1.z * ps_r1.y;
+	ps_r1.y = fract(ps_r1.y);
+	ps_r1.y = ps_r1.y * ps_r1.z;
+	ps_r1.z = ps_r2.w * ps_c10.x;
+	ps_r1.z = ((ps_r1.z >= 0.0) ? ps_c10.x : -ps_c10.x);
+	ps_r1.w = 1.0 / ps_r1.z;
+	ps_r1.w = ps_r1.w * ps_r2.w;
+	ps_r1.w = fract(ps_r1.w);
+	ps_r5.x = ps_r1.w * ps_r1.z;
+	ps_r1.zw = fract(ps_r5.xy);
+	ps_r1.zw = -ps_r1.zw + ps_r5.xy;
+	ps_r1.zw = (ps_r6.xy * ps_r1.zw) + ps_r3.xy;
+	ps_r3 = texture(ps_s3, ps_r1.zw);
+	ps_r1.z = (ps_r1.y * ps_c14.z) + ps_c14.w;
+	ps_r2.w = max(ps_r1.z, -ps_c12.z);
+	ps_r5 = texture(ps_s3, ps_r2.xz);
+	ps_r6.xz = mix(ps_r5.xz, ps_r3.xz, ps_r2.ww);
+	ps_r1.y = clamp(ps_r1.y * ps_c15.x, 0.0, 1.0);
+	ps_r6.yw = ps_r5.yw;
+	ps_r3 = mix(ps_r6, ps_r6.xyxy, ps_r1.yyyy);
+	ps_r1.yz = ps_r3.xy + ps_c15.yy;
+	ps_r1.y = 1.0 / ps_r1.y;
+	ps_r1.y = ps_r1.y * ps_r3.z;
+	ps_r1.z = 1.0 / ps_r1.z;
+	ps_r1.yz = ps_r1.yz * ps_r3.xw;
+	ps_r1.z = ps_r1.z * ps_r3.y;
+	ps_r3 = texture(ps_s0, ps_v0.xy);
+	ps_r0.xyz = ps_r3.xyz;
+	ps_r3 = ps_c6;
+	ps_r3 = -ps_r3 + ps_c5;
+	ps_r3 = (ps_r1.zzzz * ps_r3) + ps_c6;
+	ps_r5 = mix(ps_r3, ps_c7, ps_r1.yyyy);
+	ps_r0 = ps_r0 * ps_r5;
+	ps_r1.yzw = (ps_r4.yzw * ps_c15.zzz) + ps_r0.xyz;
+	ps_r0.xyz = ps_r0.www * ps_r1.yzw;
+	ps_r1.y = ps_r2.y + ps_c4.x;
+	ps_r2.w = ps_c12.w;
+	ps_r3 = ps_r1.xxxx * ps_c16;
+	ps_r3 = fract(ps_r3);
+	ps_r2.xyz = (ps_r3.yzw * -ps_c13.zzz) + ps_r3.xyz;
+	ps_oC0 = ((ps_r1.y >= 0.0) ? ps_r2 : ps_r0);
+	fsDepth = fsPack(fsD);
+}
+@@shader 10 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[1];
+const vec4 ps_c1 = vec4(-0.1, -0.0, -1.0, 1.0);
+const vec4 ps_c2 = vec4(2.5, 0.003922, 0.0, 0.0);
+const vec4 ps_c3 = vec4(1.0, 255.0, 65025.0, 0.0);
+vec4 ps_r0;
+vec4 ps_r1;
+#define ps_c0 ps_uniforms_vec4[0]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord2;
+#define ps_v1 vTexCoord2
+in vec4 vTexCoord3;
+#define ps_v2 vTexCoord3
+in vec4 vTexCoord4;
+#define ps_v3 vTexCoord4
+
+void main()
+{
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	ps_r0.x = ps_r0.w + ps_c1.x;
+	ps_r0 = ((ps_r0.x >= 0.0) ? ps_c1.yyyy : ps_c1.zzzz);
+	if (any(lessThan(ps_r0.xyz, vec3(0.0)))) discard;
+	ps_r0 = texture(ps_s1, ps_v0.xy);
+	ps_r0.x = -ps_r0.x + ps_c1.w;
+	ps_r0.x = ps_r0.x * ps_v3.x;
+	ps_r0.x = (ps_r0.x * ps_c2.x) + ps_v2.x;
+	ps_r0.z = ps_c1.z;
+	ps_r0.y = ps_r0.z + ps_c0.x;
+	ps_r1 = ps_r0.xxxx * ps_c3;
+	ps_r1 = fract(ps_r1);
+	ps_r0.xzw = (ps_r1.yzw * -ps_c2.yyy) + ps_r1.xyz;
+	ps_r1 = ps_c3 * ps_v1.xxxx;
+	ps_r1 = fract(ps_r1);
+	ps_r1.xyz = (ps_r1.yzw * -ps_c2.yyy) + ps_r1.xyz;
+	ps_oC0.xyz = ((ps_r0.y >= 0.0) ? ps_r0.xzw : ps_r1.xyz);
+	ps_oC0.w = ps_c1.w;
+}
+@@shader 11 pixel
+#version 300 es
+#extension GL_EXT_shader_framebuffer_fetch : require
+#ifdef GL_ES
+precision highp float;  
+precision mediump int;
+#endif
+
+uniform vec4 ps_uniforms_vec4[1];
+const vec4 ps_c1 = vec4(1.0, 255.0, 65025.0, 0.0);
+const vec4 ps_c2 = vec4(-0.0, -1.0, 0.0, 0.0);
+const vec4 ps_c3 = vec4(0.01, -1.0, -0.003922, -0.000015);
+vec4 ps_r0;
+vec4 ps_r1;
+vec4 ps_r2;
+#define ps_c0 ps_uniforms_vec4[0]
+uniform sampler2D ps_s0;
+uniform sampler2D ps_s1;
+uniform sampler2D ps_s2;
+in vec4 vTexCoord0;
+#define ps_v0 vTexCoord0
+layout(location = 0) out vec4 fsColor;
+layout(location = 1) inout highp vec4 fsDepth;
+#define ps_oC0 fsColor
+in vec4 vTexCoord3;
+#define ps_v1 vTexCoord3
+in vec4 vTexCoord6;
+#define ps_v2 vTexCoord6
+
+highp vec4 fsPack(highp float d) {
+	highp vec4 e = fract(vec4(1.0, 255.0, 65025.0, 0.0) * d);
+	e.xyz -= e.yzw * (1.0 / 255.0);
+	e.w = 1.0;
+	return e;
+}
+
+void main()
+{
+	ps_r0 = texture(ps_s0, ps_v0.xy);
+	if (ps_r0.w < ps_c3.x) {
+		ps_oC0 = ps_r0;
+		ps_r1 = ps_c3.yyyy;
+		if (any(lessThan(ps_r1.xyz, vec3(0.0)))) discard;
+	} else {
+		ps_r1 = texture(ps_s1, ps_v0.xy);
+		ps_r1.x = dot(ps_r1.xyz, -ps_c3.yzw);
+		ps_r1.x = ps_r1.x + ps_v1.x;
+		ps_r2 = fsDepth;
+		ps_r1.y = dot(ps_r2.xyz, -ps_c3.yzw);
+		ps_r1.y = -ps_r1.x + ps_r1.y;
+		ps_r1.y = ((ps_r1.y >= 0.0) ? ps_c2.x : ps_c2.y);
+		ps_r1.z = ps_c2.z;
+		ps_r2 = ((-ps_c0.x >= 0.0) ? ps_r1.yyyy : ps_r1.zzzz);
+		if (any(lessThan(ps_r2.xyz, vec3(0.0)))) discard;
+		ps_r1.y = ps_c3.y;
+		ps_r1.y = ps_r1.y + ps_c0.x;
+		ps_r2 = ps_r1.xxxx * ps_c1;
+		ps_r2 = fract(ps_r2);
+		ps_r2.xyz = (ps_r2.yzw * ps_c3.zzz) + ps_r2.xyz;
+		ps_r2.w = -ps_c3.y;
+		fsDepth = fsPack(ps_r1.x);
+		ps_oC0 = ((ps_r1.y >= 0.0) ? ps_r2 : ps_r0);
+	}
+}
+@@shader 12 vertex
+#version 300 es
+#ifdef GL_ES
+precision highp float;
+precision mediump int;
+#endif
+
+uniform vec4 vs_uniforms_vec4[8];
+uniform vec4 posFixup;
+const vec4 vs_c8 = vec4(1.0, 0.5, -0.5, 0.0);
+const vec4 vs_c9 = vec4(1.0, 0.0, 0.0, 0.0);
+vec4 vs_r0;
+vec4 vs_r1;
+#define vs_c0 vs_uniforms_vec4[0]
+#define vs_c1 vs_uniforms_vec4[1]
+#define vs_c2 vs_uniforms_vec4[2]
+#define vs_c3 vs_uniforms_vec4[3]
+#define vs_c4 vs_uniforms_vec4[4]
+#define vs_c5 vs_uniforms_vec4[5]
+#define vs_c6 vs_uniforms_vec4[6]
+#define vs_c7 vs_uniforms_vec4[7]
+in vec4 vs_v0;
+#define vs_o0 gl_Position
+in vec4 vs_v1;
+out vec4 vTexCoord0;
+#define vs_o1 vTexCoord0
+in vec4 vs_v2;
+out vec4 vTexCoord2;
+#define vs_o2 vTexCoord2
+in vec4 vs_v3;
+out vec4 vTexCoord3;
+#define vs_o3 vTexCoord3
+in vec4 vs_v4;
+out vec4 vTexCoord4;
+#define vs_o4 vTexCoord4
+out vec4 vTexCoord5;
+#define vs_o5 vTexCoord5
+out vec4 vTexCoord6;
+#define vs_o6 vTexCoord6
+
+void main()
+{
+	vs_o0.z = dot(vs_v0, vs_c2);
+	vs_o0.w = dot(vs_v0, vs_c3);
+	vs_r0.x = dot(vs_v0, vs_c0);
+	vs_r0.y = dot(vs_v0, vs_c1);
+	vs_o0.xy = vs_r0.xy;
+	vs_o6 = (vs_r0.xyxy * vs_c8.xxyz) + vs_c8.wwyy;
+	vs_o1.xy = vs_v1.xy;
+	vs_o2.xy = vs_v3.xy;
+	vs_r0 = (vs_v2.xyzx * vs_c9.xxxy) + vs_c9.yyyx;
+	vs_r1.x = dot(vs_r0, vs_c5);
+	vs_r1.x = vs_r1.x * vs_c9.z;
+	vs_r1.y = dot(vs_r0, vs_c4);
+	vs_r1.x = (vs_r1.y * vs_c9.z) + vs_r1.x;
+	vs_r1.z = vs_c9.z;
+	vs_r1.x = (vs_c4.w * vs_r1.z) + vs_r1.x;
+	vs_r1.x = (vs_c5.w * vs_r1.z) + vs_r1.x;
+	vs_r1.y = dot(vs_r0, vs_c7);
+	vs_r0.x = dot(vs_r0, vs_c6);
+	vs_r0.y = 1.0 / vs_r1.y;
+	vs_r0.x = (vs_r0.x * vs_r0.y) + -vs_r1.x;
+	vs_r0.y = 1.0 / vs_c7.w;
+	vs_r0.x = (vs_c6.w * -vs_r0.y) + vs_r0.x;
+	vs_o3.x = vs_r0.x;
+	vs_o4.x = vs_r0.x;
+	vs_o3.y = vs_c9.y;
+	vs_o4.y = vs_c9.y;
+	vs_o5.xy = vs_v4.xy;
+	gl_Position.y = gl_Position.y * posFixup.y;
+	gl_Position.xy += posFixup.zw * gl_Position.ww;
+	gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+}
+@@program drawSimple.p0 1 0
+@@program drawSimpleID.p0 1 2
+@@program drawZSprite.p0 4 3
+@@program drawZWall.p0 4 5
+@@program drawZSpriteDepthChannel.simple 4 6
+@@program drawZSpriteDepthChannel.advLighting 4 7
+@@program drawZWallDepthChannel.simple 4 8
+@@program drawZWallDepthChannel.advLighting 4 9
+@@program drawZSpriteOBJID.p0 4 10
+@@program drawSimpleRestoreDepth.p0 12 11

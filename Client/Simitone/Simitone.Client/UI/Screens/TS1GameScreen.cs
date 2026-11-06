@@ -1062,6 +1062,7 @@ namespace Simitone.Client.UI.Screens
         public void ExitLot()
         {
             CleanupLastWorld();
+            Bg.Visible = true; //hidden while on the lot: show the patterned background around the neighbourhood again
             NeighSelection(CurrentNeighborhoodMode);
             Downtown = false;
             SavedLot = null;

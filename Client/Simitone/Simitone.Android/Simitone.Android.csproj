@@ -1,0 +1,153 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Simitone for Android phones (arm64). Build from this folder (Directory.Build.rsp adds -p:SimitoneAndroid=true):
+         dotnet publish -c Release -f net10.0-android -p:AndroidSdkDirectory=... -p:JavaSdkDirectory=...
+       The APK is bin/Release/net10.0-android/publish/com.sleepsong.simitone-Signed.apk. See ANDROID.md. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <ApplicationId>com.sleepsong.simitone</ApplicationId>
+    <ApplicationTitle>Simitone</ApplicationTitle>
+    <ApplicationVersion>29</ApplicationVersion>
+    <ApplicationDisplayVersion>0.29-forked</ApplicationDisplayVersion>
+    <RootNamespace>Simitone.Android</RootNamespace>
+    <AssemblyName>Simitone.Android</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RuntimeIdentifiers>android-arm64</RuntimeIdentifiers>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- ahead-of-time compiled (faster start-up and loading than JIT). AOT needs trimming: "partial" trims only
+         assemblies marked trimmable (the .NET libraries); MonoGame is marked trimmable too but is kept whole below,
+         as it loads content readers by name and the 2D depth fixes reach into its internals. The engine itself
+         (reflection everywhere) isn't trimmable, so it's untouched. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <AndroidEnableProfiledAot>false</AndroidEnableProfiledAot>
+    <UseMonoRuntime>true</UseMonoRuntime>
+    <!-- register the Java-to-.NET links at start-up (marshal methods left SimitoneActivity.onCreate unlinked) -->
+    <AndroidEnableMarshalMethods>false</AndroidEnableMarshalMethods>
+    <NoWarn>$(NoWarn);NU1605;NU1701;NU1608;CA1416;XA4211;XA1006</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Simitone.Client\Simitone.Client.csproj" />
+  </ItemGroup>
+
+  <!-- keep every non-.NET assembly whole: the engine's projects say IsAotCompatible (which also marks them
+       trimmable), but they use reflection widely, and content readers (fonts, effects) are found by name -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="MonoGame.Framework;SixLabors.ImageSharp;MSDFData;TargaImagePCL;FSO.Common;FSO.Content;FSO.Files;FSO.HIT;FSO.LotView;FSO.SimAntics;FSO.UI;FSO.Vitaboy;FSO.Vitaboy.Engine;Simitone.Client;Simitone.Android;GOLDEngine;HandEvaluator;Mario;Mina.NET;MP3Sharp;Newtonsoft.Json;Ninject;Common.Logging;Common.Logging.Core;xxHashSharp" RootMode="All" />
+  </ItemGroup>
+
+  <!-- old .NET Framework libraries the engine pulls in (unused on Android) that reference types Android doesn't
+       have: the AOT compiler fails on them, so they stay JIT (they're still packaged) -->
+  <PropertyGroup>
+    <SimitoneNoAot>;Common.Logging;</SimitoneNoAot>
+  </PropertyGroup>
+  <Target Name="_SimitoneSkipAot" AfterTargets="_AndroidAotInputs">
+    <ItemGroup>
+      <_AndroidAotInputs Remove="@(_AndroidAotInputs)" Condition="$(SimitoneNoAot.Contains(';%(Filename);'))" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_SimitoneCheckAndroidFlag" BeforeTargets="CollectPackageReferences;Build" Condition="'$(SimitoneAndroid)' != 'true'">
+    <Error Text="Build Simitone.Android from its own folder (Directory.Build.rsp there sets -p:SimitoneAndroid=true), or pass -p:SimitoneAndroid=true: without it the engine libraries hand MonoGame DesktopGL to the app." />
+  </Target>
+
+  <!-- Content: the same Content folder the desktop build has, gathered from the projects that supply it (first one
+       listed wins when two have the same file), plus this project's Content folder (the one-pass 2D shader). It's
+       staged in obj/, packaged as assets/Content/, and listed in assets/Content/files.txt, which SimitoneActivity
+       unpacks to the app's storage on the first run after an install or update. The phone shaders' pixel stages are
+       switched from medium to high precision on the way: at medium, depth and lighting band on phone GPUs. -->
+  <PropertyGroup>
+    <SimitoneClientDir>$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory), '..', 'Simitone.Client'))</SimitoneClientDir>
+    <SimitoneFSODir>$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory), '..', '..', '..', 'FreeSO', 'TSOClient'))</SimitoneFSODir>
+  </PropertyGroup>
+  <ItemGroup>
+    <SimitoneContentSource Include="Content/**/*" Root="$(MSBuildThisFileDirectory)Content" />
+    <!-- (Simitone.Client's Textures/roof isn't in its project, so the desktop build has tso.content's roof textures) -->
+    <SimitoneContentSource Include="$(SimitoneClientDir)Content/**/*" Root="$(SimitoneClientDir)Content"
+                           Exclude="$(SimitoneClientDir)Content/Textures/roof/**" />
+    <SimitoneContentSource Include="$(SimitoneFSODir)tso.content/Content/**/*" Root="$(SimitoneFSODir)tso.content/Content"
+                           Exclude="$(SimitoneFSODir)tso.content/Content/DX/**;$(SimitoneFSODir)tso.content/Content/Effects/**" />
+    <SimitoneContentSource Include="$(SimitoneFSODir)FSO.Content.TSO/Content/Globals/**/*;$(SimitoneFSODir)FSO.Content.TSO/Content/UI/uitext/**/*;$(SimitoneFSODir)FSO.Content.TSO/Content/UI/uiscripts/**/*;$(SimitoneFSODir)FSO.Content.TSO/Content/uigraphics/**/*;$(SimitoneFSODir)FSO.Content.TSO/Content/Textures/**/*;$(SimitoneFSODir)FSO.Content.TSO/Content/FSODataDefinition.dat;$(SimitoneFSODir)FSO.Content.TSO/Content/banlist.txt;$(SimitoneFSODir)FSO.Content.TSO/Content/upgrades.json"
+                           Root="$(SimitoneFSODir)FSO.Content.TSO/Content" />
+    <SimitoneContentSource Include="$(SimitoneFSODir)tso.client/Content/**/*" Root="$(SimitoneFSODir)tso.client/Content" />
+  </ItemGroup>
+
+  <UsingTask TaskName="SimitoneStageContent" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Sources ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <StageDir ParameterType="System.String" Required="true" />
+      <Staged ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var content = Path.Combine(Path.GetFullPath(StageDir), "Content");
+        var seen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
+        foreach (var item in Sources)
+        {
+            var file = item.GetMetadata("FullPath");
+            var root = Path.GetFullPath(item.GetMetadata("Root")).TrimEnd('/', '\\') + Path.DirectorySeparatorChar;
+            if (!file.StartsWith(root, StringComparison.Ordinal)) continue;
+            var rel = file.Substring(root.Length).Replace('\\', '/');
+            if (seen.ContainsKey(rel)) continue;
+            seen[rel] = file;
+            order.Add(rel);
+        }
+        var oldP = System.Text.Encoding.ASCII.GetBytes("precision mediump float;");
+        var newP = System.Text.Encoding.ASCII.GetBytes("precision highp float;  ");
+        var output = new List<Microsoft.Build.Framework.ITaskItem>();
+        foreach (var rel in order)
+        {
+            var dest = Path.Combine(content, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest));
+            var data = File.ReadAllBytes(seen[rel]);
+            if (rel.EndsWith(".xnb", StringComparison.OrdinalIgnoreCase) && (rel.StartsWith("iOS/Effects/") || rel.StartsWith("OGL/Effects/")))
+            {
+                for (int i = 0; i <= data.Length - oldP.Length; i++)
+                {
+                    int j = 0;
+                    while (j < oldP.Length && data[i + j] == oldP[j]) j++;
+                    if (j == oldP.Length) { Array.Copy(newP, 0, data, i, newP.Length); i += oldP.Length - 1; }
+                }
+            }
+            if (!File.Exists(dest) || new FileInfo(dest).Length != data.Length || !File.ReadAllBytes(dest).SequenceEqual(data)) File.WriteAllBytes(dest, data);
+            var asset = new Microsoft.Build.Utilities.TaskItem(dest);
+            asset.SetMetadata("Link", "Assets/Content/" + rel);
+            output.Add(asset);
+        }
+        var list = Path.Combine(content, "files.txt");
+        var text = string.Join("\n", order.OrderBy(x => x, StringComparer.Ordinal).Select(x => "Content/" + x)) + "\n";
+        if (!File.Exists(list) || File.ReadAllText(list) != text) File.WriteAllText(list, text);
+        var listAsset = new Microsoft.Build.Utilities.TaskItem(list);
+        listAsset.SetMetadata("Link", "Assets/Content/files.txt");
+        output.Add(listAsset);
+        Staged = output.ToArray();
+        Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High, "Simitone content: " + order.Count + " files");
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="_SimitoneContent" BeforeTargets="_ComputeAndroidAssetsPaths">
+    <PropertyGroup>
+      <SimitoneContentStage>$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), $(IntermediateOutputPath), 'simitone-content'))</SimitoneContentStage>
+    </PropertyGroup>
+    <SimitoneStageContent Sources="@(SimitoneContentSource)" StageDir="$(SimitoneContentStage)">
+      <Output TaskParameter="Staged" ItemName="AndroidAsset" />
+    </SimitoneStageContent>
+  </Target>
+</Project>

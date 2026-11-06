@@ -1,0 +1,11 @@
+<Project>
+  <!-- Android build only (Simitone.Android sets SimitoneAndroid=true through its Directory.Build.rsp, which reaches every
+       project it builds): the engine libraries compile against MonoGame DesktopGL but mustn't pass it (or its desktop
+       SDL/OpenAL natives) on to the app, which brings MonoGame.Framework.Android instead. Desktop builds are unaffected. -->
+  <ItemGroup Condition="'$(SimitoneAndroid)' == 'true' and '$(TargetPlatformIdentifier)' != 'android'">
+    <PackageReference Update="MonoGame.Framework.DesktopGL" PrivateAssets="all" />
+    <PackageReference Update="MonoGame.Framework.WindowsDX" PrivateAssets="all" />
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.4" PrivateAssets="all"
+                      Condition="'@(PackageReference->WithMetadataValue('Identity', 'MonoGame.Framework.DesktopGL'))' == ''" />
+  </ItemGroup>
+</Project>

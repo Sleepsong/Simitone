@@ -455,16 +455,14 @@ namespace Simitone.Client.UI.Panels
             {
                 VMEntity obj;
                 //get new pie menu, make new pie menu panel for it
-                var tilePos = World.EstTileAtPosWithScroll(new Vector2(pt.X, pt.Y) / FSOEnvironment.DPIScaleFactor);
+                var tilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(pt.X, pt.Y)));
 
                 LotTilePos targetPos = LotTilePos.FromBigTile((short)tilePos.X, (short)tilePos.Y, World.State.Level);
                 if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
 
                 GotoObject.SetPosition(targetPos, Direction.NORTH, vm.Context);
 
-                var newHover = World.GetObjectIDAtScreenPos(pt.X,
-                    pt.Y,
-                    GameFacade.GraphicsDevice);
+                var newHover = World.GetObjectIDAtScreenTap(pt, GameFacade.GraphicsDevice);
 
                 ObjectHover = newHover;
 
@@ -493,6 +491,7 @@ namespace Simitone.Client.UI.Panels
                         if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
                         {
                             var flags = ((VMGameObject)obj).Disabled;
+                            Console.WriteLine($"[tap] {pt.X},{pt.Y}: {obj} (id {obj.ObjectID}) is disabled ({flags})");
 
                             if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
                             {
@@ -513,7 +512,14 @@ namespace Simitone.Client.UI.Panels
                         else
                         {
                             var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
-                            if (menu.Count != 0)
+                            Console.WriteLine($"[tap] {pt.X},{pt.Y}: {(objSelected ? obj.ToString() + " (id " + obj.ObjectID + ")" : "the ground")}, {menu.Count} actions" +
+                                (menu.Count > 0 ? ": " + string.Join(", ", menu.Select(x => x.Name)) : ""));
+                            if (menu.Count == 0)
+                            {
+                                // touch has no cursor to show "not available", so say so (a mouse hover shows it on PCs)
+                                ShowTextTooltip(state, objSelected ? $"Nothing to do with the {obj} right now" : "Can't go there right now", true);
+                            }
+                            else
                             {
                                 HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);
                                 PieMenu = new UIPieMenu(menu, obj, ActiveEntity, this);
@@ -528,6 +534,7 @@ namespace Simitone.Client.UI.Panels
                 }
                 else
                 {
+                    Console.WriteLine($"[tap] {pt.X},{pt.Y}: nothing there, and the tile at {tilePos.X:0.0},{tilePos.Y:0.0} can't be walked to");
                     ShowErrorTooltip(state, 0, true);
                 }
             }
@@ -537,6 +544,12 @@ namespace Simitone.Client.UI.Panels
                 this.Remove(PieMenu);
                 PieMenu = null;
             }
+        }
+
+        private void ShowTextTooltip(UpdateState state, string text, bool playSound)
+        {
+            ShowErrorTooltip(state, 0, playSound);
+            state.UIState.Tooltip = text;
         }
 
         private void ShowErrorTooltip(UpdateState state, uint id, bool playSound, params string[] args)
@@ -578,9 +591,7 @@ namespace Simitone.Client.UI.Panels
                 {
                     OldMX = state.MouseState.X;
                     OldMY = state.MouseState.Y;
-                    var newHover = World.GetObjectIDAtScreenPos(state.MouseState.X,
-                        state.MouseState.Y,
-                        GameFacade.GraphicsDevice);
+                    var newHover = World.GetObjectIDAtScreenTap(state.MouseState.Position, GameFacade.GraphicsDevice);
 
                     if (ObjectHover != newHover)
                     {
@@ -937,7 +948,7 @@ namespace Simitone.Client.UI.Panels
                         if (deltaX < 5 && deltaY < 5 && LiveMode && ActiveEntity != null)
                         {
                             // It was a click - check if clicking on a household Sim
-                            var clickedObjId = World.GetObjectIDAtScreenPos(RMBScrollX, RMBScrollY, GameFacade.GraphicsDevice);
+                            var clickedObjId = World.GetObjectIDAtScreenTap(new Point(RMBScrollX, RMBScrollY), GameFacade.GraphicsDevice);
                             if (clickedObjId > 0)
                             {
                                 var clickedObj = vm.GetObjectById(clickedObjId);
@@ -1060,7 +1071,7 @@ namespace Simitone.Client.UI.Panels
             {
                 World.State.DynamicCutaway = (WallsMode == 1);
                 //first we need to cycle the rooms that are being cutaway. Keep this up even if we're in all-cut mode.
-                var mouseTilePos = World.EstTileAtPosWithScroll(new Vector2(state.MouseState.X, state.MouseState.Y) / FSOEnvironment.DPIScaleFactor);
+                var mouseTilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(state.MouseState.X, state.MouseState.Y)));
                 var roomHover = vm.Context.GetRoomAt(LotTilePos.FromBigTile((short)(mouseTilePos.X), (short)(mouseTilePos.Y), World.State.Level));
                 var outside = (vm.Context.RoomInfo[roomHover].Room.IsOutside);
                 if (!outside && !CutRooms.Contains(roomHover))

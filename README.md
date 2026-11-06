@@ -282,6 +282,10 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 -nosound         # Disable audio
 ```
 
+## Android Phones
+
+See [ANDROID.md](ANDROID.md) for installing and building the Android version.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.

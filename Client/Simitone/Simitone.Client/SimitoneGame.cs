@@ -415,8 +415,37 @@ namespace Simitone.Client
         /// </summary>
         protected override void Draw(GameTime gameTime)
         {
+            CountFrame();
             base.Draw(gameTime);
             TestMode.AfterDraw(GraphicsDevice);
+        }
+
+        // frame rate counter (Options > Show FPS): frames per second, average and worst frame over the last half second
+        private System.Diagnostics.Stopwatch FPSClock = System.Diagnostics.Stopwatch.StartNew();
+        private double FPSWindowStart, FPSLastFrame, FPSWorst;
+        private int FPSFrames;
+        private string FPSText;
+        private void CountFrame()
+        {
+            if (!GlobalSettings.Default.ShowFPS)
+            {
+                FSO.Client.UI.UILayer.OverlayText = null;
+                FPSText = null;
+                return;
+            }
+            if (FSO.Client.UI.UILayer.OverlayText == null) FSO.Client.UI.UILayer.OverlayText = () => FPSText;
+            var now = FPSClock.Elapsed.TotalMilliseconds;
+            if (FPSFrames > 0 || FPSWindowStart > 0) FPSWorst = Math.Max(FPSWorst, now - FPSLastFrame);
+            FPSLastFrame = now;
+            FPSFrames++;
+            var elapsed = now - FPSWindowStart;
+            if (elapsed >= 500)
+            {
+                if (FPSWindowStart > 0) FPSText = $"{FPSFrames * 1000 / elapsed:0} fps   {elapsed / FPSFrames:0.0} ms   worst {FPSWorst:0} ms";
+                FPSWindowStart = now;
+                FPSFrames = 0;
+                FPSWorst = 0;
+            }
         }
 
         protected override void UnloadContent()

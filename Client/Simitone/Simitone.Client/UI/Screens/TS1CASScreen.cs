@@ -78,6 +78,7 @@ namespace Simitone.Client.UI.Screens
         public float HeadSpeed = 0f;
         public float BodySpeed = 0f;
         public float XLast = -1f;
+        private bool DragBodies;
 
         public int HeadPositionLast = 0;
         public int BodyPositionLast = 0;
@@ -145,6 +146,7 @@ namespace Simitone.Client.UI.Screens
                 var pos2 = Mode2D[next];
 
                 if (World != null) World.State.PreciseZoom = 1 + Math.Min(0, value * 0.5f);
+                var simEditWeight = Math.Max(0, Math.Min(1, value)); //0 at family edit, 1 at sim edit
                 value = (float)DirectionUtils.PosMod(value, 1.0);
                 var campos = Vector3.Lerp(pos1, pos2, value);
                 campos += (float)Math.Sin(value * Math.PI) * SinTransitions[prev];
@@ -152,7 +154,12 @@ namespace Simitone.Client.UI.Screens
 
 
                 if (World != null)
-                    World.State.CenterTile = new Vector2(campos.X, campos.Z) / 3f;
+                {
+                    var center = new Vector2(campos.X, campos.Z) / 3f;
+                    World.BackbufferScale = Scale2D;
+                    if (Scale2D != 1) center += CarouselOffset2D(center) * simEditWeight;
+                    World.State.CenterTile = center;
+                }
             }
             else
             {
@@ -173,6 +180,42 @@ namespace Simitone.Client.UI.Screens
             }
         }
 
+        // 2D on phones: the world is drawn at screen pixels, so Sims come out a fraction of the size of the UI (the lot
+        // view has pinch zoom for this; here there's none). Magnify it by the UI scale, as the lot view's zoom does, and
+        // move the camera so the front of the carousel sits in the space below the panel, which on a wide, short phone
+        // screen it otherwise ends up under.
+        private float Scale2D => (Cam == null && FSOEnvironment.DPIScaleFactor > 1) ? FSOEnvironment.DPIScaleFactor : 1f;
+        // touches above this line (UI units) turn the heads, below it the bodies. -1: the original 62.5% of the screen
+        private float HeadSplitY = -1;
+        private static readonly Vector3 CarouselFront = new Vector3(28.5f + 4.5f, 21.5f, 0); //where the chosen head and body stand
+
+        private Vector2 CarouselOffset2D(Vector2 center)
+        {
+            var ws = World.State.WorldSpace;
+            var scale = Scale2D;
+            var dpi = FSOEnvironment.DPIScaleFactor;
+            // world pixels from the screen centre (the camera's tile) to the front Sim's feet and neck
+            var origin = ws.GetScreenFromTile(new Vector3(center, 0));
+            var feet = ws.GetScreenFromTile(CarouselFront) - origin;
+            var neckZ = 1.55f;
+            try
+            {
+                var head = HeadAvatars?[0]?.Avatar?.Skeleton?.GetBone("HEAD");
+                if (head != null) neckZ = head.AbsolutePosition.Y / 3f;
+            }
+            catch { }
+            var neck = ws.GetScreenFromTile(CarouselFront + new Vector3(0, 0, neckZ)) - origin;
+
+            // where they'd show on screen (UI units) after magnifying about the screen centre, and where they should
+            var screenCenter = new Vector2(ScreenWidth, ScreenHeight) / 2;
+            var feetOnScreen = screenCenter + feet * scale / dpi;
+            var target = new Vector2(ScreenWidth / 2f, ScreenHeight - 30);
+            HeadSplitY = target.Y + (neck.Y - feet.Y) * scale / dpi;
+
+            // moving the camera by a screen offset moves everything the other way
+            return ws.GetTileFromScreen((feetOnScreen - target) * dpi / scale);
+        }
+
         private string MissingFallback(string x, IEnumerable<string> texnames)
         {
             return "x";
@@ -187,15 +230,17 @@ namespace Simitone.Client.UI.Screens
 
             var tex = (TS1AvatarTextureProvider)Content.Get().AvatarTextures;
             var texnames = tex.GetAllNames();
-            ActiveHeads = heads;
-            ActiveBodies = bodies;
-            
+            //copies: the head list belongs to the content system, and removing from it would lose those heads for good
+            ActiveHeads = heads.ToList();
+            ActiveBodies = bodies.ToList();
+
             ActiveHeadTex = heads.Select(x => RemoveExt(texnames.FirstOrDefault(y => y.StartsWith(ExtractID(x, CurrentSkin))))).ToList();
+            //bodies with no texture of their own (townie outfits like the burglar's, dressed by their object) would only show the
+            //mesh's placeholder, a plain grey square, so they're left out like heads without a texture
             ActiveBodyTex = bodies.Select(x => RemoveExt(
                 texnames.FirstOrDefault(y => y.StartsWith(ExtractID(x, CurrentSkin)))
-                ?? texnames.FirstOrDefault(y => y.StartsWith(ExtractID(x, ""))) ?? MissingFallback(x, texnames)
+                ?? texnames.FirstOrDefault(y => y.StartsWith(ExtractID(x, "")))
                 )).ToList();
-            ActiveHandgroupTex = ActiveBodyTex.Select(x => (RemoveExt(texnames.FirstOrDefault(y => RemoveExt(y) == "huao"+FindHG(x))) ?? "huao"+ CurrentSkin).Substring(4)).ToList();
 
             for (int i=0; i<ActiveHeads.Count; i++)
             {
@@ -211,10 +256,10 @@ namespace Simitone.Client.UI.Screens
                 if (ActiveBodyTex[i] == null)
                 {
                     ActiveBodyTex.RemoveAt(i);
-                    ActiveHandgroupTex.RemoveAt(i);
                     ActiveBodies.RemoveAt(i--);
                 }
             }
+            ActiveHandgroupTex = ActiveBodyTex.Select(x => (RemoveExt(texnames.FirstOrDefault(y => RemoveExt(y) == "huao"+FindHG(x))) ?? "huao"+ CurrentSkin).Substring(4)).ToList();
 
             HeadPositionLast = 0;
             BodyPositionLast = 0;
@@ -258,26 +303,36 @@ namespace Simitone.Client.UI.Screens
 
             var moving = 0;
 
+            //the mouse/touch position is in screen pixels, while the screen size and the 282 cut-off (below the panel)
+            //are in UI units, so scale it down by the UI scale first (2.29 on a phone, 1 on most PCs).
+            var dpi = FSOEnvironment.DPIScaleFactor;
+            var mouseX = state.MouseState.X / dpi;
+            var mouseY = state.MouseState.Y / dpi;
             if (state.MouseStates.Count(x => x.MouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed) > 0)
             {
                 if (XLast == -1)
                 {
-                    if (state.MouseState.Y > 282)
-                        XLast = state.MouseState.X;
+                    if (mouseY > 282)
+                    {
+                        XLast = mouseX;
+                        //pick the ring where the drag starts, so a finger drifting up or down keeps turning the same one
+                        DragBodies = (Cam == null && HeadSplitY >= 0) ? (mouseY > HeadSplitY)
+                            : (mouseY / (float)UIScreen.Current.ScreenHeight > 0.625f);
+                    }
                 }
                 else
                 {
-                    if (state.MouseState.Y / (float)UIScreen.Current.ScreenHeight > 0.625f)
+                    if (DragBodies)
                     {
-                        BodySpeed = ((XLast - state.MouseState.X) / 200f) * frac;
+                        BodySpeed = ((XLast - mouseX) / 200f) * frac;
                         moving = 1;
                     }
                     else
                     {
-                        HeadSpeed = ((XLast - state.MouseState.X) / 200f) * frac;
+                        HeadSpeed = ((XLast - mouseX) / 200f) * frac;
                         moving = 2;
                     }
-                    XLast = state.MouseState.X;
+                    XLast = mouseX;
                 }
             }
             else
@@ -684,6 +739,7 @@ namespace Simitone.Client.UI.Screens
             }
 
             if (World.State.PreciseZoom != 1) World.State.PreciseZoom = World.State.PreciseZoom;
+            if (Cam == null && World.BackbufferScale != Scale2D) World.BackbufferScale = Scale2D;
             switch (Mode)
             {
                 case UICASMode.FamilySelect:
