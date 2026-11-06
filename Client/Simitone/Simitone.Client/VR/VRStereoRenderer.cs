@@ -62,7 +62,7 @@ namespace Simitone.Client.VR
             var gaze = SimitoneVR.Runtime?.Input?.Gaze ?? default;
             if (!gaze.Valid) return null;
             return camera.TrackingToWorld(gaze.Position)
-                + camera.TrackingDirectionToWorld(gaze.Forward) * 2f * SimitoneVR.Settings.WorldScale;
+                + camera.TrackingDirectionToWorld(gaze.Forward) * 2f * camera.UnitsPerMetre;
         }
 
         /// <summary>

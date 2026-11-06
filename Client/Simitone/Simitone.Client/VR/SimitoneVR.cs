@@ -109,6 +109,15 @@ namespace Simitone.Client.VR
         public static IVRCatalogSource CatalogSource;
         /// <summary>Set every update by the bridge: the open pie menu, for the VR pie menu (null when none is open).</summary>
         public static IVRPieSource PieSource;
+        /// <summary>Set every update by the bridge: you're in the dollhouse (grips grab there, see <see cref="VRDollhouse"/>).</summary>
+        public static bool Dollhouse;
+        /// <summary>Set every update by the bridge: buy mode only for a hand to carry furniture (no catalogue tablet).</summary>
+        public static bool DollhouseAutoBuy;
+        /// <summary>
+        /// Set by the dollhouse while a hand picks up or puts down furniture: the game's mouse sits on the world cursor
+        /// with its left button up (false) or down (true), whatever the controllers do. Null: not forced.
+        /// </summary>
+        public static bool? ForcedWorldButton;
         /// <summary>The buy/build catalogue is the tablet in your hand (rather than the game's, on a desk panel).</summary>
         public static bool CatalogInHand => Settings.Catalogue == VRCatalogStyle.Hand;
         /// <summary>The catalogue tablet is in your hand now.</summary>
@@ -440,7 +449,7 @@ namespace Simitone.Client.VR
             // the UI straight ahead, the buy/build catalogue lower down and tilted up like a desk
             // (pie menus are drawn for VR instead, unless that's turned off; and the catalogue may be in your hand)
             var vrPie = immersive && Settings.VRPieMenus && PieMenuOpen && PieSource != null && dialog == null && PiePanel != null;
-            var deskBuild = BuildMode && !CatalogInHand;
+            var deskBuild = BuildMode && !CatalogInHand && !DollhouseAutoBuy;
             var kind = deskBuild ? PanelKind.Desk
                 : PickerOpen && dialog == null ? PanelKind.Picker
                 : dialog is UIMobileDialog ? PanelKind.Dialog // (a pie menu under it waits)
@@ -472,13 +481,14 @@ namespace Simitone.Client.VR
                 if (input.Pause.Pressed) PauseRequested = true;
                 if (input.Speed.Pressed) SpeedRequested = true;
                 if (input.NextSim.Pressed) NextSimRequested = true;
-                if (input.BuildMenu.Pressed) BuildMenuRequested = true;
+                // (in the dollhouse the walking hand's grip grabs: its stick click changes the mode instead)
+                if (Dollhouse ? input.Sprint.Pressed : input.BuildMenu.Pressed) BuildMenuRequested = true;
             }
 
             // ---- the VR panels (Simitone UI): wrist displays, comfort setup, VR menu, keyboard
             EnsurePanels();
             // the catalogue tablet in your walking hand (its wrist's needs display makes way for it)
-            var tabletWanted = immersive && BuildMode && CatalogInHand && Tablet != null && CatalogSource != null
+            var tabletWanted = immersive && BuildMode && CatalogInHand && !DollhouseAutoBuy && Tablet != null && CatalogSource != null
                 && inputActive && input.WalkGrip.Valid && LastHead.Valid;
             if (tabletWanted)
             {
@@ -638,7 +648,7 @@ namespace Simitone.Client.VR
                     {
                         if (input.Select.Pressed && !NeedsRelease) WorldSelectRequested = true; // beside the panel
                     }
-                    if (input.Secondary.Pressed && !PanelPointerOnPanel && !NeedsRelease) CancelRequested = true;
+                    if (input.Secondary.Pressed && !PanelPointerOnPanel && !NeedsRelease && !Dollhouse) CancelRequested = true;
                     LastOnPanel = PanelPointerOnPanel;
                 }
                 else if (BuildMode)
@@ -652,12 +662,12 @@ namespace Simitone.Client.VR
                     PointerRight = false;
                     PointerActive = true;
                     if (WorldArmed && input.Select.Pressed) Runtime.Haptic(true, 0.2f, 0.015f);
-                    if (input.Secondary.Pressed && !NeedsRelease) CancelRequested = true;
+                    if (input.Secondary.Pressed && !NeedsRelease && !Dollhouse) CancelRequested = true; // (a grip grabs in the dollhouse)
                 }
                 else if (!NeedsRelease)
                 {
                     if (input.Select.Pressed) WorldSelectRequested = true;
-                    if (input.Secondary.Pressed) CancelRequested = true;
+                    if (input.Secondary.Pressed && !Dollhouse) CancelRequested = true;
                 }
             }
 
@@ -732,17 +742,17 @@ namespace Simitone.Client.VR
                 return;
             }
             Vector3 anchor;
-            var scale = Settings.WorldScale;
+            const float metre = 3f; // (world units: the tip is placed by the world's size, also in the dollhouse)
             if (BuildMode)
             {
                 if (!camera.CursorValid) { Tip.Hide(); return; }
                 // above what you're holding, or just above what you point at
-                anchor = camera.CursorTarget + Vector3.Up * (camera.PlacementMode ? 1.2f : 0.3f) * scale;
+                anchor = camera.CursorTarget + Vector3.Up * (camera.PlacementMode ? 1.2f : 0.3f) * metre;
             }
             else
             {
                 if (PanelShown || !camera.PointerVisible || !camera.PointerHasTarget) { Tip.Hide(); return; }
-                anchor = camera.PointerStart + camera.PointerDirection * camera.PointerLength + Vector3.Up * 0.3f * scale;
+                anchor = camera.PointerStart + camera.PointerDirection * camera.PointerLength + Vector3.Up * 0.3f * metre;
             }
             var error = BuildMode && camera.PlacementMode && !camera.PlacementValid;
             Tip.ShowAt(text, error, camera.WorldToTracking(anchor), LastHead);
@@ -953,6 +963,17 @@ namespace Simitone.Client.VR
             if (KeyboardTarget == null) KeyboardDismissed = null;
             if (Keyboard != null) Keyboard.TextTarget = KeyboardTarget; // the keyboard types into it as its keys are pressed
             var real = state.MouseState;
+            if (ForcedWorldButton != null && SessionRunning)
+            {
+                // the dollhouse's hand pressing or letting go of the game's mouse, at the world cursor
+                var at = WorldCursorPixel(FSO.Client.GameFacade.GraphicsDevice);
+                var forced = new MouseState(at.X, at.Y, real.ScrollWheelValue + ScrollOffset,
+                    ForcedWorldButton.Value ? ButtonState.Pressed : ButtonState.Released, ButtonState.Released, ButtonState.Released,
+                    ButtonState.Released, ButtonState.Released);
+                state.MouseState = forced;
+                if (state.MouseStates.Count > 0) state.MouseStates[0].MouseState = forced;
+                return;
+            }
             if (!PointerActive)
             {
                 if (ScrollOffset != 0)

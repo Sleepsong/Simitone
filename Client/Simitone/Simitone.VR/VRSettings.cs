@@ -9,7 +9,11 @@ namespace Simitone.VR
     public enum VRTurnMode { Snap, Smooth }
     public enum VRMoveDirection { Head, LeftHand }
     /// <summary>Sim: see through your Sim's eyes and walk them. Observer: roam the lot freely as yourself.</summary>
-    public enum VRPlayMode { Sim, Observer }
+    /// <summary>
+    /// First person as your Sim, first person roaming freely, or the dollhouse: the lot as a model on a table in front
+    /// of you, a giant over it who moves furniture and Sims about with their hands.
+    /// </summary>
+    public enum VRPlayMode { Sim, Observer, Dollhouse }
     public enum VRWristMode { Auto, Always, Off }
     /// <summary>
     /// What your view does while your Sim acts on their own (walking to an interaction, sitting down, sleeping):
@@ -256,7 +260,7 @@ namespace Simitone.VR
                 {
                     "# Simitone VR settings. Lines starting with # are defaults (built in, or from vr.defaults.ini next to the",
                     "# executable) and follow them if they change; remove the # to set one yourself, or add it back to undo.",
-                    "# Options: PlayMode = Sim|Observer, TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand,",
+                    "# Options: PlayMode = Sim|Observer|Dollhouse, TurnMode = Snap|Smooth, MoveDirection = Head|LeftHand,",
                     "#          WristDisplays = Auto|Always|Off, MirrorEye = Left|Right|None,",
                     "#          SimActionView = Comfortable|Moderate|Intense, Vignette / VignetteWhenMoving = Off|Low|Medium|High,",
                     "#          Movement = StickAndArc|Stick|Arc, Foveation = Off|Light|Strong",

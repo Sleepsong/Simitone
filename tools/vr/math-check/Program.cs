@@ -200,6 +200,47 @@ static class Program
             Check("foveation: a gaze direction as tangents", gaze != null && Math.Abs(gaze.Value.X - 0.2f) < 1e-5f && Math.Abs(gaze.Value.Y + 0.1f) < 1e-5f, gaze?.ToString() ?? "null");
         }
 
+        // ---- the dollhouse: holding the world with one or two hands (VRCameraController.UpdateDollhouseDrag)
+        {
+            var rig = new Vector3(40, -100, 25);
+            float yaw = 0.4f, unitsPerMetre = 150f;
+            // one hand holds a point and moves (up, too): the point stays in the hand
+            var hand0 = new Vector3(0.1f, 1.0f, -0.4f);
+            var held = VRMath.RoomToWorld(rig, yaw, unitsPerMetre, hand0);
+            var hand1 = new Vector3(-0.2f, 1.2f, -0.6f);
+            var rig1 = VRMath.RigPlacing(hand1, held, yaw, unitsPerMetre);
+            var drift = Vector3.Distance(VRMath.RoomToWorld(rig1, yaw, unitsPerMetre, hand1), held);
+            Check("dollhouse: one hand: what it holds stays in it", drift < 1e-3f, $"{drift:0.00000} units off");
+
+            // two hands: turn the pair 30 degrees about the vertical and move them twice as far apart
+            var left0 = new Vector3(-0.2f, 1.0f, -0.5f);
+            var right0 = new Vector3(0.2f, 1.05f, -0.45f);
+            var heldLeft = VRMath.RoomToWorld(rig, yaw, unitsPerMetre, left0);
+            var heldRight = VRMath.RoomToWorld(rig, yaw, unitsPerMetre, right0);
+            var anchor = VRMath.RoomToWorld(rig, yaw, unitsPerMetre, (left0 + right0) / 2);
+            var mid = new Vector3(0.05f, 1.1f, -0.55f);
+            var half = VRMath.RotateYaw((right0 - left0) / 2, MathHelper.ToRadians(30)) * 2;
+            var left1 = mid - half;
+            var right1 = mid + half;
+            var (scale2, yaw2) = VRMath.TwoHandHold(right0 - left0, unitsPerMetre, yaw, right1 - left1, 10, 400);
+            var rig2 = VRMath.RigPlacing(mid, anchor, yaw2, scale2);
+            var leftOff = Vector3.Distance(VRMath.RoomToWorld(rig2, yaw2, scale2, left1), heldLeft);
+            var rightOff = Vector3.Distance(VRMath.RoomToWorld(rig2, yaw2, scale2, right1), heldRight);
+            Check("dollhouse: two hands: turning them turns the world, and what each holds stays in it", leftOff < 1e-2f && rightOff < 1e-2f,
+                $"left {leftOff:0.0000}, right {rightOff:0.0000} units off");
+            Check("dollhouse: two hands twice as far apart: the world twice the size", Math.Abs(scale2 - unitsPerMetre / 2) < 1e-3f
+                && Math.Abs(MathHelper.WrapAngle(yaw2 - yaw) - MathHelper.ToRadians(-30)) < 1e-4f,
+                $"{unitsPerMetre} -> {scale2:0.00} units per metre, turned {MathHelper.ToDegrees(MathHelper.WrapAngle(yaw2 - yaw)):0.0} degrees");
+            // (hands brought to 6 cm apart would make it nearly 7 times smaller; under 5 cm apart is ignored, as jitter)
+            var close = Vector3.Normalize(right0 - left0) * 0.06f;
+            var (clamped, _) = VRMath.TwoHandHold(right0 - left0, unitsPerMetre, yaw, close, 10, 400);
+            Check("dollhouse: it can't be made smaller than the limit", clamped == 400, $"{clamped} units per metre (limit 400)");
+            // a 64-tile lot fitted to 1.3 m (VRCameraController.FitScale)
+            var fit = MathHelper.Clamp(3f * 64 / 1.3f, 3f / 0.25f, 3f / 0.0075f);
+            Check("dollhouse: a 64-tile lot fits about 1.3 m (a tile about 2 cm)", Math.Abs(64 * 3f / fit - 1.3f) < 1e-3f,
+                $"a tile is {3f / fit * 100:0.00} cm");
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }

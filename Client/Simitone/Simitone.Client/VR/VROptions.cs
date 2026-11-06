@@ -49,9 +49,9 @@ namespace Simitone.Client.VR
             Add("Run", () => Settings.RunAtFullTilt ? "Stick full tilt" : "Click the stick", d => Settings.RunAtFullTilt = !Settings.RunAtFullTilt);
             Add("Fast game + walking", () => Settings.NormalSpeedWhenSteering ? "Slow down" : "Keep speed",
                 d => Settings.NormalSpeedWhenSteering = !Settings.NormalSpeedWhenSteering);
-            Add("Play as", () => SimitoneVR.PlayMode == VRPlayMode.Sim ? "Your Sim" : "Observer", d =>
+            Add("Play as", () => SimitoneVR.PlayMode switch { VRPlayMode.Sim => "Your Sim", VRPlayMode.Observer => "Observer", _ => "Dollhouse" }, d =>
             {
-                SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer : VRPlayMode.Sim;
+                SimitoneVR.PlayMode = Cycle(SimitoneVR.PlayMode, d);
                 Settings.PlayMode = SimitoneVR.PlayMode;
             });
             Add("Extra height", () => Settings.HeightOffset < 0.01f ? "Off" : "+" + Settings.HeightOffset.ToString("0.00") + " m",

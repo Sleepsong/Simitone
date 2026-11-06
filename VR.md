@@ -16,6 +16,9 @@ levels, a vignette, stick or arc movement and the other options can all be chang
 In **buy and build mode** you stay where you are and place things remotely. The catalogue is a tablet in your hand
 with the objects in 3D; a beam picks objects up from a distance, and a teleport-style arc shows where they'll land.
 
+In the **dollhouse** you're a giant: the lot is a model on a table in front of you. You move furniture with your
+hands, pick Sims up and put them down somewhere else, and direct them by pointing as usual.
+
 Everything that isn't the 3D lot (loading screens, the neighbourhood, CAS, options) appears on a flat virtual
 screen floating in front of you.
 
@@ -116,6 +119,27 @@ loads. It asks:
 Each choice applies at once, and the current one is highlighted. NEXT and BACK move between pages (the grip also
 goes back), and START at the end saves it (`ComfortSetupDone=True`). Run it again from the VR menu or the Options
 panel's VR button.
+
+**Dollhouse** (B from the observer; B again goes back to your Sim; or *Play as* in the VR menu). The lot shrinks to a
+model about 1.3 m across, its ground a little below your hands, in front of you; floors above the one shown and the
+roof are hidden, as in the game, and the walls are cut away around where you point (or down, or up: the tablet's
+wall button in buy mode, or *Walls in buy/build* in the VR menu). Walk around the table to see it from any side.
+- **Pointing** works as everywhere: point at a Sim or an object and pull the trigger for its pie menu, or at the
+  floor for "Go Here".
+- **Furniture:** put your hand on it and squeeze the grip to pick it up. It's in your hand, with a line down to where
+  it would go (green where it fits, red where not); turn your hand to turn it a quarter at a time, and let go to put
+  it down. If it can't go there, it goes back where it was and the game says why. The game only lets you move
+  furniture in buy mode, which pauses it: during live play it goes into buy mode while you carry something and
+  back to live when you've put it down.
+- **Sims:** put your hand on a Sim and squeeze to pick them up; they dangle from your hand. Let go over the floor
+  where you want them: they stop what they were doing and the game moves them there (The Sims' own way of moving a
+  Sim, as its "moveobjects" cheat does). One Sim at a time; not in buy or build mode, where the game is paused.
+- **The model itself:** squeeze a grip in empty space and it moves with your hand (up and down too); with both
+  hands, turn them to turn it and move them apart or together to make it bigger or smaller (a tile from 0.75 cm to
+  25 cm). The left stick slides it, the right stick turns it (as turning does elsewhere) and right stick up/down
+  shows a floor up or down.
+- **Buy and build:** the walking hand's stick click goes live → buy → build → live (the grips grab here). The
+  catalogue tablet works as usual; what you take from it is placed along a straight beam, not an arc.
 
 **Observer** (B to switch). You leave your Sim and roam freely as yourself:
 - smooth locomotion, snap or smooth turning, and right stick up/down to change floors;
@@ -254,9 +278,22 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Left stick held while your Sim is busy | Cancel their actions and take over | n/a | n/a | n/a |
 | Right grip | Back a level of a pie menu (closes it at the top); right click on menus | Same | Cancel (put back) | Right click |
 | A | Flat screen | Flat screen | Flat screen | First person |
-| B | Switch to observer | Switch to playing as your Sim | Sell / delete what you hold; else switch Sim / observer | Recentre the screen |
+| B | Switch to observer | Switch to the dollhouse | Sell / delete what you hold; else the next of your Sim / observer / dollhouse | Recentre the screen |
 | X | Pause / resume | Pause / resume | n/a | Pause / resume |
 | Y | Next Sim in the family | Next Sim in the family | n/a | Next Sim in the family |
+
+**In the dollhouse** the controls are the observer's, except:
+
+| Input | Dollhouse |
+|---|---|
+| Either grip, hand on furniture | Pick it up; turn your hand to turn it; let go to put it down (buy mode while you carry it) |
+| Either grip, hand on a Sim (live mode) | Pick them up; let go over the floor to put them down there |
+| Either grip, in empty space | Hold the model: it moves with your hand |
+| Both grips, in empty space | Turn the model and make it bigger or smaller |
+| Left stick | Slide the model |
+| Left stick click | Next mode (live → buy → build → live) |
+| Right stick up/down | Show a floor up / down |
+| B | Back to playing as your Sim |
 
 **Left-handed** (`LeftHanded`; *Hands* in the VR menu, or the second page of the comfort setup): every row above
 swaps hands. The left controller points and picks, the right stick walks and its trigger throws the movement arc,
@@ -282,7 +319,7 @@ executable, if present, supplies defaults of its own; the Steam Frame package sh
 
 | Key | Default | Meaning |
 |---|---|---|
-| `PlayMode` | Sim | `Sim` (first person as your Sim) or `Observer` (roam freely) when a lot loads |
+| `PlayMode` | Sim | `Sim` (first person as your Sim), `Observer` (roam freely) or `Dollhouse` (the lot as a model on a table) when a lot loads |
 | `SimActionView` | Comfortable | What your view does while your Sim acts on their own: `Comfortable` (step out, follow by blinks), `Moderate` (step out, glide after them), `Intense` (ride along) |
 | `Vignette` | Medium | Vignette while the view moves without you driving it: `Off`, `Low`, `Medium`, `High` |
 | `VignetteWhenMoving` | Low | Vignette while you move with the stick or turn smoothly |
@@ -449,6 +486,8 @@ Client/Simitone/Simitone.Client/VR/
   VRPieMenuPanel.cs                   the pie menu drawn for VR (IVRPieSource), and the game's UIPieMenu as its source
   VRAudio.cs                          3D sound: sounds placed around your head; HRTF on MonoGame's OpenAL device
   VRBundledControllers.cs             Simitone's own controller models (for runtimes with none), chosen and animated
+  VRCameraController.Dollhouse.cs     the dollhouse camera: the lot as a table-top model, held, turned and resized
+  VRDollhouse.cs                      the dollhouse's hands: furniture (through the object holder), Sims, the model
 Client/Simitone/Simitone.VR/Controllers/   those models (MIT, @webxr-input-profiles/assets 1.0.20; see its README),
                                       copied next to the game as VRControllers/
 ```
@@ -513,6 +552,28 @@ build tools (`UICustomLotControl`s).
   does, with its button texture, colours and fonts, scaled up, and show its Sim head (`UIPieMenu.HeadTexture`),
   whose gaze follows the pointed-at button (`HeadLook`). Choosing goes through `UIPieMenu.Choose`, the same path as
   a click. The 2D menu stays open underneath (on the desktop window) and closes with it.
+
+**The dollhouse** (`VRCameraController.Dollhouse.cs`, `VRDollhouse`) is the same camera at a much bigger scale: the
+rig maps your room to the world as world = rig + yaw * (room metres * scale), with about 150 world units per metre
+instead of 3, so a tile is about 2 cm and the eyes' separation, the controllers and the pointer all scale with it.
+- **Holding the model:** a hand that takes hold pins the world point under it (`VRMath.RigPlacing`); two hands pin
+  the point between them, and the vector between them gives the turn about the vertical and the scale
+  (`VRMath.TwoHandHold`). Floors, cutaway and the sound centre use the floor point you point at.
+- **What a hand is on:** a Sim, as the game's 3D picking sees one (a box around the middle of their body); else the
+  first object straight down from just above the hand, within 2.5 cm of it, using the objects' own bounds
+  (`ObjectComponent.IntersectsBounds`), which is also what the game's picking finds; else nothing (the model).
+- **Furniture** goes through the game's object holder, exactly as buy mode with a mouse: the cursor camera
+  (`HandCursor`) looks straight down through the hand while picking, and at the floor below it while carrying; the
+  grip is its mouse button (`SimitoneVR.ForcedWorldButton`, applied as the next update's mouse): a press picks up,
+  and a press and release put down, each step lasting at least an update. If the holder still holds it afterwards,
+  it couldn't go there, and `Cancel` puts it back. In live mode the game is switched to buy mode first (as its mode
+  buttons do) and back after; the catalogue tablet stays away meanwhile. While carried, it's drawn lifted to the hand
+  (`VRLotWorld.HeldLift`, with the glide), and the placement line runs from the hand to the floor.
+- **Sims:** lifting one cancels what they're doing (again every 1.5 s, as free will finds them things to do); they're
+  drawn hanging from the hand, out of their seat if they're in one (`VRLotWorld.ApplyLift`, put back after drawing).
+  Let go, and they're drawn standing on the tile below until they've stopped (nothing left in their queue, not
+  seated; or after 6 s of game time), then `VMNetMoveObjectCmd` moves them: in The Sims 1 it moves Sims too. If they
+  aren't there shortly after, it didn't work, and they're shown where they really are.
 
 Design choices:
 
@@ -658,7 +719,10 @@ Design choices:
   - single-pass stereo: the shared view contains every point either eye sees, and each eye's clip delta reproduces
     its own projection (three IPDs and cants);
   - foveation: the sharp square follows the gaze, slides back inside the view at the edges, and its pixels line
-    up with the eye's.
+    up with the eye's;
+  - the dollhouse: what one hand holds stays in it as it moves; turning two hands turns the world and what each
+    holds stays in it; moving them twice as far apart makes it twice the size; the size limit holds; a 64-tile lot
+    fits 1.3 m.
 - `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
   field of view, to a PNG file under Xvfb.
 - `tools/vr/ui-check/run.sh <published Simitone> [dir]` renders every VR panel with Simitone's real UI (its fonts,
@@ -737,6 +801,13 @@ Design choices:
     (some may show their side or back; the pointed-at one turns anyway);
   - the tablet has no search box (the game's catalogue on the desk has one: `Catalogue=Desk`);
   - the pie menu's Sim head is the game's own render, so it is tested only with a stand-in.
+- **The dollhouse** is tested in its maths and builds, not yet in a headset with a real lot (that needs The Sims):
+  - picking up furniture relies on the game's picking finding the same object as the hand test, and on its object
+    holder behaving with a mouse the same in VR as on the desktop (it already drives VR buy mode);
+  - moving Sims uses the command the game uses for moving objects, which in The Sims 1 moves Sims too; whether the
+    game accepts every spot (and how a Sim takes being moved mid-action, before they've wound down) is untested;
+  - the lot's surroundings and sky are drawn as in first person, so the table stands in the neighbourhood;
+  - only one Sim and one piece of furniture can be carried at a time.
 - **Your Sim's hands** are untested with the game's own skeletons (they need The Sims). They rely on the hand
   bones being called `L_HAND` and `R_HAND`; if they aren't, `vr.log` says so and the arms keep their animation.
   The hand poses are the game's three (open, fist, pointing), not each finger, and the arms only follow you while

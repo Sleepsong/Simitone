@@ -204,6 +204,44 @@ namespace Simitone.VR
         /// <summary>Yaw (rotation about +Y) of a direction, 0 = looking down -Z.</summary>
         public static float Yaw(Vector3 forward) => (float)Math.Atan2(-forward.X, -forward.Z);
 
+        // ---- the rig: your room (tracking space, metres) placed in the world, world = rig + yaw(rigYaw) * (room * scale)
+
+        /// <summary>Turns a vector about the vertical (as XNA's Matrix.CreateRotationY).</summary>
+        public static Vector3 RotateYaw(Vector3 v, float yaw)
+        {
+            var c = (float)Math.Cos(yaw);
+            var s = (float)Math.Sin(yaw);
+            return new Vector3(v.X * c + v.Z * s, v.Y, -v.X * s + v.Z * c);
+        }
+
+        /// <summary>Where a point of your room is in the world.</summary>
+        public static Vector3 RoomToWorld(Vector3 rig, float rigYaw, float scale, Vector3 room) => rig + RotateYaw(room * scale, rigYaw);
+
+        /// <summary>The rig that puts a point of your room at a point of the world (holding the world there).</summary>
+        public static Vector3 RigPlacing(Vector3 room, Vector3 world, float rigYaw, float scale) => world - RotateYaw(room * scale, rigYaw);
+
+        /// <summary>The turn about the vertical (as <see cref="RotateYaw"/> turns) taking direction a to direction b (x, z).</summary>
+        public static float TurnBetween(Vector2 a, Vector2 b) => (float)Math.Atan2(a.Y * b.X - a.X * b.Y, a.X * b.X + a.Y * b.Y);
+
+        /// <summary>
+        /// Two hands holding the world (the dollhouse): from the vector between them when they took hold (with the scale
+        /// and yaw then) and the vector now, the scale and yaw that keep what each hand held in it: the world turns with
+        /// the hands about the vertical, and gets bigger as they move apart (fewer world units per metre).
+        /// </summary>
+        public static (float scale, float yaw) TwoHandHold(Vector3 startVector, float startScale, float startYaw, Vector3 vector,
+            float minScale, float maxScale)
+        {
+            var scale = startScale;
+            var yaw = startYaw;
+            if (vector.Length() > 0.05f && startVector.Length() > 0.05f)
+                scale = MathHelper.Clamp(startScale * startVector.Length() / vector.Length(), minScale, maxScale);
+            var start = new Vector2(startVector.X, startVector.Z);
+            var now = new Vector2(vector.X, vector.Z);
+            if (now.LengthSquared() > 0.0025f && start.LengthSquared() > 0.0025f)
+                yaw = MathHelper.WrapAngle(startYaw + TurnBetween(now, start));
+            return (scale, yaw);
+        }
+
         /// <summary>Yaw of an orientation's forward vector.</summary>
         public static float Yaw(Quaternion q) => Yaw(Vector3.Transform(-Vector3.UnitZ, q));
 

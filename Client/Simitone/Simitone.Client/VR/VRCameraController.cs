@@ -103,7 +103,7 @@ namespace Simitone.Client.VR
     /// <see cref="VRSettings.WorldScale"/> world units = 1 m. The "rig" is the tracking space origin placed
     /// in the world: world = RigPosition + yaw(RigYaw) * (tracked metres * scale).
     /// </summary>
-    public class VRCameraController : CameraControllerFP
+    public partial class VRCameraController : CameraControllerFP
     {
         public const float TileUnits = WorldSpace.WorldUnitsPerTile; // world units per tile
         public const float LevelHeightTiles = 2.95f;                 // floor-to-floor height used by FreeSO's 3D view
@@ -299,7 +299,7 @@ namespace Simitone.Client.VR
         }
 
         private static VRSettings Settings => SimitoneVR.Settings ?? VRSettings.Default;
-        private float Scale => Settings.WorldScale;
+        private float Scale => InDollhouse ? DollhouseScale : Settings.WorldScale;
 
         /// <summary>The lot blueprint (World keeps it protected; VRLotWorld exposes it).</summary>
         public static Blueprint Lot(World world) => (world as VRLotWorld)?.LotBlueprint;
@@ -336,6 +336,7 @@ namespace Simitone.Client.VR
                 PlayerLevel = Math.Max((sbyte)1, state.Level);
                 FloorInitialised = false;
                 PlaceHead(state.CenterTile, rotationX + MathHelper.PiOver2);
+                if (InDollhouse) EnterDollhouse(world); // (back to a dollhouse fitted in front of you)
             }
             ResumeOnNextActivate = false;
             SimHeadInitialised = false;
@@ -471,9 +472,7 @@ namespace Simitone.Client.VR
 
         public static Vector3 RotateYaw(Vector3 v, float yaw)
         {
-            var c = (float)Math.Cos(yaw);
-            var s = (float)Math.Sin(yaw);
-            return new Vector3(v.X * c + v.Z * s, v.Y, -v.X * s + v.Z * c);
+            return VRMath.RotateYaw(v, yaw);
         }
 
         /// <summary>Tracking space (metres) to world units.</summary>
@@ -578,9 +577,18 @@ namespace Simitone.Client.VR
                 smoothTurn = yawDelta != 0;
             }
             if (yawDelta != 0) RotateRigAroundHead(head, yawDelta);
+            UpdateDollhouseSwitch(world, headTrack);
 
             bool driven = smoothTurn; // the player is moving the view (vignette: VignetteWhenMoving rather than Vignette)
-            if (SimAvatar != null && SimAvatar.Avatar != null)
+            if (InDollhouse)
+            {
+                Ride = null;
+                LastSimAvatar = null;
+                if (!BlinkFadingOut) SetHiddenHead(null);
+                SimHeadInitialised = false;
+                driven |= UpdateDollhouseRig(world, input, turnX, dt);
+            }
+            else if (SimAvatar != null && SimAvatar.Avatar != null)
             {
                 Ride = null; // (back in your Sim: no stair ride to finish later)
                 driven |= UpdateSim(world, headTrack, dt);
@@ -598,9 +606,10 @@ namespace Simitone.Client.VR
                 SimHeadInitialised = false;
                 if (!BlinkFadingOut) driven |= UpdateObserverRig(world, head, headTrack, input, turnX, dt);
             }
-            UpdateMoveArc(world, input);
+            if (!InDollhouse) UpdateMoveArc(world, input);
+            else MoveArcCount = 0;
 
-            if (BuildMode)
+            if (BuildMode || InDollhouse)
             {
                 // Build like the normal game: on your floor, with the floors above and the roof out of the way. The
                 // game's own floor buttons (on the desk catalogue) move you too.
@@ -691,9 +700,12 @@ namespace Simitone.Client.VR
         {
             var bp = Lot(world);
             if (bp == null || bp.Cutaway == null || bp.Cutaway.Length != bp.Width * bp.Height) return;
-            var mode = BuildMode ? Settings.BuildWalls : VRWallView.Up;
-            var want = BuildMode && CursorValid && mode == VRWallView.Cutaway;
-            var centre = want ? new Point((int)Math.Floor(CursorTarget.X / TileUnits), (int)Math.Floor(CursorTarget.Z / TileUnits))
+            var mode = BuildMode || InDollhouse ? Settings.BuildWalls : VRWallView.Up;
+            // (around where you place; in the dollhouse, around where you point)
+            var focusValid = BuildMode && CursorValid || InDollhouse && DollhouseFocusValid;
+            var focus = BuildMode && CursorValid ? CursorTarget : DollhouseFocus;
+            var want = focusValid && mode == VRWallView.Cutaway;
+            var centre = want ? new Point((int)Math.Floor(focus.X / TileUnits), (int)Math.Floor(focus.Z / TileUnits))
                 : new Point(int.MinValue, int.MinValue);
             if (centre == CutawayCentre && PlayerLevel == CutawayLevel && mode == CutawayMode) return;
             CutawayCentre = centre;
@@ -707,14 +719,16 @@ namespace Simitone.Client.VR
             else if (want)
             {
                 var headTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
-                for (int y = centre.Y - 3; y <= centre.Y + 3; y++)
+                var radius = InDollhouse ? 3.6f : 2.6f; // (a giant sees more at once; and isn't standing among the walls)
+                var reach = (int)Math.Ceiling(radius);
+                for (int y = centre.Y - reach; y <= centre.Y + reach; y++)
                 {
-                    for (int x = centre.X - 3; x <= centre.X + 3; x++)
+                    for (int x = centre.X - reach; x <= centre.X + reach; x++)
                     {
                         if (!InBounds(bp, x, y)) continue;
                         var tileCentre = new Vector2(x + 0.5f, y + 0.5f);
-                        if (Vector2.Distance(tileCentre, new Vector2(centre.X + 0.5f, centre.Y + 0.5f)) > 2.6f) continue;
-                        if (Vector2.Distance(tileCentre, headTile) < 1.6f) continue;
+                        if (Vector2.Distance(tileCentre, new Vector2(centre.X + 0.5f, centre.Y + 0.5f)) > radius) continue;
+                        if (!InDollhouse && Vector2.Distance(tileCentre, headTile) < 1.6f) continue;
                         cut[y * bp.Width + x] = true;
                     }
                 }
@@ -1368,9 +1382,9 @@ namespace Simitone.Client.VR
         {
             var bp = Lot(world);
             if (bp == null) return;
-            if (direction > 0 && BuildMode)
+            if (direction > 0 && (BuildMode || InDollhouse))
             {
-                // buy/build: any floor, built or not (you float there)
+                // buy/build and the dollhouse: any floor, built or not (you float there)
                 if (PlayerLevel < bp.Stories)
                 {
                     PlayerLevel++;
@@ -1523,15 +1537,16 @@ namespace Simitone.Client.VR
             var forward = Vector3.Transform(-Vector3.UnitZ, headRot);
             HeadWorldYaw = VRMath.Yaw(forward);
             cam.Position = HeadWorld;
-            // FreeSO measures sound distance from the camera's target: keep it at your head
-            cam.Target = HeadWorld + forward * 0.1f;
+            // FreeSO measures sound distance from the camera's target: keep it at your head (in the dollhouse, where
+            // you're pointing or looking on the model: your head is far above it, as the game's camera is)
+            cam.Target = InDollhouse && DollhouseFocusValid ? DollhouseFocus : HeadWorld + forward * 0.1f;
             cam.NearPlane = near;
             cam.FarPlane = far;
 
             // Keep FreeSO's own camera bookkeeping in sync: CenterTile drives sound, sky and culling helpers;
             // the fields below are what CameraController3D reads when we hand control back to it.
             var state = world.State;
-            state.CenterTile = new Vector2(HeadWorld.X, HeadWorld.Z) / TileUnits;
+            state.CenterTile = new Vector2(cam.Target.X, cam.Target.Z) / TileUnits;
             _RotationX = HeadWorldYaw - MathHelper.PiOver2; // also drives CutRotation
             SavedYRot = 0.6f;
             _Zoom3D = 1.5f; // sounds are scaled by 10 / (zoom^2 + 10): close to full volume with your head in the scene
@@ -1569,7 +1584,7 @@ namespace Simitone.Client.VR
         /// </summary>
         private void UpdateBuildCursor(World world, VRInput input, float dt)
         {
-            if (BuildMode && CursorValid && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.OverlayOpen || SimitoneVR.OverlayHasPointer))
+            if (BuildMode && CursorValid && HandCursor == null && (SimitoneVR.PanelPointerOnPanel || SimitoneVR.OverlayOpen || SimitoneVR.OverlayHasPointer))
             {
                 // Choosing from the catalogue (the desk panel or the tablet, or using the VR menu): keep the cursor where it
                 // was in the world and hide the arc, so what you hold doesn't fly about while the pointer is elsewhere.
@@ -1578,12 +1593,44 @@ namespace Simitone.Client.VR
             }
             ArcCount = 0;
             CursorValid = false;
-            if (!BuildMode || !PointerAimValid) return;
+            if (!BuildMode || (!PointerAimValid && HandCursor == null)) return;
             var cam = EyeCamera;
             var scale = Scale;
             Matrix view;
 
-            if (PlacementMode)
+            if (HandCursor != null)
+            {
+                // the dollhouse, carrying something in your hand: it goes on the floor straight below the hand; picking
+                // it up: the camera looks straight down through the hand, so the game picks what the hand is on
+                var hand = HandCursor.Value;
+                if (PlacementMode)
+                {
+                    var below = new Vector3(hand.X, FloorHeight(world, new Vector2(hand.X, hand.Z) / TileUnits, PlayerLevel), hand.Z);
+                    CursorTarget = below;
+                    view = Matrix.CreateLookAt(below + Vector3.Up * 20f, below, Vector3.Forward);
+                }
+                else
+                {
+                    var start = hand + Vector3.Up * HandPickAbove;
+                    CursorTarget = hand;
+                    view = Matrix.CreateLookAt(start, start - Vector3.Up, Vector3.Forward);
+                }
+            }
+            else if (PlacementMode && InDollhouse)
+            {
+                // the dollhouse, placing from the catalogue: a straight beam to the floor shown (an arc would be metres long)
+                var dir = PointerDirection;
+                var floor = (PlayerLevel - 1) * LevelHeightTiles * TileUnits;
+                if (dir.Y > -0.01f) return;
+                var pos = PointerStart + dir * ((floor - PointerStart.Y) / dir.Y);
+                pos.Y = FloorHeight(world, new Vector2(pos.X, pos.Z) / TileUnits, PlayerLevel);
+                ArcPoints[0] = PointerStart;
+                ArcPoints[1] = pos;
+                ArcCount = 2;
+                CursorTarget = pos;
+                view = Matrix.CreateLookAt(pos + Vector3.Up * 20f, pos, Vector3.Forward);
+            }
+            else if (PlacementMode)
             {
                 // (the stick scrolls the catalogue instead while you point at it)
                 var stickY = input != null && input.Active && !SimitoneVR.PanelPointerOnPanel ? input.Turn.Y : 0;

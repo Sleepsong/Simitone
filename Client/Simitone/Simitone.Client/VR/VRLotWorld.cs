@@ -37,6 +37,18 @@ namespace Simitone.Client.VR
         private ICameraController LastActiveCamera;
         /// <summary>Set every update by the bridge: what you're holding in buy/build mode (null for nothing).</summary>
         public FSO.SimAntics.Entities.VMMultitileGroup Held;
+        /// <summary>Set by the dollhouse while a hand carries what's held: how far above its floor to draw it (world units).</summary>
+        public float HeldLift;
+        /// <summary>
+        /// Set by the dollhouse: a Sim you've picked up (or just put down, until the game moves them there), and where
+        /// their feet are drawn (world units). Only how they're drawn: the game has them where they were until then.
+        /// </summary>
+        public FSO.LotView.Components.AvatarComponent LiftedSim;
+        public Vector3 LiftedFeet;
+        private FSO.LotView.Components.AvatarComponent LiftRestore;
+        private Vector3 LiftRestorePosition;
+        private FSO.LotView.Components.EntityComponent LiftRestoreContainer;
+        private int LiftRestoreSlot;
         private FSO.SimAntics.Entities.VMMultitileGroup GlideGroup;
         private Vector3 GlideShown;
         private readonly System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent part, Vector3 position)> GlideRestore
@@ -194,6 +206,7 @@ namespace Simitone.Client.VR
                 if (VRCamera.SimAvatar != null) Arms.Apply(VRCamera.SimAvatar, VRCamera);
                 Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime);
                 ApplyGlide(SimitoneVR.FrameDelta);
+                ApplyLift();
                 Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
@@ -259,7 +272,7 @@ namespace Simitone.Client.VR
                 GlideShown = target;
             }
             GlideShown = target + (GlideShown - target) * (float)Math.Exp(-dt * 30f);
-            var offset = GlideShown - target;
+            var offset = GlideShown - target + new Vector3(0, 0, HeldLift / VRCameraController.TileUnits); // (in your hand, in the dollhouse)
             if (offset.LengthSquared() < 1e-6f) return;
             foreach (var obj in group.Objects)
             {
@@ -274,6 +287,33 @@ namespace Simitone.Client.VR
         {
             foreach (var (part, position) in GlideRestore) part.Position = position;
             GlideRestore.Clear();
+            if (LiftRestore != null)
+            {
+                LiftRestore.Container = LiftRestoreContainer;
+                LiftRestore.ContainerSlot = LiftRestoreSlot;
+                LiftRestore.Position = LiftRestorePosition;
+                LiftRestore = null;
+            }
+        }
+
+        /// <summary>
+        /// Draws a picked-up Sim where <see cref="LiftedFeet"/> says (out of their seat, if they're in one), until
+        /// <see cref="RestoreGlide"/> puts them back after drawing.
+        /// </summary>
+        private void ApplyLift()
+        {
+            var sim = LiftedSim;
+            if (sim == null || LotBlueprint == null) return;
+            LiftRestore = sim;
+            LiftRestorePosition = sim.StoredPosition;
+            LiftRestoreContainer = sim.Container;
+            LiftRestoreSlot = sim.ContainerSlot;
+            var x = LiftedFeet.X / VRCameraController.TileUnits;
+            var y = LiftedFeet.Z / VRCameraController.TileUnits;
+            // (the game adds the ground's height to a Sim's: take it off, so the feet are where they're meant to be)
+            var z = LiftedFeet.Y / VRCameraController.TileUnits - LotBlueprint.InterpAltitude(new Vector3(x, y, 0));
+            sim.Container = null;
+            sim.Position = new Vector3(x, y, z);
         }
 
         /// <summary>The controllers in your hands, when you're not in your Sim's body (where their hands are yours).</summary>
@@ -289,7 +329,7 @@ namespace Simitone.Client.VR
             var vr = VRCamera;
             if (BeamEffect == null) return;
             var eyePos = Matrix.Invert(cam.View).Translation;
-            var scale = SimitoneVR.Settings.WorldScale;
+            var scale = vr.UnitsPerMetre; // (sizes as you see them: also right in the dollhouse)
             var w = 0.002f * scale;
             int count = 0;
             Color colour = Color.White;
@@ -418,7 +458,7 @@ namespace Simitone.Client.VR
         private int AddFloorRing(int index, Vector3 centre, float radius, float width, Color colour)
         {
             const int segments = 20;
-            centre.Y += 0.01f * SimitoneVR.Settings.WorldScale;
+            centre.Y += 0.03f; // (world units)
             for (int i = 0; i < segments; i++)
             {
                 var a0 = MathHelper.TwoPi * i / segments;

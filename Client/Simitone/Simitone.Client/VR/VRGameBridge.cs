@@ -80,6 +80,7 @@ namespace Simitone.Client.VR
         private VRGameCatalog Catalog;
         private VRGamePie Pie;
         private readonly VRAudio Audio = new VRAudio();
+        private readonly VRDollhouse Dollhouse = new VRDollhouse();
         private UIObjectSelection LastHolding;
         private bool RotateLatched;
         private bool WasImmersive;
@@ -161,7 +162,8 @@ namespace Simitone.Client.VR
             // first person for those, and come back after.
             var mainMode = Screen.Frontend?.MainPanel?.Mode ?? UIMainPanelMode.LIVE;
             var buyBuild = !lc.LiveMode && (mainMode == UIMainPanelMode.BUY || mainMode == UIMainPanelMode.BUILD);
-            var vrBuild = buyBuild && SimitoneVR.Settings.VRBuildMode;
+            // (in the dollhouse buy and build are always in VR: it's where your hands move furniture)
+            var vrBuild = buyBuild && (SimitoneVR.Settings.VRBuildMode || SimitoneVR.PlayMode == VRPlayMode.Dollhouse);
             // the vacation / downtown picker hides the lot control, but it floats on the panel in first person
             var picker = lc.NeighbourhoodPickerOpen;
             var wantFlat = (!lc.Visible && !picker) || (!lc.LiveMode && !vrBuild);
@@ -186,6 +188,12 @@ namespace Simitone.Client.VR
             }
 
             UpdateImmersiveUI(lc, immersive, vrBuild);
+            // ---- the dollhouse: you're a giant over the lot, and your hands move furniture, Sims and the model itself
+            camera.Dollhouse = immersive && SimitoneVR.PlayMode == VRPlayMode.Dollhouse;
+            var inDollhouse = immersive && camera.InDollhouse;
+            SimitoneVR.Dollhouse = inDollhouse;
+            Dollhouse.Update(Screen, world, camera, input, inDollhouse, UpdateDelta);
+            SimitoneVR.DollhouseAutoBuy = Dollhouse.AutoBuyMode;
             UpdateBuildMode(camera, lc, immersive && vrBuild);
 
             // ---- play as your Sim
@@ -233,7 +241,7 @@ namespace Simitone.Client.VR
             SimitoneVR.CatalogSource = Catalog;
             // (the panel shows the game's UI: pie menus only when they aren't drawn for VR, the catalogue only on the desk)
             SimitoneVR.UIPanelWanted = immersive && ((lc.PieMenuOpen && !SimitoneVR.Settings.VRPieMenus) || SimitoneVR.DialogOpen()
-                || (SimitoneVR.BuildMode && !SimitoneVR.CatalogInHand) || picker);
+                || (SimitoneVR.BuildMode && !SimitoneVR.CatalogInHand && !SimitoneVR.DollhouseAutoBuy) || picker);
         }
 
         // ------------------------------------------------------------------ direct control
@@ -434,7 +442,7 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>The queue entries the game's queue display shows, in order (UIInteractionQueue's rule).</summary>
-        private static System.Collections.Generic.IEnumerable<int> ShownEntries(System.Collections.Generic.List<VMQueuedAction> queue)
+        internal static System.Collections.Generic.IEnumerable<int> ShownEntries(System.Collections.Generic.List<VMQueuedAction> queue)
         {
             var skipParentIdle = false;
             for (int i = 0; i < queue.Count; i++)
@@ -447,7 +455,7 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>Already being cancelled (as the game's queue display marks it).</summary>
-        private static bool IsCancelled(VMAvatar avatar, VMQueuedAction action)
+        internal static bool IsCancelled(VMAvatar avatar, VMQueuedAction action)
         {
             var priority = action == avatar.Thread.ActiveAction
                 ? avatar.GetPersonData(VMPersonDataVariable.Priority)
@@ -672,7 +680,7 @@ namespace Simitone.Client.VR
                 var distance = SimitoneVR.OverlayPointerDistance;
                 camera.PointerVisible = true;
                 camera.PointerHasTarget = distance > 0;
-                camera.PointerLength = (distance > 0 ? distance : 2f) * SimitoneVR.Settings.WorldScale;
+                camera.PointerLength = (distance > 0 ? distance : 2f) * camera.UnitsPerMetre;
                 return;
             }
             if (SimitoneVR.BuildMode)
@@ -689,7 +697,7 @@ namespace Simitone.Client.VR
                 {
                     camera.PointerVisible = true;
                     camera.PointerHasTarget = true;
-                    camera.PointerLength = SimitoneVR.PanelPointerDistance * SimitoneVR.Settings.WorldScale;
+                    camera.PointerLength = SimitoneVR.PanelPointerDistance * camera.UnitsPerMetre;
                 }
                 else if (!camera.PlacementMode)
                 {
@@ -708,12 +716,13 @@ namespace Simitone.Client.VR
                 // The panel owns the pointer; SimitoneVR reports how far away it is.
                 camera.PointerVisible = SimitoneVR.PanelPointerDistance > 0;
                 camera.PointerHasTarget = SimitoneVR.PanelPointerOnPanel;
-                camera.PointerLength = SimitoneVR.PanelPointerDistance * SimitoneVR.Settings.WorldScale;
+                camera.PointerLength = SimitoneVR.PanelPointerDistance * camera.UnitsPerMetre;
                 if (select && !SimitoneVR.PanelPointerOnPanel && lc.PieMenuOpen) lc.CancelPie(); // clicked beside the menu
                 return;
             }
 
-            var scale = SimitoneVR.Settings.WorldScale;
+            var scale = camera.UnitsPerMetre; // (metres in your room: in the dollhouse a metre is much more of the lot)
+            const float above = 1.5f;         // (world units over an object's base: its middle, roughly)
 
             // the action bubble over your Sim (while you're stepped out): the trigger cancels what they're doing
             if (camera.BubbleVisible && RayHitsSphere(camera.PointerStart, camera.PointerDirection, camera.BubblePosition,
@@ -741,7 +750,7 @@ namespace Simitone.Client.VR
             if (target != null)
             {
                 var p = target.VisualPosition;
-                var targetWorld = new Vector3(p.X * VRCameraController.TileUnits, p.Z * VRCameraController.TileUnits + 0.5f * scale, p.Y * VRCameraController.TileUnits);
+                var targetWorld = new Vector3(p.X * VRCameraController.TileUnits, p.Z * VRCameraController.TileUnits + above, p.Y * VRCameraController.TileUnits);
                 length = MathHelper.Clamp(Vector3.Dot(targetWorld - start, dir), 0.2f * scale, 30f * scale);
             }
             else
@@ -773,7 +782,7 @@ namespace Simitone.Client.VR
             if (target != null)
             {
                 var vp = target.VisualPosition;
-                anchor = new Vector3(vp.X * VRCameraController.TileUnits, vp.Z * VRCameraController.TileUnits + 0.5f * scale, vp.Y * VRCameraController.TileUnits);
+                anchor = new Vector3(vp.X * VRCameraController.TileUnits, vp.Z * VRCameraController.TileUnits + above, vp.Y * VRCameraController.TileUnits);
             }
             SimitoneVR.SetPieAnchor(camera.WorldToTracking(anchor));
             if (target != null)
@@ -829,7 +838,7 @@ namespace Simitone.Client.VR
             }
             // In first person the bottom panel is only shown in buy/build mode, where it's the catalogue on the desk panel
             // (the tablet in your hand drives it unseen).
-            var showFrontend = vrBuild && !SimitoneVR.CatalogInHand;
+            var showFrontend = vrBuild && !SimitoneVR.CatalogInHand && !SimitoneVR.DollhouseAutoBuy;
             if (immersive && frontend != null && frontend.Visible != showFrontend) frontend.Visible = showFrontend;
         }
 
@@ -854,7 +863,7 @@ namespace Simitone.Client.VR
 
             // Grabbed an existing object: aim the arc at it so it doesn't jump away (the holder's grab offset was
             // measured for the straight pointer).
-            if (holding != null && holding != LastHolding && holding.IsBought)
+            if (holding != null && holding != LastHolding && holding.IsBought && !camera.InDollhouse)
             {
                 var basePos = holding.Group.BaseObject.Position;
                 var tile = new Vector2(basePos.x / 16f + 0.5f, basePos.y / 16f + 0.5f);
@@ -887,7 +896,9 @@ namespace Simitone.Client.VR
                 }
                 else
                 {
-                    SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer : VRPlayMode.Sim;
+                    // your Sim -> observer -> dollhouse -> your Sim
+                    SimitoneVR.PlayMode = SimitoneVR.PlayMode == VRPlayMode.Sim ? VRPlayMode.Observer
+                        : SimitoneVR.PlayMode == VRPlayMode.Observer ? VRPlayMode.Dollhouse : VRPlayMode.Sim;
                     SimitoneVR.Log("play mode: " + SimitoneVR.PlayMode);
                     HITVM.Get()?.PlaySoundEvent(UISounds.Click);
                 }
