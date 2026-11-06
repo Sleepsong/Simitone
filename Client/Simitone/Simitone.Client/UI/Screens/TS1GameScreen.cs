@@ -18,6 +18,7 @@ using FSO.SimAntics;
 using FSO.SimAntics.Engine.TSOTransaction;
 using FSO.SimAntics.Marshals;
 using FSO.SimAntics.Model;
+using FSO.SimAntics.Model.TS1Platform;
 using FSO.SimAntics.NetPlay;
 using FSO.SimAntics.NetPlay.Drivers;
 using FSO.SimAntics.NetPlay.Model;
@@ -607,6 +608,29 @@ namespace Simitone.Client.UI.Screens
 
         private VMMarshal SavedLot;
 
+        /// <summary>
+        /// Try for Baby: when a try ends without the game's baby question, say so (The Sims 2 says nothing, but on a phone
+        /// it's easy to miss whether anything happened). When it worked, the game's own question is the answer.
+        /// </summary>
+        private void TryForBabyResult(VM fromVM, VMAvatar initiator, VMAvatar partner, VMTryForBabyOutcome outcome)
+        {
+            if (fromVM != vm || outcome == VMTryForBabyOutcome.Asked) return;
+            var message = (outcome == VMTryForBabyOutcome.NoLuck)
+                ? $"No baby this time for {initiator.Name} and {partner.Name}. They can try again."
+                : $"No baby this time for {initiator.Name} and {partner.Name}. The game's own baby check said no: they may need a better mood or a closer relationship, or the kiss was turned down.";
+            GameThread.NextUpdate(x =>
+            {
+                UIMobileAlert alert = null;
+                alert = new UIMobileAlert(new UIAlertOptions()
+                {
+                    Title = VMTryForBaby.InteractionName,
+                    Message = message,
+                    Buttons = UIAlertButton.Ok((btn) => UIScreen.RemoveDialog(alert))
+                });
+                UIScreen.GlobalShowDialog(alert, true);
+            });
+        }
+
         public void InitializeLot()
         {
             CleanupLastWorld();
@@ -643,6 +667,7 @@ namespace Simitone.Client.UI.Screens
             if (IDEHook.IDE != null) IDEHook.IDE.StartIDE(vm);
 
             vm.OnFullRefresh += VMRefreshed;
+            VMTryForBaby.OnResult = TryForBabyResult;
             //vm.OnEODMessage += LotControl.EODs.OnEODMessage;
             vm.OnRequestLotSwitch += VMLotSwitch;
             vm.OnGenericVMEvent += Vm_OnGenericVMEvent;
