@@ -158,6 +158,37 @@ namespace Simitone.VR.OpenXR
                     yield return Path.Combine(dir, "openxr", "1", file);
         }
 
+        /// <summary>
+        /// A path with every symbolic link in it followed (as realpath(3) does), so a manifest reached through a link
+        /// is read from where it really is. The path as it was if that can't be worked out.
+        /// </summary>
+        public static string RealPath(string path)
+        {
+            try
+            {
+                for (int depth = 0; depth < 40; depth++)
+                {
+                    var parts = Path.GetFullPath(path).Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    var current = "/";
+                    string followed = null;
+                    for (int i = 0; i < parts.Length && followed == null; i++)
+                    {
+                        var next = Path.Combine(current, parts[i]);
+                        var target = new FileInfo(next).LinkTarget;
+                        if (target == null) { current = next; continue; }
+                        // a link: what it points to (relative to the folder it's in), then the rest of the path
+                        var rest = string.Join("/", parts, i + 1, parts.Length - i - 1);
+                        var joined = Path.IsPathRooted(target) ? target : Path.Combine(current, target);
+                        followed = rest.Length > 0 ? Path.Combine(joined, rest) : joined;
+                    }
+                    if (followed == null) return current;
+                    path = followed;
+                }
+            }
+            catch (Exception) { }
+            return Path.GetFullPath(path);
+        }
+
         private static bool TryDirectRuntime(Action<string> log, List<string> errors)
         {
             string manifest = null;
@@ -192,17 +223,31 @@ namespace Simitone.VR.OpenXR
                 return false;
             }
 
-            // Relative paths are relative to the manifest. A bare file name uses the OS search path.
-            string resolved = libraryPath;
-            if (libraryPath.Contains('/') || libraryPath.Contains('\\'))
+            // Relative paths are relative to the manifest: where it really is, as the Khronos loader takes it (SteamVR's
+            // active_runtime.json is a symbolic link to the manifest in SteamVR's own folder, next to its bin folder),
+            // and, failing that, where the link is. A bare file name uses the OS search path.
+            var tried = new List<string>();
+            if (!(libraryPath.Contains('/') || libraryPath.Contains('\\')) || Path.IsPathRooted(libraryPath))
+                tried.Add(libraryPath);
+            else
             {
-                if (!Path.IsPathRooted(libraryPath))
-                    resolved = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(manifest)), libraryPath));
+                foreach (var place in new[] { RealPath(manifest), Path.GetFullPath(manifest) })
+                {
+                    var candidate = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(place), libraryPath));
+                    if (!tried.Contains(candidate)) tried.Add(candidate);
+                }
             }
-
-            if (!NativeLibrary.TryLoad(resolved, out var handle))
+            string resolved = null;
+            IntPtr handle = IntPtr.Zero;
+            foreach (var candidate in tried)
             {
-                errors.Add($"could not load runtime library '{resolved}' from {manifest}" +
+                if (NativeLibrary.TryLoad(candidate, out handle)) { resolved = candidate; break; }
+            }
+            if (resolved == null)
+            {
+                var real = RealPath(manifest);
+                errors.Add($"could not load runtime library '{string.Join("' or '", tried)}' from {manifest}" +
+                    (real != Path.GetFullPath(manifest) ? $" (a link to {real})" : "") +
                     (RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? " (an arm64 runtime is required for the arm64 build)" : ""));
                 return false;
             }

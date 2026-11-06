@@ -844,7 +844,9 @@ Design choices:
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
   Monado runtime (simulated HMD, null compositor), renders both eyes plus opaque and alpha-blended quads, and
   checks pixel orientation (including a region copy, as the dialog panel uses) and GL errors. Variables: `SIMITONE_XR_LOADER=direct` exercises the loader-free
-  path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding. The second half of the run is left-handed, and input must sync
+  path, `SDL_VIDEO_X11_FORCE_EGL=1` the EGL binding, and `SIMITONE_SMOKE_LINKED=1` SteamVR's layout without the
+  loader (as on the Steam Frame): `active_runtime.json` a symbolic link to a manifest whose relative `library_path`
+  is relative to where the manifest really is. The second half of the run is left-handed, and input must sync
   in both layouts. Ubuntu packages: `monado-service libopenxr1-monado
   libopenxr-loader1 xvfb mesa-vulkan-drivers libvulkan1 libgl1-mesa-dri libsdl2-2.0-0`.
 
