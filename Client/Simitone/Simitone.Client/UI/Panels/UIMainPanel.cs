@@ -136,7 +136,7 @@ namespace Simitone.Client.UI.Panels
 
                 FloorDownBtn = new UIStencilButton(ui.Get("level_down.png").Get(GameFacade.GraphicsDevice));
                 FloorDownBtn.Position = new Vector2(80, 68);
-                FloorDownBtn.OnButtonClick += (b) => { if (Game.Level > 1) Game.Level--; };
+                FloorDownBtn.OnButtonClick += (b) => { if (Game.Level > Game.MinLevel) Game.Level--; };
                 Add(FloorDownBtn);
 
                 FloorLabel = new UILabel();
@@ -424,9 +424,9 @@ namespace Simitone.Client.UI.Panels
                 if (Game.Level != LastFloor)
                 {
                     LastFloor = Game.Level;
-                    FloorLabel.Caption = FloorNames[LastFloor - 1];
-                    FloorLabelShadow.Caption = FloorNames[LastFloor - 1];
-                    FloorDownBtn.Disabled = LastFloor == 1;
+                    FloorLabel.Caption = TS1GameScreen.FloorName(LastFloor);
+                    FloorLabelShadow.Caption = TS1GameScreen.FloorName(LastFloor);
+                    FloorDownBtn.Disabled = LastFloor <= Game.MinLevel;
                     FloorUpBtn.Disabled = LastFloor == 5;
                 }
             }

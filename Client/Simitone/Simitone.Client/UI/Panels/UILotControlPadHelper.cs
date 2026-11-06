@@ -878,7 +878,7 @@ namespace Simitone.Client.UI.Panels
                 screen.Level++;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
-            if (pad.PressedRepeat(PadAction.Down) && screen.Level > 1)
+            if (pad.PressedRepeat(PadAction.Down) && screen.Level > screen.MinLevel) //down to the basement, in full 3D
             {
                 screen.Level--;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);

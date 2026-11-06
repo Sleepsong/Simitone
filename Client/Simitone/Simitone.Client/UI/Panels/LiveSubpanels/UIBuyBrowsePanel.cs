@@ -1138,6 +1138,58 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                     Parameters = new List<int> { }
                 }
             });
+
+            // foundations, as in The Sims 2 (Simitone.Client.UI.Panels.LotControls.UIFoundationTools)
+            var foundationRes = new Simitone.Client.UI.Panels.LotControls.UICatalogFoundationResProvider();
+            FullCategory.Insert(0, new UICatalogElement
+            {
+                Item = new ObjectCatalogItem()
+                {
+                    Name = "Foundation Steps",
+                    Category = 18,
+                    Price = (uint)FSO.SimAntics.VMArchitecture.FoundationStepsPrice,
+                },
+                Special = new UISpecialCatalogElement
+                {
+                    Control = typeof(Simitone.Client.UI.Panels.LotControls.UIFoundationStepsPlacer),
+                    ResID = Simitone.Client.UI.Panels.LotControls.UICatalogFoundationResProvider.StepsID,
+                    Res = foundationRes,
+                    Parameters = new List<int> { }
+                }
+            });
+            // basements, as in The Sims 2 (Simitone.Client.UI.Panels.LotControls.UIBasementPlacer)
+            FullCategory.Insert(0, new UICatalogElement
+            {
+                Item = new ObjectCatalogItem()
+                {
+                    Name = "Basement",
+                    Category = 18,
+                    Price = (uint)FSO.SimAntics.VMArchitecture.BasementTilePrice,
+                },
+                Special = new UISpecialCatalogElement
+                {
+                    Control = typeof(Simitone.Client.UI.Panels.LotControls.UIBasementPlacer),
+                    ResID = Simitone.Client.UI.Panels.LotControls.UICatalogFoundationResProvider.BasementID,
+                    Res = foundationRes,
+                    Parameters = new List<int> { }
+                }
+            });
+            FullCategory.Insert(0, new UICatalogElement
+            {
+                Item = new ObjectCatalogItem()
+                {
+                    Name = "Foundation",
+                    Category = 18,
+                    Price = (uint)FSO.SimAntics.VMArchitecture.FoundationTilePrice,
+                },
+                Special = new UISpecialCatalogElement
+                {
+                    Control = typeof(Simitone.Client.UI.Panels.LotControls.UIFoundationPlacer),
+                    ResID = Simitone.Client.UI.Panels.LotControls.UICatalogFoundationResProvider.FoundationID,
+                    Res = foundationRes,
+                    Parameters = new List<int> { }
+                }
+            });
         }
 
         public override void GameResized()

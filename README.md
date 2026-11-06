@@ -306,6 +306,21 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 
 **Remesh packs (3D mode):** put the pack's `.fsom` meshes and `_TEX_` textures in `Content/MeshReplace`, next to the game's other content (in a release: `lib/Content/MeshReplace`), or in a `MeshReplace` folder in your user data folder, which takes priority. File names can be in any case, so packs made on Windows also work on Linux. If a replacement mesh's textures are missing, the object keeps its normal look rather than turning invisible. With `-logs`, `simantics-errors.log` says which mesh was missing which texture.
 
+### Foundations
+
+As in The Sims 2, a house can stand on a foundation: its ground floor is raised a few steps, about a quarter of a storey, above the ground. Everything on it goes up with it: floors, walls, doors and windows, furniture, Sims, roofs and the floors above. Both tools are in Build mode under **Outdoors → Terrain**:
+
+- **Foundation**: drag out an area of clear ground. Lay floors, then build walls on it as usual. Walls on its edge stand on the foundation. Hold Ctrl (or use the erase button on touch) to remove a foundation.
+- **Foundation Steps**: click a ground tile beside a foundation to put steps up onto it. Ctrl removes steps.
+
+Sims can only get on and off a foundation by its steps, so give each house a set at its door. As in The Sims 2, a foundation goes on empty ground: clear furniture and walls off the tiles first. Furniture can't straddle a foundation's edge, and pools can't go in one. A foundation's sides use a brick or stone wall covering. Foundations are kept in Simitone's saves only: The Sims itself doesn't have them.
+
+### Basements
+
+As in The Sims 2, a lot can have a basement: a level a storey below the ground floor. Dig one out in Build mode under **Outdoors → Terrain → Basement**: drag out an area (Ctrl, or the erase button on touch, fills it back in). Dug tiles get a concrete floor, and so does the ground floor above them; the earth's sides round the basement get a brick or stone covering. Then, in full 3D, go down a floor (the floor buttons, or Page Down) to "Bsmt" to build walls, lay floors and furnish it, and put stairs in. Take up a tile of the ground floor above the stairs to make the stairwell: it's a hole, which Sims can't walk on.
+
+Level 0 is earth except where it's dug out: walls, floors, furniture and Sims can only go on dug tiles (walls also along the basement's edge). The basement's rooms are indoors. Bare ground with things on it, pools and foundations can't be dug under (basements under foundations will come later), and a part of the basement with anything in it can't be filled in. This is the first stage: the basement's own lighting, its cutaway and a 2D view are still to come, so its light may look wrong (too dark or too bright), and it's only shown in full 3D. Basements are kept in Simitone's saves only; a lot saved with one needs a build with basements to load it as built.
+
 # Building from Source
 
 Want to compile Simitone yourself? Follow these steps.

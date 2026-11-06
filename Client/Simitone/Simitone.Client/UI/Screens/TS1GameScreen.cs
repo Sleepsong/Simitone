@@ -178,6 +178,20 @@ namespace Simitone.Client.UI.Screens
             }
         }
 
+        /// <summary>
+        /// The lowest level the view goes down to: the basement (0) in full 3D, where it's drawn; the ground floor (1)
+        /// otherwise.
+        /// </summary>
+        public sbyte MinLevel => (World?.State != null && World.State.CameraMode == FSO.LotView.Model.CameraRenderMode._3D) ? (sbyte)0 : (sbyte)1;
+
+        private static readonly string[] FloorNameList = new string[] { "Bsmt", "1st", "2nd", "3rd", "4th", "5th" };
+
+        /// <summary>A level's short name for the floor buttons: "Bsmt" for the basement (level 0), then "1st"...</summary>
+        public static string FloorName(int level)
+        {
+            return (level >= 0 && level < FloorNameList.Length) ? FloorNameList[level] : level.ToString();
+        }
+
         public sbyte Level
         {
             get
@@ -615,6 +629,8 @@ namespace Simitone.Client.UI.Screens
             UpdateNeighbourhoodPad(state);
             UpdateAutoLayout(state);
             UpdateAutoFastForward();
+            //the basement is only shown in full 3D: out of it, back up to the ground floor
+            if (World != null && Level < MinLevel) Level = MinLevel;
 
             // Update weather effects (sounds and terrain)
             UpdateWeatherEffects();
