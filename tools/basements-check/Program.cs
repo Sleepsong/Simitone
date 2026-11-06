@@ -112,6 +112,11 @@ static class Program
         Check("the earth isn't next to it", !rooms[dugRoom].AdjRooms.Contains(earthRoom) && !rooms[earthRoom].AdjRooms.Contains(dugRoom), "no adjacency either way");
         Check("lit on its own", rooms[dugRoom].LightBaseRoom == dugRoom, $"light base {rooms[dugRoom].LightBaseRoom}");
         Check("its floor is -1", rooms[dugRoom].Floor == -1, $"{rooms[dugRoom].Floor}");
+        ctx.Architecture.Rooms = new LevelArray<VMRoomMap>(5);
+        ctx.Architecture.Rooms[-1] = basement;
+        ctx.Architecture.Rooms[0] = ground;
+        Check("things in the basement are in its room", ctx.GetRoomAt(LotTilePos.FromBigTile(4, 4, 0)) == dugRoom,
+            $"room {ctx.GetRoomAt(LotTilePos.FromBigTile(4, 4, 0))} (0 would hide them and let Sims walk anywhere)");
         var obs = rooms[dugRoom].RoomObs;
         Func<int, int, bool> blocked = (x, y) => obs.Any(o => o.x1 < x * 16 + 8 && o.x2 > x * 16 + 8 && o.y1 < y * 16 + 8 && o.y2 > y * 16 + 8);
         Check("Sims can't walk into the earth", blocked(2, 4) && blocked(7, 4) && blocked(4, 2) && blocked(4, 7), "the tiles round it are obstacles");
