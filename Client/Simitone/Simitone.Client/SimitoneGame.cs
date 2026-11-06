@@ -164,6 +164,8 @@ namespace Simitone.Client
                 FSO.Content.RCMeshProvider.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Mesh replacement", message);
                 //sounds that couldn't play, and why: unknown events, missing or undecodable files, TV stations with no files
                 FSO.Content.TS1.TS1Audio.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Sound", message);
+                //neighbourhood pictures of a lot that came out with black floors and roof, and the renderer's state then
+                Utils.LotPictureGuard.Note = message => FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Lot picture", message);
             }
             //-travellog: travel between lots, town maps, pie menus and why their interactions were left out, and the
             //scripts of interactions picked away from home, step by step (see TRAVEL_FIXES.md)
