@@ -174,7 +174,7 @@ static class Program
             && painted.SideOf(4, 5, 1) == 7 && painted.SideOf(4, 4, 3) == 7, "(4, 5)'s -x side only");
         Check("again: nothing changes", VMFoundationTools.PaintSides(arch, new Point(4, 5), 3, 9) == 0, "same covering");
         Check("a side inside the foundation can't be painted", VMFoundationTools.PaintSides(arch, new Point(5, 5), 0, 9) == 0, "(5, 5)");
-        Check("nor the one the steps lead up", VMFoundationTools.PaintSides(arch, new Point(5, 6), 2, 9) == 0, "(5, 6)'s +y side");
+        Check("the side behind the steps can be painted too", VMFoundationTools.PaintSides(arch, new Point(5, 6), 2, 9) == 1, "(5, 6)'s +y side: a staircase's piece doesn't cover it");
         Check("nor the ground", VMFoundationTools.PaintSides(arch, new Point(1, 1), 0, 9) == 0, "(1, 1)");
         Check("groups: one per covering painted", Modelled3DFoundation.Groups(painted).Where(g => g.Item1 == FoundationMaterial.Covering)
             .Select(g => g.Item2).OrderBy(g => g).SequenceEqual(new ushort[] { 7, 9 }), "7, 9");
@@ -182,8 +182,8 @@ static class Program
         using (var w = new BinaryWriter(savedPainted, System.Text.Encoding.UTF8, true)) VMArchitectureTerrain.WriteFoundations(w, painted);
         savedPainted.Position = 0;
         using (var r = new BinaryReader(savedPainted)) Check("each side saved", VMArchitectureTerrain.ReadFoundations(r).Sides.SequenceEqual(painted.Sides), "revision " + VMArchitectureTerrain.FoundationsRevision);
-        Check("paint the whole foundation (shift)", VMFoundationTools.PaintSides(arch, new Point(5, 5), VMFoundationTools.PaintWholeFoundation, 0) == 11
-            && Enumerable.Range(0, 144 * 4).All(i => painted.Sides[i] == 0 || !painted.SideShows(i / 4 % 12, i / 4 / 12, i % 4)), "11 showing sides back to its brick");
+        Check("paint the whole foundation (shift)", VMFoundationTools.PaintSides(arch, new Point(5, 5), VMFoundationTools.PaintWholeFoundation, 0) == 12
+            && Enumerable.Range(0, 144 * 4).All(i => painted.Sides[i] == 0 || !painted.SideShows(i / 4 % 12, i / 4 / 12, i % 4)), "all 12 sides back to its brick");
 
         // ---- kinds: a foundation, a latticed deck, a column deck; each priced (and sold back) for its kind
         var kinds = Fixture(new FoundationMap(12, 12));
@@ -263,7 +263,8 @@ static class Program
                 (FoundationMaterial.Covering, (ushort)7), (FoundationMaterial.Plywood, (ushort)0), (FoundationMaterial.Steps, (ushort)0) }),
                 string.Join(", ", Modelled3DFoundation.Groups(map).Select(g => g.Item1 + "/" + g.Item2)));
 
-            // the covered sides: 12 round the outside, less the one behind the steps, from the ground right up to the top
+            // the covered sides: 12 round the outside, less the one behind the plain steps (they cover it; a staircase's
+            // piece wouldn't), from the ground right up to the top
             var sides = new TestFoundation(bp, FoundationMaterial.Covering, 7).Build();
             Check("covered sides", sides.Length == 11 * 4, $"{sides.Length / 4} quads");
             Check("covered sides go from the ground to the top", Near(sides.Min(v => v.Position.Y), 0) && Near(sides.Max(v => v.Position.Y), top), $"0..{top}");
@@ -299,7 +300,8 @@ static class Program
             Check("pick the side facing the camera", hitSide && pt == new Point(4, 6) && pd == 2, $"{pt}, side {pd}");
             hitSide = bp.FoundationSideAt(new Ray(new Vector3(1 * 3, 0.3f * 3, 5.5f * 3), new Vector3(1, 0, 0)), out pt, out pd);
             Check("from the other way", hitSide && pt == new Point(4, 5) && pd == 3, $"{pt}, side {pd}");
-            Check("not behind the steps", !bp.FoundationSideAt(new Ray(new Vector3(5.5f * 3, 0.3f * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd), "nothing");
+            hitSide = bp.FoundationSideAt(new Ray(new Vector3(5.5f * 3, 0.3f * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd);
+            Check("the side behind the steps too", hitSide && pt == new Point(5, 6) && pd == 2, $"{pt}, side {pd}");
             Check("not from above (the top hides them)", !bp.FoundationSideAt(new Ray(new Vector3(5.5f * 3, 5 * 3, 5.5f * 3), new Vector3(0, -1, 0)), out pt, out pd), "nothing");
             Check("not over the top", !bp.FoundationSideAt(new Ray(new Vector3(4.5f * 3, 1 * 3, 10 * 3), new Vector3(0, 0, -1)), out pt, out pd), "nothing");
             var slant = Vector3.Normalize(new Vector3(0, -1, -1)); // down at 45 degrees onto the +y side, then the top behind it
