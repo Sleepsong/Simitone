@@ -76,6 +76,39 @@ namespace Simitone.Client.UI.Panels
             return ((entity is VMAvatar) ? "Sim " : "object ") + entity.ToString() + " (id " + entity.ObjectID + ", at " + entity.Position + ")";
         }
 
+        private static bool Sampled; //(the first picture drawn this run is saved, with -logs)
+
+        /// <summary>-logs: what the first picture drawn looks like, in pip.log (how much is see-through, its colours) and pip.png.</summary>
+        private void LogSample()
+        {
+            try
+            {
+                var target = Picture.Target;
+                var data = new Color[target.Width * target.Height];
+                target.GetData(data);
+                int clear = 0, partial = 0;
+                long r = 0, g = 0, b = 0;
+                var colours = new HashSet<uint>();
+                foreach (var c in data)
+                {
+                    if (c.A == 0) clear++;
+                    else if (c.A < 255) partial++;
+                    r += c.R; g += c.G; b += c.B;
+                    if (colours.Count < 1000) colours.Add(c.PackedValue);
+                }
+                var n = Math.Max(1, data.Length);
+                Log("  picture " + target.Width + "x" + target.Height + ": " + (clear * 100 / n) + "% see-through, " + (partial * 100 / n) + "% partly; average colour "
+                    + (r / n) + ", " + (g / n) + ", " + (b / n) + "; " + (colours.Count >= 1000 ? "1000+" : colours.Count.ToString()) + " colours");
+                var path = System.IO.Path.Combine(FSO.Common.FSOEnvironment.UserDir ?? "", "pip.png");
+                using (var file = System.IO.File.Create(path)) target.SaveAsPng(file, target.Width, target.Height);
+                Log("  saved it to " + path);
+            }
+            catch (Exception e)
+            {
+                Log("  couldn't look at the picture: " + e.Message);
+            }
+        }
+
         private void LogOutcome(string outcome)
         {
             if (outcome == LastLogged) return;
@@ -164,6 +197,11 @@ namespace Simitone.Client.UI.Panels
                 {
                     Drawn = true;
                     LogOutcome("drawn");
+                    if (!Sampled && LogsWanted())
+                    {
+                        Sampled = true;
+                        LogSample();
+                    }
                 }
                 else LogOutcome("not drawn: " + (World.PictureRefusal ?? "(no reason given)"));
             }
