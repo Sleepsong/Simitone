@@ -23,8 +23,6 @@ namespace Simitone.Client.UI.Panels
         private TextStyle m_TextStyle;
 
         private UIImage Icon;
-        /// <summary>The picture beside the message (for logs).</summary>
-        public UIImage IconImage => Icon;
         private Vector2 IconSpace;
 
         private List<UIButton> Buttons;
