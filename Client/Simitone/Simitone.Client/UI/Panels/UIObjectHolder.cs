@@ -252,6 +252,7 @@ namespace Simitone.Client.UI.Panels
                     //ExecuteEntryPoint(11); //User Placement
                     var putDown = Holding;
                     var pos = Holding.Group.BaseObject.Position;
+                    NotePlacement(Holding);
                     if (Holding.IsBought)
                     {
                         if (UseNet)
@@ -315,6 +316,38 @@ namespace Simitone.Client.UI.Panels
             ShowTooltip = false;
         }
 
+        /// <summary>
+        /// -logs: where an object was put down, tile by tile, and whether the lot lets things be built there, so one put
+        /// somewhere it shouldn't be (the street, say) can be told apart: off the buildable area, on a road floor, or
+        /// the lot's own map allowing it.
+        /// </summary>
+        private void NotePlacement(UIObjectSelection holding)
+        {
+            if (FSO.SimAntics.Engine.VMExceptionLog.Path == null) return;
+            try
+            {
+                var arch = vm.Context.Architecture;
+                var parts = new List<string>();
+                foreach (var obj in holding.Group.Objects)
+                {
+                    var p = obj.Position;
+                    var inArea = !vm.Context.IsUserOutOfBounds(p);
+                    var fine = arch.FineBuildableArea;
+                    var flag = (fine != null && p.TileX >= 0 && p.TileY >= 0 && p.TileX < arch.Width && p.TileY < arch.Height)
+                        ? (fine[p.TileX + p.TileY * arch.Width] ? "buildable" : "not buildable") : "no tile map";
+                    var floor = (p.TileX >= 0 && p.TileY >= 0 && p.TileX < arch.Width && p.TileY < arch.Height && p.Level >= 1)
+                        ? arch.GetFloor(p.TileX, p.TileY, p.Level).Pattern : (ushort)0;
+                    parts.Add($"({p.x / 16f}, {p.y / 16f}, level {p.Level}): {(inArea ? "in" : "OUT OF")} the buildable area ({flag}), floor {floor}");
+                }
+                var name = holding.Group.BaseObject.ToString();
+                FSO.SimAntics.Engine.VMExceptionLog.WriteNote("Placement",
+                    $"{(holding.IsBought ? "moved" : "bought")} {name} facing {holding.Dir}"
+                    + $" (offgrid {(Utils.BuildCheats.OffGridActive(World) ? "on" : "off")}, rotate45 {(Utils.BuildCheats.Rotate45Active(World) ? "on" : "off")})"
+                    + $", lot area {arch.BuildableArea}: " + string.Join("; ", parts));
+            }
+            catch (Exception) { }
+        }
+
         private void ExecuteEntryPoint(int num)
         {
             for (int i = 0; i < Holding.Group.Objects.Count; i++) Holding.Group.Objects[i].ExecuteEntryPoint(num, vm.Context, true);
@@ -346,6 +379,8 @@ namespace Simitone.Client.UI.Panels
 
         public void Cancel()
         {
+            //nothing held: the pick up panel's Cancel can still be clicked while it fades out after a put down
+            if (Holding == null) return;
             Holding.Dir = Holding.OriginalDir;
             OnDelete?.Invoke(Holding, null);
             ClearSelected();
@@ -577,6 +612,7 @@ namespace Simitone.Client.UI.Panels
 
         public void RotateObject(int notches)
         {
+            if (Holding == null) return; //(the touch rotate buttons, as the pick up panel)
             //a quarter turn is two notches; with the rotate45 cheat (3D), it's one: 45 degrees
             if (Utils.BuildCheats.Rotate45Active(World) && Math.Abs(notches) == 2) notches /= 2;
             Direction newDir;
