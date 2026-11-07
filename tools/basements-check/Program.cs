@@ -122,6 +122,33 @@ static class Program
         Check("Sims can't walk into the earth", blocked(2, 4) && blocked(7, 4) && blocked(4, 2) && blocked(4, 7), "the tiles round it are obstacles");
         Check("but can walk the basement", !blocked(3, 3) && !blocked(6, 6) && !blocked(4, 5), "its tiles are open");
 
+        // ---- cutaway in the basement: with no walls built, its earth's sides cut away as walls would
+        {
+            var carch = ctx.Architecture;
+            carch.Walls = new LevelArray<WallTile[]>(5);
+            carch.Walls[-1] = walls;
+            carch.Walls[0] = groundWalls;
+            var edges = FSO.SimAntics.Utils.VMArchitectureTools.EarthEdges(carch, 0);
+            Check("the earth's edges", edges != null && edges[4 * W + 3] && edges[4 * W + 2] && edges[6 * W + 6] && edges[7 * W + 7]
+                && !edges[4 * W + 4] && !edges[5 * W + 5] && !edges[4 * W + 1], "dug next to earth and earth next to dug; not inside, or far out");
+            Check("only in the basement", FSO.SimAntics.Utils.VMArchitectureTools.EarthEdges(carch, 1) == null, "");
+            var rot = FSO.LotView.WorldRotation.TopLeft;
+            var cut = FSO.SimAntics.Utils.VMArchitectureTools.GenerateRoomCut(carch, 0, rot, new HashSet<uint> { dugRoom });
+            Check("cutting the basement's room cuts at its edges", cut.Count(x => x) > 0 && cut[4 * W + 3] && cut[4 * W + 6], $"{cut.Count(x => x)} tiles cut");
+            //the sides: whole with no cut; with it, those toward the camera come down and those away from it stay (as walls)
+            var dir = FSO.LotView.RC.WallComponentRC.CutCheckDir[(int)rot]; //from a cut wall, toward the room it's cut for
+            var nearX = dir.X < 0 ? 7 : 3; //the side the camera looks over
+            var farX = dir.X < 0 ? 3 : 7;
+            Func<int, float> sideHeight = (x) => Modelled3DBasement.SideHeight(W, cut, rot, new Point(x, 5));
+            Check("no cut: sides whole", Modelled3DBasement.SideHeight(W, null, rot, new Point(nearX, 5)) > 2.9f, "");
+            Check("the near side comes down", sideHeight(nearX) < 0.5f, $"x {nearX}: {sideHeight(nearX)}");
+            Check("the far side stays", sideHeight(farX) > 2.9f, $"x {farX}: {sideHeight(farX)}");
+            var rect = new Rectangle(8, 8, 2, 2); //(away from the basement, and off the lot's first row and column, which always count)
+            var cut2 = new bool[W * H];
+            Check("cutting a rectangle out in the earth: nothing to cut", !FSO.SimAntics.Utils.VMArchitectureTools.ApplyCutRectangle(carch, 0, cut2, rect), "");
+            Check("and at the basement's edge, its sides", FSO.SimAntics.Utils.VMArchitectureTools.ApplyCutRectangle(carch, 0, cut2, new Rectangle(2, 2, 2, 2)), "");
+        }
+
         // the ground floor over the basement: all floored (its ceiling) but one tile taken up for a stairwell
         var rooms3 = new List<VMRoom> { new VMRoom() };
         var overFloors = new FloorTile[W * H];
