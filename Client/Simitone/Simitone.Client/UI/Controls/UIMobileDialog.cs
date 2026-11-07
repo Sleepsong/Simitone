@@ -35,6 +35,8 @@ namespace Simitone.Client.UI.Controls
         }
 
         protected bool Closing;
+        /// <summary>Whether it's still up: not closing, and on the screen.</summary>
+        public bool IsOpen => !Closing && Parent != null && Parent.GetChildren().Contains(this);
 
         private float _i;
         public float InterpolatedAnimation

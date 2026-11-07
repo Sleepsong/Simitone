@@ -23,7 +23,7 @@ namespace Simitone.Client.UI.Panels
     /// Options dialog with three tabs:
     ///  - Graphics: lighting, AA, 3D mode, display mode, window size, refresh rate.
     ///  - Sound &amp; Controls: music/sound effect/voice/ambience volume, edge scrolling.
-    ///  - Game: Live Picture in Picture (event popups show a live view, in full 3D).
+    ///  - Game: Live Picture in Picture (a window in the corner shows events live, in full 3D).
     /// Changes apply immediately where the engine allows it and are saved to config.ini.
     /// Opened from Options > Settings on a lot, and from the "..." button on the neighbourhood.
     /// </summary>
@@ -162,7 +162,7 @@ namespace Simitone.Client.UI.Panels
 
             // --- Game ---
 
-            //TS1's Live Picture in Picture: event popups show a live view of the Sim or object they're about (full 3D only)
+            //TS1's Picture in Picture: a window in the corner shows events live (the Sim or object a popup is about, a fire; full 3D only)
             AddRow(2, "Live Picture in Picture",
                 () => new List<Tuple<string, int>>() { Tuple.Create("On", 1), Tuple.Create("Off", 0) },
                 () => settings.LivePIP ? 1 : 0,

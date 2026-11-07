@@ -154,6 +154,7 @@ namespace Simitone.Client.UI.Panels
 
             vm.OnDialog += vm_OnDialog;
             vm.OnBreakpoint += Vm_OnBreakpoint;
+            vm.OnGenericVMEvent += Vm_OnGenericVMEvent;
         }
 
         public void SetupQuery()
@@ -315,15 +316,13 @@ namespace Simitone.Client.UI.Panels
             var iconType = ((int)(info.Operand?.Flags ?? 0) >> 1) & 7;
             if (iconType == 1) return;
             var picture = (iconType == 3) ? entity?.Object.Resource.Get<FSO.Files.Formats.IFF.Chunks.BMP>((ushort)(5000 + info.Operand.IconNameStringID)) : null;
+            //TS1's Picture in Picture: the Sim or object the popup is about, live, in the corner while it's up
+            if (UIPictureInPicture.SubjectOf(vm, info) is VMEntity subject) ShowPictureInPicture(subject, () => alert.IsOpen, false);
+            else UIPictureInPicture.Log("popup \"" + info.Title + "\": nothing on the lot to show (icon " + UIPictureInPicture.Describe(info.Icon)
+                + ", neighbour " + info.IconNeighborGUID + ")");
+
             if (picture != null)
                 alert.SetIcon(picture.GetTexture(GameFacade.GraphicsDevice), 256, 256); //e.g. the phone's prank call and money chance pictures
-            else if (LivePictureWanted(info) && UILivePicture.SubjectOf(vm, info) is VMEntity subject)
-            {
-                //Live Picture in Picture: a live view of the Sim or object the popup is about
-                var live = new UILivePicture(World, vm, subject);
-                alert.Add(live);
-                alert.SetIcon(live.Picture.Target, 256, 256);
-            }
             else if (entity is VMGameObject)
             {
                 var objects = entity.MultitileGroup.Objects;
@@ -342,16 +341,35 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
-        /// <summary>Whether a popup gets a live picture; with -logs, pip.log says why one doesn't.</summary>
-        private bool LivePictureWanted(FSO.SimAntics.Model.VMDialogInfo info)
+        private UIPictureInPicture PictureInPicture;
+
+        /// <summary>
+        /// TS1's Picture in Picture: shows something live in the corner (moving the window there if it's showing something
+        /// else, but not off a fire for another fire). It stays while <paramref name="heldOpen"/> says so, then a little longer.
+        /// </summary>
+        public void ShowPictureInPicture(VMEntity subject, Func<bool> heldOpen, bool fire)
         {
-            var enabled = UILivePicture.Enabled(World);
-            if (!enabled)
-                UILivePicture.Log("popup \"" + info.Title + "\": no live picture, " + (GlobalSettings.Default.LivePIP ? "not in 3D (camera mode " + World?.State?.CameraMode + ")" : "the option is off"));
-            else if (UILivePicture.SubjectOf(vm, info) == null)
-                UILivePicture.Log("popup \"" + info.Title + "\": no live picture, nothing on the lot to show (icon " + UILivePicture.Describe(info.Icon)
-                    + ", neighbour " + info.IconNeighborGUID + ")");
-            return enabled;
+            if (!UIPictureInPicture.Enabled(World))
+            {
+                UIPictureInPicture.Log("not showing " + UIPictureInPicture.Describe(subject) + ": " + (GlobalSettings.Default.LivePIP ? "not in 3D" : "the option is off"));
+                return;
+            }
+            if (!UIPictureInPicture.Showable(subject)) return;
+            if (fire && PictureInPicture != null && PictureInPicture.WatchingFire) return;
+            if (PictureInPicture == null)
+            {
+                var pip = new UIPictureInPicture(World, vm);
+                pip.OnClosed += (closed) => { if (PictureInPicture == closed) PictureInPicture = null; };
+                PictureInPicture = pip;
+                Add(pip);
+            }
+            PictureInPicture.Show(subject, heldOpen, fire);
+        }
+
+        private void Vm_OnGenericVMEvent(VMEventType type, object data)
+        {
+            //a fire's started: watched until it's out
+            if (type == VMEventType.TS1PictureInPicture && data is VMEntity subject) ShowPictureInPicture(subject, () => !subject.Dead, true);
         }
 
         private void HouseSelected(int house)
