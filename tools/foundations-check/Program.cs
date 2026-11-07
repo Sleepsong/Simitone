@@ -206,8 +206,8 @@ static class Program
         place(6, 2, 1, 0, H, FoundationKind.Foundation);
         place(8, 2, 0, 0, H, FoundationKind.ColumnDeck);
         var paintedSides = VMFoundationTools.PaintSides(kinds.Architecture, new Point(6, 2), VMFoundationTools.PaintWholeFoundation, 9);
-        Check("painting stops where the foundation meets a deck", paintedSides == 5 && kmap.SideOf(8, 2, 0) == 0,
-            $"{paintedSides} sides: the foundation's 2 tiles' 5 (the deck beside it is as high)");
+        Check("painting stops where the foundation meets a deck", paintedSides == 6 && kmap.SideOf(8, 2, 0) == 0,
+            $"{paintedSides} sides: the foundation's 2 tiles' 5, and the one under the column deck beside it; none of the deck's");
 
         // ---- steps: a staircase's bottom piece (by its GUID), a quarter of its price; plain steps without one
         VMFoundationTools.PlaceFoundationSteps(kinds.Architecture, new Point(6, 3), 255, true, 0, out var plainCost);
@@ -332,6 +332,26 @@ static class Program
             var lattice = new TestFoundation(bp, FoundationMaterial.Lattice, 0).Build();
             Check("decks stay on their own tiles", planks.Concat(lattice).Concat(colVerts).All(v => v.Position.X >= 2 * 3 - 1e-3f && v.Position.X <= 5 * 3 + 1e-3f
                 && v.Position.Z >= 2 * 3 - 1e-3f && v.Position.Z <= 8 * 3 + 1e-3f), "x 2..5, y 2..8");
+            // where kinds meet at the same height: a column deck is open underneath, so the foundation's or latticed
+            // deck's side beside it shows under it, from the ground (the column deck itself has no side there)
+            var mixed = new FoundationMap(12, 12);
+            Action<int, int, FoundationKind> put = (x, y, kind) => { mixed.Raise[y * 12 + x] = H; mixed.Kind[y * 12 + x] = (byte)kind; };
+            put(3, 9, FoundationKind.Foundation);
+            put(4, 9, FoundationKind.ColumnDeck);
+            put(5, 9, FoundationKind.LatticedDeck);
+            put(6, 9, FoundationKind.Foundation);
+            mixed.Refresh();
+            Check("a foundation's side shows under a column deck beside it", mixed.SideShows(3, 9, 1) && mixed.SideBottom(3, 9, 1) == 0 && mixed.SidePaintable(3, 9, 1), "(3, 9) east, from the ground");
+            Check("so does a latticed deck's", mixed.SideShows(5, 9, 3) && mixed.SideBottom(5, 9, 3) == 0, "(5, 9) west");
+            Check("the column deck has none there", !mixed.SideShows(4, 9, 1) && !mixed.SideShows(4, 9, 3), "(4, 9)");
+            Check("nor do a latticed deck and a foundation as high, side by side", !mixed.SideShows(5, 9, 1) && !mixed.SideShows(6, 9, 3), "(5, 9) and (6, 9)");
+            Check("Sims still walk across them all", !mixed.EdgeBlocked(3, 9, 1) && !mixed.EdgeBlocked(4, 9, 1), "same height");
+            bp.Foundations = mixed;
+            var mixedSides = new TestFoundation(bp, FoundationMaterial.Covering, 0).Build();
+            Check("the foundation's side under the deck is drawn from the ground up", mixedSides.Any(v => v.Normal.X > 0.5f && Near(v.Position.X, 4 * 3) && Near(v.Position.Y, 0))
+                && mixedSides.Any(v => v.Normal.X > 0.5f && Near(v.Position.X, 4 * 3) && Near(v.Position.Y, top)), "x 4, 0..top");
+            var mixedLattice = new TestFoundation(bp, FoundationMaterial.Lattice, 0).Build();
+            Check("the latticed deck's lattice under it too", mixedLattice.Any(v => v.Normal.X < -0.5f && Near(v.Position.X, 5 * 3) && Near(v.Position.Y, 0)), "x 5");
             bp.Foundations = map;
 
             var heightAt = bp.InterpAltitude(new Vector3(5.5f, 7.5f, 0));
