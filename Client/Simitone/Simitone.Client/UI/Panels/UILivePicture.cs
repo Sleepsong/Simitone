@@ -1,4 +1,4 @@
-using FSO.Client;
+﻿using FSO.Client;
 using FSO.Client.UI.Framework;
 using FSO.LotView;
 using FSO.LotView.Components;
@@ -41,6 +41,46 @@ namespace Simitone.Client.UI.Panels
             Subject = subject;
             Picture = new WorldPicture(GameFacade.GraphicsDevice, Size);
             Aim();
+            Log("popup about " + Describe(subject) + ": live picture of level " + Picture.Level + ", looking at " + Picture.Focus);
+        }
+
+        private string LastLogged; //(each frame's outcome is only logged when it changes)
+
+        /// <summary>-logs: pip.log, what popups' live pictures did (and why there wasn't one), to find out why one doesn't show.</summary>
+        public static void Log(string line)
+        {
+            if (!LogsWanted()) return;
+            try
+            {
+                var path = System.IO.Path.Combine(FSO.Common.FSOEnvironment.UserDir ?? "", "pip.log");
+                System.IO.File.AppendAllText(path, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + line + Environment.NewLine);
+            }
+            catch (Exception) { }
+        }
+
+        private static bool? Logs;
+        private static bool LogsWanted()
+        {
+            if (Logs == null)
+            {
+                Logs = false;
+                foreach (var part in (FSO.Common.FSOEnvironment.Args ?? "").Split(' '))
+                    if ((part.StartsWith("-") || part.StartsWith("/")) && part.TrimStart('-', '/').Equals("logs", StringComparison.OrdinalIgnoreCase)) Logs = true;
+            }
+            return Logs.Value;
+        }
+
+        public static string Describe(VMEntity entity)
+        {
+            if (entity == null) return "nothing";
+            return ((entity is VMAvatar) ? "Sim " : "object ") + entity.ToString() + " (id " + entity.ObjectID + ", at " + entity.Position + ")";
+        }
+
+        private void LogOutcome(string outcome)
+        {
+            if (outcome == LastLogged) return;
+            LastLogged = outcome;
+            Log("  " + outcome);
         }
 
         /// <summary>Whether popups show live pictures: the option is on, in full 3D.</summary>
@@ -120,11 +160,17 @@ namespace Simitone.Client.UI.Panels
             try
             {
                 Aim();
-                if (World.DrawPicture(gd, Picture)) Drawn = true;
+                if (World.DrawPicture(gd, Picture))
+                {
+                    Drawn = true;
+                    LogOutcome("drawn");
+                }
+                else LogOutcome("not drawn: " + (World.PictureRefusal ?? "(no reason given)"));
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 //a picture is never worth breaking the game over: it keeps its last frame
+                LogOutcome("failed: " + e);
             }
             if (!Drawn)
             {

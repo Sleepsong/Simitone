@@ -317,7 +317,7 @@ namespace Simitone.Client.UI.Panels
             var picture = (iconType == 3) ? entity?.Object.Resource.Get<FSO.Files.Formats.IFF.Chunks.BMP>((ushort)(5000 + info.Operand.IconNameStringID)) : null;
             if (picture != null)
                 alert.SetIcon(picture.GetTexture(GameFacade.GraphicsDevice), 256, 256); //e.g. the phone's prank call and money chance pictures
-            else if (UILivePicture.Enabled(World) && UILivePicture.SubjectOf(vm, info) is VMEntity subject)
+            else if (LivePictureWanted(info) && UILivePicture.SubjectOf(vm, info) is VMEntity subject)
             {
                 //Live Picture in Picture: a live view of the Sim or object the popup is about
                 var live = new UILivePicture(World, vm, subject);
@@ -340,6 +340,18 @@ namespace Simitone.Client.UI.Panels
                 var head = Model.UIIconCache.GetNeighbor(info.IconNeighborGUID);
                 if (head != null) alert.SetIcon(head, 256, 256);
             }
+        }
+
+        /// <summary>Whether a popup gets a live picture; with -logs, pip.log says why one doesn't.</summary>
+        private bool LivePictureWanted(FSO.SimAntics.Model.VMDialogInfo info)
+        {
+            var enabled = UILivePicture.Enabled(World);
+            if (!enabled)
+                UILivePicture.Log("popup \"" + info.Title + "\": no live picture, " + (GlobalSettings.Default.LivePIP ? "not in 3D (camera mode " + World?.State?.CameraMode + ")" : "the option is off"));
+            else if (UILivePicture.SubjectOf(vm, info) == null)
+                UILivePicture.Log("popup \"" + info.Title + "\": no live picture, nothing on the lot to show (icon " + UILivePicture.Describe(info.Icon)
+                    + ", neighbour " + info.IconNeighborGUID + ")");
+            return enabled;
         }
 
         private void HouseSelected(int house)
