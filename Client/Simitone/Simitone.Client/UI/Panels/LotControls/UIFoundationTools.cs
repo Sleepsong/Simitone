@@ -5,9 +5,11 @@ using FSO.Client.UI.Panels.LotControls;
 using FSO.Common.Rendering.Framework.Model;
 using FSO.Content;
 using FSO.Content.Model;
+using FSO.Content.Interfaces;
 using FSO.HIT;
 using FSO.LotView;
 using FSO.LotView.Components;
+using FSO.LotView.Components.Geometry;
 using FSO.LotView.Model;
 using FSO.SimAntics;
 using FSO.SimAntics.Entities;
@@ -17,6 +19,8 @@ using FSO.SimAntics.Utils;
 using FSO.UI.Panels.LotControls;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Simitone.Client.UI.Panels.LiveSubpanels.Catalog;
+using FSO.Files.Formats.IFF.Chunks;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -131,14 +135,15 @@ namespace Simitone.Client.UI.Panels.LotControls
     /// </summary>
     public class UIFoundationPlacer : UIFoundationToolBase
     {
-        private ushort Covering;
+        private FoundationKind Kind;
         private bool Drawing;
         private Point Start;
         private Point End;
 
+        /// <param name="parameters">The kind of foundation (see <see cref="FoundationKind"/>): a foundation, a latticed deck, a column deck.</param>
         public UIFoundationPlacer(VM vm, World world, ILotControl parent, List<int> parameters) : base(vm, world, parent)
         {
-            Covering = (parameters != null && parameters.Count > 0 && parameters[0] > 0) ? (ushort)parameters[0] : (ushort)0; //plain concrete sides
+            Kind = (parameters != null && parameters.Count > 0) ? (FoundationKind)parameters[0] : FoundationKind.Foundation;
         }
 
         private VMArchitectureCommand Command(Point a, Point b)
@@ -153,8 +158,8 @@ namespace Simitone.Client.UI.Panels.LotControls
                 x2 = Math.Abs(a.X - b.X),
                 y2 = Math.Abs(a.Y - b.Y),
                 level = 1,
-                style = (ushort)(Erasing ? 0 : FoundationMap.DefaultHeight),
-                pattern = Covering
+                style = (ushort)(Erasing ? 0 : (FoundationMap.DefaultHeight | ((int)Kind << 12))),
+                pattern = 0 //(its own brick; painted with the wall coverings after)
             };
         }
 
@@ -188,8 +193,12 @@ namespace Simitone.Client.UI.Panels.LotControls
     /// </summary>
     public class UIFoundationStepsPlacer : UIFoundationToolBase
     {
+        private uint Style;
+
+        /// <param name="parameters">The staircase (catalog GUID) whose bottom piece the steps are; none for plain steps.</param>
         public UIFoundationStepsPlacer(VM vm, World world, ILotControl parent, List<int> parameters) : base(vm, world, parent)
         {
+            Style = (parameters != null && parameters.Count > 0) ? (uint)parameters[0] : 0;
         }
 
         private VMArchitectureCommand Command(Point tile)
@@ -201,7 +210,8 @@ namespace Simitone.Client.UI.Panels.LotControls
                 y = tile.Y,
                 level = 1,
                 pattern = 255,
-                style = (ushort)(Erasing ? 0 : 1)
+                style = (ushort)(Erasing ? 0 : 1),
+                x2 = (int)Style
             };
         }
 
@@ -225,7 +235,18 @@ namespace Simitone.Client.UI.Panels.LotControls
     public class UICatalogFoundationResProvider : UICatalogResProvider
     {
         public const ulong FoundationID = 100;
+        /// <summary>Plain steps: only when the game has no staircase to make steps from.</summary>
         public const ulong StepsID = 101;
+        public const ulong LatticedDeckID = 103;
+        public const ulong ColumnDeckID = 104;
+
+        /// <summary>The kind of foundation a catalog entry builds.</summary>
+        public static FoundationKind KindOf(ulong id)
+        {
+            if (id == LatticedDeckID) return FoundationKind.LatticedDeck;
+            if (id == ColumnDeckID) return FoundationKind.ColumnDeck;
+            return FoundationKind.Foundation;
+        }
 
         public override Texture2D GetIcon(ulong id)
         {
@@ -239,20 +260,107 @@ namespace Simitone.Client.UI.Panels.LotControls
 
         public override string GetName(ulong id)
         {
-            return (id == StepsID) ? "Foundation Steps" : "Foundation";
+            if (id == StepsID) return "Foundation Steps";
+            if (id == LatticedDeckID) return "Latticed Deck";
+            if (id == ColumnDeckID) return "Column Deck";
+            return "Foundation";
         }
 
         public override string GetDescription(ulong id)
         {
-            return (id == StepsID)
-                ? "Steps up onto a foundation. Click the ground beside one; Sims can only get on and off a foundation by its steps. Hold Ctrl (or use erase) to remove steps."
-                : "Raises the ground floor a few steps, as in The Sims 2. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Paint its sides with the wall coverings. Hold Ctrl (or use erase) to remove a foundation.";
+            if (id == StepsID)
+                return "Steps up onto a foundation or deck. Click the ground beside one; Sims can only get on and off by its steps. Hold Ctrl (or use erase) to remove steps.";
+            if (id == LatticedDeckID)
+                return "The perfect solution for your deck needs, as in The Sims 2: a plank deck with lattice underneath. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Hold Ctrl (or use erase) to remove it.";
+            if (id == ColumnDeckID)
+                return "Sturdy columns hold up a plank deck, as in The Sims 2. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Hold Ctrl (or use erase) to remove it.";
+            return "This is where it all begins, as in The Sims 2: raises the ground floor a few steps, with brick sides. Drag out an area of clear ground, then build on it; add steps so Sims can get up. Paint its sides with the wall coverings. Hold Ctrl (or use erase) to remove a foundation.";
         }
 
         public override int GetPrice(ulong id)
         {
-            return (id == StepsID) ? VMArchitecture.FoundationStepsPrice : VMArchitecture.FoundationTilePrice;
+            return (id == StepsID) ? VMArchitecture.FoundationStepsPrice : VMFoundationTools.TilePrice(KindOf(id));
         }
+
+        public override bool DoDispose()
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Foundation steps in the build catalogue, one entry per staircase: the steps are that staircase's bottom piece
+    /// (The Sims has no short flights of its own), at a quarter of its price. The entry's id is the staircase's GUID.
+    /// </summary>
+    public class UICatalogFoundationStepsResProvider : UICatalogResProvider
+    {
+        private static List<ObjectCatalogItem> Cached;
+
+        /// <summary>The game's staircases that steps can be made from (the ones with a bottom piece).</summary>
+        public static List<ObjectCatalogItem> Staircases()
+        {
+            if (Cached != null) return Cached;
+            var result = new List<ObjectCatalogItem>();
+            try
+            {
+                var stairs = Content.Get().WorldCatalog.GetItemsByCategory(10); //build mode's staircases
+                if (stairs != null)
+                    foreach (var item in stairs)
+                        if (item.GUID != 0 && FoundationLook.StairPiece(item.GUID) != null) result.Add(item);
+                if (LogsWanted()) WriteLog(stairs?.Select(x => x.GUID));
+            }
+            catch (Exception) { }
+            Cached = result;
+            return result;
+        }
+
+        /// <summary>Whether the game was started with -logs (or --logs, /logs).</summary>
+        private static bool LogsWanted()
+        {
+            foreach (var part in (FSO.Common.FSOEnvironment.Args ?? "").Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries))
+                if ((part.StartsWith("-") || part.StartsWith("/")) && part.TrimStart('-', '/').Equals("logs", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>-logs: foundations.log, the game's textures and staircases foundations were made from.</summary>
+        private static void WriteLog(IEnumerable<uint> staircases)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(FSO.Common.FSOEnvironment.UserDir ?? "", "foundations.log");
+                System.IO.File.WriteAllText(path, "Simitone " + SimitoneVersion.Current + ", " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                    + Environment.NewLine + FoundationLook.Describe(staircases));
+            }
+            catch (Exception) { }
+        }
+
+        private static string StairName(ulong id)
+        {
+            try
+            {
+                var obj = Content.Get().WorldObjects.Get((uint)id);
+                var name = obj?.Resource.Get<CTSS>(obj.OBJ.CatalogStringsID)?.GetString(0);
+                if (string.IsNullOrEmpty(name)) name = Content.Get().WorldCatalog.GetItemByGUID((uint)id)?.CatalogName;
+                return name ?? "Staircase";
+            }
+            catch (Exception)
+            {
+                return "Staircase";
+            }
+        }
+
+        public override Texture2D GetIcon(ulong id) => UICatalogItem.GetObjIcon((uint)id);
+
+        public override Texture2D GetThumb(ulong id) => UICatalogItem.GetObjIcon((uint)id);
+
+        public override string GetName(ulong id) => StairName(id) + " (Foundation Steps)";
+
+        public override string GetDescription(ulong id)
+        {
+            return "Steps up onto a foundation or deck: the bottom of the " + StairName(id) + ", for a quarter of its price. Click the ground beside a foundation; Sims can only get on and off by its steps. Click steps already there to change them to these. Hold Ctrl (or use erase) to remove steps.";
+        }
+
+        public override int GetPrice(ulong id) => VMFoundationTools.StepsPrice((uint)id);
 
         public override bool DoDispose()
         {

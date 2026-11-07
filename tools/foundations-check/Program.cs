@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using FSO.LotView.Components;
 using FSO.LotView.Components.Geometry;
 using FSO.LotView.Model;
 using FSO.LotView.Utils;
@@ -13,8 +14,8 @@ using FSO.SimAntics.Utils;
 using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 
-// Foundations (FreeSO's FSO.LotView.Model.FoundationMap and what uses it): heights under Sims and things, which tile
-// edges Sims can't cross, saving, and the model drawn for the sides and steps.
+// Foundations and decks (FreeSO's FSO.LotView.Model.FoundationMap and what uses it): heights under Sims and things,
+// which tile edges Sims can't cross, building and pricing each kind, painting, steps, saving, and the models drawn.
 static class Program
 {
     static int Failures;
@@ -59,6 +60,26 @@ static class Program
             area += Math.Abs(quad) / 2;
         }
         return area;
+    }
+
+    /// <summary>Just enough of a lot for the build tools: its size, walls and floors (none), terrain, no objects.</summary>
+    static VMContext Fixture(FoundationMap map)
+    {
+        var ctx = (VMContext)RuntimeHelpers.GetUninitializedObject(typeof(VMContext));
+        var arch = (VMArchitecture)RuntimeHelpers.GetUninitializedObject(typeof(VMArchitecture));
+        arch.Width = 12;
+        arch.Height = 12;
+        arch.Stories = 5;
+        arch.BuildableFloors = 2;
+        arch.BuildableArea = new Rectangle(1, 1, 10, 10);
+        arch.Walls = Enumerable.Range(0, 5).Select(i => new WallTile[144]).ToArray();
+        arch.Floors = Enumerable.Range(0, 5).Select(i => new FloorTile[144]).ToArray();
+        arch.Terrain = new VMArchitectureTerrain(12, 12);
+        arch.Terrain.Foundations.CopyFrom(map);
+        ctx.Architecture = arch;
+        arch.Context = ctx;
+        ctx.ObjectQueries = new VMObjectQueries(ctx);
+        return ctx;
     }
 
     static int Main()
@@ -154,9 +175,8 @@ static class Program
             Check("terrain laid out as before", mem.ToArray().Length == 2 + 4 + 12 * 12 * 2 + 4 + 12 * 12, $"{mem.ToArray().Length} bytes");
         }
         // ---- painting the sides, as walls are painted: one side, or every side of the foundation
-        var arch = (VMArchitecture)RuntimeHelpers.GetUninitializedObject(typeof(VMArchitecture));
-        arch.Terrain = new VMArchitectureTerrain(12, 12);
-        arch.Terrain.Foundations.CopyFrom(map);
+        var ctx = Fixture(map);
+        var arch = ctx.Architecture;
         var painted = arch.Terrain.Foundations;
         Check("paint one side", VMFoundationTools.PaintSides(arch, new Point(4, 5), 3, 9) == 1 && painted.SideOf(4, 5, 3) == 9
             && painted.SideOf(4, 5, 1) == 7 && painted.SideOf(4, 4, 3) == 7, "(4, 5)'s -x side only");
@@ -164,13 +184,62 @@ static class Program
         Check("a side inside the foundation can't be painted", VMFoundationTools.PaintSides(arch, new Point(5, 5), 0, 9) == 0, "(5, 5)");
         Check("nor the one the steps lead up", VMFoundationTools.PaintSides(arch, new Point(5, 6), 2, 9) == 0, "(5, 6)'s +y side");
         Check("nor the ground", VMFoundationTools.PaintSides(arch, new Point(1, 1), 0, 9) == 0, "(1, 1)");
-        Check("groups: one per covering painted", Modelled3DFoundation.Groups(painted).OrderBy(g => g).SequenceEqual(new ushort[] { 0, 7, 9 }), "0, 7, 9");
+        Check("groups: one per covering painted", Modelled3DFoundation.Groups(painted).Where(g => g.Item1 == FoundationMaterial.Covering)
+            .Select(g => g.Item2).OrderBy(g => g).SequenceEqual(new ushort[] { 7, 9 }), "7, 9");
         var savedPainted = new MemoryStream();
         using (var w = new BinaryWriter(savedPainted, System.Text.Encoding.UTF8, true)) VMArchitectureTerrain.WriteFoundations(w, painted);
         savedPainted.Position = 0;
         using (var r = new BinaryReader(savedPainted)) Check("each side saved", VMArchitectureTerrain.ReadFoundations(r).Sides.SequenceEqual(painted.Sides), "revision " + VMArchitectureTerrain.FoundationsRevision);
         Check("paint the whole foundation (shift)", VMFoundationTools.PaintSides(arch, new Point(5, 5), VMFoundationTools.PaintWholeFoundation, 0) == 11
-            && Enumerable.Range(0, 144 * 4).All(i => painted.Sides[i] == 0 || !painted.SideShows(i / 4 % 12, i / 4 / 12, i % 4)), "11 showing sides back to plain");
+            && Enumerable.Range(0, 144 * 4).All(i => painted.Sides[i] == 0 || !painted.SideShows(i / 4 % 12, i / 4 / 12, i % 4)), "11 showing sides back to its brick");
+
+        // ---- kinds: a foundation, a latticed deck, a column deck; each priced (and sold back) for its kind
+        var kinds = Fixture(new FoundationMap(12, 12));
+        var kmap = kinds.Architecture.Terrain.Foundations;
+        Func<int, int, int, int, short, FoundationKind, int> place = (x, y, w, h, height, kind) =>
+        {
+            VMFoundationTools.PlaceFoundation(kinds.Architecture, new Rectangle(x, y, w, h), height, 0, kind, out var cost);
+            return cost;
+        };
+        Check("a foundation: 3x3 at its price", place(2, 2, 2, 2, H, FoundationKind.Foundation) == 9 * VMFoundationTools.TilePrice(FoundationKind.Foundation)
+            && kmap.KindOf(3, 3) == FoundationKind.Foundation, $"{9 * VMFoundationTools.TilePrice(FoundationKind.Foundation)}");
+        var conv = place(2, 2, 2, 2, H, FoundationKind.LatticedDeck);
+        Check("made a latticed deck: the new kind less the old's sellback", conv == 9 * (VMFoundationTools.TilePrice(FoundationKind.LatticedDeck) - VMFoundationTools.TileSellback(FoundationKind.Foundation))
+            && kmap.KindOf(3, 3) == FoundationKind.LatticedDeck && kmap.RaiseOf(3, 3) == H, $"{conv}");
+        Check("a deck's sides can't be painted", VMFoundationTools.PaintSides(kinds.Architecture, new Point(2, 3), 3, 9) == 0 && !kmap.SidePaintable(2, 3, 3) && kmap.SideShows(2, 3, 3), "(2, 3)'s -x side");
+        Check("column decks are cheaper", VMFoundationTools.TilePrice(FoundationKind.ColumnDeck) < VMFoundationTools.TilePrice(FoundationKind.LatticedDeck)
+            && VMFoundationTools.TilePrice(FoundationKind.LatticedDeck) < VMFoundationTools.TilePrice(FoundationKind.Foundation), "foundation > latticed > column");
+        var sold = place(2, 2, 2, 2, 0, FoundationKind.Foundation);
+        Check("removing it sells back the deck", sold == -9 * VMFoundationTools.TileSellback(FoundationKind.LatticedDeck) && !kmap.Any, $"{sold}");
+        place(6, 2, 1, 0, H, FoundationKind.Foundation);
+        place(8, 2, 0, 0, H, FoundationKind.ColumnDeck);
+        var paintedSides = VMFoundationTools.PaintSides(kinds.Architecture, new Point(6, 2), VMFoundationTools.PaintWholeFoundation, 9);
+        Check("painting stops where the foundation meets a deck", paintedSides == 5 && kmap.SideOf(8, 2, 0) == 0,
+            $"{paintedSides} sides: the foundation's 2 tiles' 5 (the deck beside it is as high)");
+
+        // ---- steps: a staircase's bottom piece (by its GUID), a quarter of its price; plain steps without one
+        VMFoundationTools.PlaceFoundationSteps(kinds.Architecture, new Point(6, 3), 255, true, 0, out var plainCost);
+        Check("plain steps", plainCost == VMArchitecture.FoundationStepsPrice && kmap.StepDirection(6, 3) == 0 && kmap.StepStyle[3 * 12 + 6] == 0, $"{plainCost}");
+        VMFoundationTools.PlaceFoundationSteps(kinds.Architecture, new Point(6, 3), 255, true, 0x12345678, out var restyle);
+        Check("steps can change to another staircase's", kmap.StepStyle[3 * 12 + 6] == 0x12345678
+            && restyle == VMFoundationTools.StepsPrice(0x12345678) - VMFoundationTools.StepsSellback(0), $"{restyle}");
+        VMFoundationTools.PlaceFoundationSteps(kinds.Architecture, new Point(6, 3), 255, false, 0, out var stepsBack);
+        Check("removing steps sells them back", stepsBack == -VMFoundationTools.StepsSellback(0x12345678) && kmap.Steps[3 * 12 + 6] == 0 && kmap.StepStyle[3 * 12 + 6] == 0, $"{stepsBack}");
+        Check("a staircase's bottom piece by name", FoundationLook.IsLowPiece("Stair - Low") && FoundationLook.IsLowPiece("Stairs - Low - White")
+            && !FoundationLook.IsLowPiece("Stair - Low Pad") && !FoundationLook.IsLowPiece("Stair - Middle Low") && !FoundationLook.IsLowPiece("Stair - Hi"), "\"Low\", not its pad or the middle");
+        Check("steps face the way they rise", FoundationStepsObjects.FacingFor(0) == Direction.NORTH && FoundationStepsObjects.FacingFor(1) == Direction.EAST
+            && FoundationStepsObjects.FacingFor(2) == Direction.SOUTH && FoundationStepsObjects.FacingFor(3) == Direction.WEST, "north, east, south, west");
+        place(8, 2, 0, 0, H, FoundationKind.ColumnDeck);
+        VMFoundationTools.PlaceFoundationSteps(kinds.Architecture, new Point(8, 3), 255, true, 0x12345678, out _);
+        var kindsSaved = new MemoryStream();
+        using (var w = new BinaryWriter(kindsSaved, System.Text.Encoding.UTF8, true)) VMArchitectureTerrain.WriteFoundations(w, kmap);
+        kindsSaved.Position = 0;
+        using (var r = new BinaryReader(kindsSaved))
+        {
+            var kback = VMArchitectureTerrain.ReadFoundations(r);
+            Check("kinds and steps' staircases saved", kback.Kind.SequenceEqual(kmap.Kind) && kback.StepStyle.SequenceEqual(kmap.StepStyle)
+                && kback.KindOf(8, 2) == FoundationKind.ColumnDeck && kback.StepStyle[3 * 12 + 8] == 0x12345678, "revision " + VMArchitectureTerrain.FoundationsRevision);
+        }
 
         var wrongSize = new VMArchitectureTerrain(10, 10);
         wrongSize.SetFoundations(back);
@@ -191,43 +260,50 @@ static class Program
             bp.Altitude = new short[12 * 12];
             bp.AltitudeCenters = new short[12 * 12];
             bp.Foundations = map;
-            Check("groups: the concrete, and the covered sides", Modelled3DFoundation.Groups(map).OrderBy(p => p).SequenceEqual(new ushort[] { 0, 7 }), "0, 7");
             var top = H * bp.TerrainFactor * 3;
-            var cap = Modelled3DFoundation.CapHeight * 3;
-            const float O = Modelled3DFoundation.CapOverhang;
+            const float O = Modelled3DFoundation.TrimOverhang;
+            var trimH = Modelled3DFoundation.TrimHeight * 3;
+            Check("groups: brick sides, trim, plywood, plain steps", Modelled3DFoundation.Groups(map).OrderBy(g => g).SequenceEqual(new[] {
+                (FoundationMaterial.Covering, (ushort)7), (FoundationMaterial.Plywood, (ushort)0), (FoundationMaterial.Trim, (ushort)0), (FoundationMaterial.Steps, (ushort)0) }),
+                string.Join(", ", Modelled3DFoundation.Groups(map).Select(g => g.Item1 + "/" + g.Item2)));
 
-            // the covered sides: 12 round the outside, less the one behind the steps, from the ground up to the cap
-            var sides = new TestFoundation(bp, 7).Build();
+            // the covered sides: 12 round the outside, less the one behind the steps, from the ground up to the trim
+            var sides = new TestFoundation(bp, FoundationMaterial.Covering, 7).Build();
             Check("covered sides", sides.Length == 11 * 4, $"{sides.Length / 4} quads");
-            Check("covered sides stop under the cap", sides.All(v => v.Position.Y >= -1e-4f && v.Position.Y <= top - cap + 1e-4f), $"0..{top - cap}");
+            Check("covered sides stop under the trim", sides.All(v => v.Position.Y >= -1e-4f && v.Position.Y <= top - trimH + 1e-4f), $"0..{top - trimH}");
             Check("covered sides on tile edges", sides.Where(v => Math.Abs(v.Normal.X) > 0.5f).All(v => Near(v.Position.X % 3, 0))
                 && sides.Where(v => Math.Abs(v.Normal.Z) > 0.5f).All(v => Near(v.Position.Z % 3, 0)), "x and y edges");
 
-            // the concrete: 9 bare tops; a cap on each of the 11 sides (face, top, underside); an end on the two caps
-            // that stop at the steps; the steps (3 risers, 3 treads, 6 sides, 1 last riser)
-            var verts = new TestFoundation(bp, 0).Build();
-            var ys = verts.Select(v => v.Position.Y).ToList();
-            Check("heights between the ground and the top", ys.All(y => y >= -1e-4f && y <= top + 1e-4f), $"0..{top}");
-            Check("concrete quads", verts.Length == (9 + 11 * 3 + 2 + 13) * 4, $"{verts.Length / 4} quads");
-            // the last riser (facing down the steps, +y) goes up to the foundation's edge, across the steps' tile
-            Check("steps reach the foundation", new[] { 5, 6 }.All(x => verts.Any(v => Near(v.Position.X, x * 3) && Near(v.Position.Z, 7 * 3)
-                && Near(v.Position.Y, top) && v.Normal.Z > 0.5f)), $"riser to {top}");
-            Check("nothing on the open ground but the cap", verts.All(v => v.Position.X >= (4 - O) * 3 - 1e-3f && v.Position.X <= (7 + O) * 3 + 1e-3f
-                && v.Position.Z >= (4 - O) * 3 - 1e-3f && v.Position.Z <= 8 * 3 + 1e-3f), $"inside x 4..7 and y 4..8, and {O} round");
-            Check("caps meet round the corners", new[] { new Vector2(4 - O, 4 - O), new Vector2(7 + O, 4 - O), new Vector2(7 + O, 7 + O), new Vector2(4 - O, 7 + O) }
+            // plywood where no floor's laid: 9 tops
+            Check("plywood tops", new TestFoundation(bp, FoundationMaterial.Plywood, 0).Build().Length == 9 * 4, "9");
+
+            // the trim: on each of the 11 sides its face, top and underside; an end on the two that stop at the steps;
+            // and a post (4 faces) down each of the 4 outside corners
+            var verts = new TestFoundation(bp, FoundationMaterial.Trim, 0).Build();
+            Check("trim quads", verts.Length == (11 * 3 + 2 + 4 * 4) * 4, $"{verts.Length / 4} quads");
+            Check("trim between the ground and the top", verts.All(v => v.Position.Y >= -1e-4f && v.Position.Y <= top + 1e-4f), $"0..{top}");
+            Check("nothing on the open ground but the trim", verts.All(v => v.Position.X >= (4 - O) * 3 - 1e-3f && v.Position.X <= (7 + O) * 3 + 1e-3f
+                && v.Position.Z >= (4 - O) * 3 - 1e-3f && v.Position.Z <= (7 + O) * 3 + 1e-3f), $"inside x 4..7 and y 4..7, and {O} round");
+            Check("trim meets round the corners", new[] { new Vector2(4 - O, 4 - O), new Vector2(7 + O, 4 - O), new Vector2(7 + O, 7 + O), new Vector2(4 - O, 7 + O) }
                 .All(c => verts.Count(v => Near(v.Position.X, c.X * 3) && Near(v.Position.Z, c.Y * 3) && Near(v.Position.Y, top)) >= 2), "all four");
-            // the caps' tops (all up-facing concrete above the bare tops' area) cover the band round the outside once:
-            // 11 sides of the outline, and the four corner squares
-            var capTops = UpArea(verts, top) - 9;
-            Check("caps' tops cover the outline once", Near(capTops, 11 * O + 4 * O * O), $"{capTops} (want {11 * O + 4 * O * O})");
+            var trimTops = UpArea(verts, top);
+            Check("the trim's top covers the outline once", Near(trimTops, 11 * O + 4 * O * O), $"{trimTops} (want {11 * O + 4 * O * O})");
+            Check("corner posts down to the ground", verts.Count(v => Near(v.Position.Y, 0) && Math.Abs(v.Normal.Y) < 0.5f) >= 4 * 4 * 2, "4 posts");
+
+            // plain steps (no staircase here): 3 risers, 3 treads, 6 sides, the last riser, up to the foundation
+            var steps = new TestFoundation(bp, FoundationMaterial.Steps, 0).Build();
+            Check("plain steps", steps.Length == 13 * 4, $"{steps.Length / 4} quads");
+            Check("steps reach the foundation", new[] { 5, 6 }.All(x => steps.Any(v => Near(v.Position.X, x * 3) && Near(v.Position.Z, 7 * 3)
+                && Near(v.Position.Y, top) && v.Normal.Z > 0.5f)), $"riser to {top}");
 
             bp.Floors[0][5 * 12 + 5].Pattern = 12; // floor laid on the middle: its top is the floor's
-            verts = new TestFoundation(bp, 0).Build();
-            Check("floored tile has no bare top", verts.Length == (8 + 11 * 3 + 2 + 13) * 4, $"{verts.Length / 4} quads");
+            Check("floored tile has no plywood", new TestFoundation(bp, FoundationMaterial.Plywood, 0).Build().Length == 8 * 4, "8");
+            bp.Floors[0][5 * 12 + 5].Pattern = 0;
 
             // one side painted something else: the covered group loses it, and its own group has it
             map.Sides[map.SideIndex(4, 5, 3)] = 9;
-            Check("a painted side is in its covering's group", new TestFoundation(bp, 9).Build().Length == 4 && new TestFoundation(bp, 7).Build().Length == 10 * 4, "1 and 10 quads");
+            Check("a painted side is in its covering's group", new TestFoundation(bp, FoundationMaterial.Covering, 9).Build().Length == 4
+                && new TestFoundation(bp, FoundationMaterial.Covering, 7).Build().Length == 10 * 4, "1 and 10 quads");
             map.Sides[map.SideIndex(4, 5, 3)] = 7;
 
             // picking the side to paint: a ray (world units, 3 a tile) at a third of a tile up, toward -y
@@ -250,13 +326,34 @@ static class Program
                 l.Raise[t.Y * 12 + t.X] = FoundationMap.DefaultHeight;
             l.Refresh();
             bp.Foundations = l;
-            bp.Floors[0][5 * 12 + 5].Pattern = 0;
-            verts = new TestFoundation(bp, 0).Build();
+            verts = new TestFoundation(bp, FoundationMaterial.Trim, 0).Build();
             Check("inside corner", Modelled3DFoundation.EndOf(l, 5, 4, 2, false) == Modelled3DFoundation.CapEnd.Concave
-                && Modelled3DFoundation.EndOf(l, 6, 5, 3, true) == Modelled3DFoundation.CapEnd.Concave, "both caps see it");
+                && Modelled3DFoundation.EndOf(l, 6, 5, 3, true) == Modelled3DFoundation.CapEnd.Concave, "both sides see it");
             // the outline is 12 sides long, with 5 outside corners and 1 inside one
-            var lTops = UpArea(verts, top) - 5;
-            Check("caps' tops cover an L's outline once", Near(lTops, 12 * O + 5 * O * O - O * O), $"{lTops} (want {12 * O + 4 * O * O})");
+            var lTops = UpArea(verts, top);
+            Check("the trim's top covers an L's outline once", Near(lTops, 12 * O + 4 * O * O), $"{lTops} (want {12 * O + 4 * O * O})");
+
+            // decks: a latticed deck (3x1) has planks, a board, lattice and corner posts; a column deck (3x3) has
+            // planks, a board, an underside and columns, one every other tile
+            var decks = new FoundationMap(12, 12);
+            for (int x = 2; x <= 4; x++) { decks.Raise[2 * 12 + x] = H; decks.Kind[2 * 12 + x] = (byte)FoundationKind.LatticedDeck; }
+            for (int y = 5; y <= 7; y++) for (int x = 2; x <= 4; x++) { decks.Raise[y * 12 + x] = H; decks.Kind[y * 12 + x] = (byte)FoundationKind.ColumnDeck; }
+            decks.Refresh();
+            bp.Foundations = decks;
+            Check("deck groups", Modelled3DFoundation.Groups(decks).OrderBy(g => g).SequenceEqual(new[] {
+                (FoundationMaterial.Trim, (ushort)0), (FoundationMaterial.Planks, (ushort)0), (FoundationMaterial.Lattice, (ushort)0), (FoundationMaterial.Column, (ushort)0) }),
+                string.Join(", ", Modelled3DFoundation.Groups(decks).Select(g => g.Item1 + "/" + g.Item2)));
+            Check("lattice on the latticed deck's 8 sides", new TestFoundation(bp, FoundationMaterial.Lattice, 0).Build().Length == 8 * 4, "8 quads");
+            var columns = Modelled3DFoundation.ColumnTiles(decks);
+            Check("columns every other tile", columns.OrderBy(i => i).SequenceEqual(new[] { 5 * 12 + 2, 5 * 12 + 4, 7 * 12 + 2, 7 * 12 + 4 }), string.Join(", ", columns.Select(i => $"({i % 12}, {i / 12})")));
+            var colVerts = new TestFoundation(bp, FoundationMaterial.Column, 0).Build();
+            var under = (H * bp.TerrainFactor - Modelled3DFoundation.FasciaHeight) * 3;
+            Check("columns from the ground to the deck's underside", colVerts.Length > 0 && Near(colVerts.Min(v => v.Position.Y), 0) && Near(colVerts.Max(v => v.Position.Y), under), $"0..{under}");
+            var planks = new TestFoundation(bp, FoundationMaterial.Planks, 0).Build();
+            Check("planks: 12 tops, the column deck's 9 undersides, and boards", planks.Count(v => v.Normal.Y > 0.5f && Near(v.Position.Y, top)) >= 12 * 4
+                && planks.Count(v => v.Normal.Y < -0.5f && Near(v.Position.Y, under)) >= 9 * 4, $"{planks.Length / 4} quads");
+            Check("no lattice or columns where they don't belong", new TestFoundation(bp, FoundationMaterial.Covering, 0).Build().Length == 0
+                && new TestFoundation(bp, FoundationMaterial.Plywood, 0).Build().Length == 0, "decks have no brick or plywood");
             bp.Foundations = map;
 
             var heightAt = bp.InterpAltitude(new Vector3(5.5f, 7.5f, 0));
@@ -274,7 +371,7 @@ static class Program
 
 class TestFoundation : Modelled3DFoundation
 {
-    public TestFoundation(Blueprint bp, ushort pattern) : base(bp, pattern) { }
+    public TestFoundation(Blueprint bp, FoundationMaterial material, ushort pattern) : base(bp, material, pattern) { }
     public TerrainParallaxVertex[] Build()
     {
         GenerateGeometry();
