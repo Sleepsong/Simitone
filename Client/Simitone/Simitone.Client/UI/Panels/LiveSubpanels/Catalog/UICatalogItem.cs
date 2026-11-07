@@ -85,7 +85,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels.Catalog
             Outlined = false;
         }
 
-        public Texture2D GetObjIcon(uint GUID)
+        public static Texture2D GetObjIcon(uint GUID)
         {
             if (!IconCache.ContainsKey(GUID))
             {
