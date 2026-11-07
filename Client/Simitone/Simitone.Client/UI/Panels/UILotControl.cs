@@ -185,6 +185,7 @@ namespace Simitone.Client.UI.Panels
             PickupPanel = new UIPickupPanel();
             PickupPanel.OnResponse += (resp) =>
             {
+                if (ObjectHolder.Holding == null) return; //(the panel still fading out after a put down)
                 if (resp) ObjectHolder.SellBack(null);
                 else ObjectHolder.Cancel();
             };
