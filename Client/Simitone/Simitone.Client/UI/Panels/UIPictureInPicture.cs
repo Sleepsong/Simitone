@@ -30,8 +30,11 @@ namespace Simitone.Client.UI.Panels
     {
         /// <summary>The picture's size in pixels when drawn (shown smaller, so it's sharp).</summary>
         public const int RenderSize = 384;
-        /// <summary>The picture's size on screen, its frame round it, and how far it keeps from the screen's edges (clear of the HUD's corner).</summary>
-        public const int ViewSize = 256, Border = 4, RightMargin = 16, BottomMargin = 100;
+        /// <summary>
+        /// The picture's size on screen, its frame round it, and how far it keeps from the screen's edges: above the HUD's main
+        /// panel (128 high, 15 from the bottom: UISimitoneFrontend), which is see-through and drawn over it.
+        /// </summary>
+        public const int ViewSize = 256, Border = 4, RightMargin = 16, BottomMargin = 128 + 15 + 10;
         private const int CloseSize = 28;
         /// <summary>How long it stays once what opened it is over (seconds).</summary>
         private const float LingerSeconds = 10f;
