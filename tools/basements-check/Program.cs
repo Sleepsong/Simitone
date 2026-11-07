@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -230,6 +230,28 @@ static class Program
             Check("facing into the basement", inward, "the -x side faces +x");
             Check("other covering: none", new TestBasement(bp, 8).Build().Length == 0, "");
             Check("level 0 is there to build on", bp.Walls[-1] != null && bp.Floors[-1] != null && bp.Walls[-1].Length == W * H, $"{bp.Walls[-1]?.Length} tiles");
+        }
+
+        // ---- lighting: the basement's room map and its cell of the light map (no GPU: the slots, and the shaders' maths)
+        {
+            Check("the basement's room map has its own slot", FSO.LotView.LMap.GPURoomMaps.Slot(-1) == FSO.LotView.LMap.GPURoomMaps.BasementSlot
+                && Enumerable.Range(0, 5).All(f => FSO.LotView.LMap.GPURoomMaps.Slot(f) == f), $"slot {FSO.LotView.LMap.GPURoomMaps.Slot(-1)}, floors 0..4 as before");
+            //LightingCommon.fx: a floor's cell is floor(fmod(Level, w), Level / w) of the 3x2 map, plus the light offset (fmod
+            //keeps the dividend's sign, as C#'s % does); Level is level - 1 + 0.001 for floors, -0.999 for the basement
+            Func<float, Vector2, Point> cell = (level, offset) =>
+            {
+                var uv = new Vector2((float)Math.Floor(level % 3f) / 3f, (float)Math.Floor(level / 3f) / 2f) + offset;
+                return new Point((int)Math.Floor(uv.X * 3 + 1e-4f), (int)Math.Floor(uv.Y * 2 + 1e-4f));
+            };
+            var shift = FSO.LotView.Effects.LightMappedEffect.BasementCellShift;
+            var floorCells = Enumerable.Range(0, 5).Select(f => cell(f + 0.001f, Vector2.Zero)).ToList();
+            Check("floors keep their cells", floorCells.SequenceEqual(new[] { new Point(0, 0), new Point(1, 0), new Point(2, 0), new Point(0, 1), new Point(1, 1) }),
+                string.Join(" ", floorCells));
+            var basementCell = cell(-0.999f, shift);
+            Check("the basement's draws read the last cell", basementCell == new Point(2, 1), $"{basementCell}, unshifted {cell(-0.999f, Vector2.Zero)}");
+            //walls work their level out from their height: min(Level, floor(height) + 0.0001), the basement's -1..0
+            var wallCell = cell(Math.Min(0.001f, (float)Math.Floor(-0.5f) + 0.0001f), shift);
+            Check("and its walls, seen from the ground floor", wallCell == basementCell, $"{wallCell}");
         }
 
         Console.WriteLine(Failures == 0 ? "all passed" : $"{Failures} failed");
