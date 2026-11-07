@@ -310,14 +310,14 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 
 As in The Sims 2, a house can stand on a foundation or a deck: its ground floor is raised a few steps, about a quarter of a storey, above the ground. Everything on it goes up with it: floors, walls, doors and windows, furniture, Sims, roofs and the floors above. The tools are in Build mode under **Outdoors → Terrain**:
 
-- **Foundation**: brick sides under a dark trim, with a plywood top until you lay a floor. Paint its sides with any wall covering, as you would a wall: point the wall covering tool at a side. Shift paints every side of that foundation; Ctrl takes the covering off, back to its brick.
+- **Foundation**: brick sides, with a plywood top until you lay a floor. Paint its sides with any wall covering, as you would a wall: point the wall covering tool at a side. Shift paints every side of that foundation; Ctrl takes the covering off, back to its brick.
 - **Latticed Deck**: diagonal planks, a board round the edge and lattice underneath.
-- **Column Deck**: diagonal planks and a board round the edge, open underneath, on columns.
-- **Foundation Steps**: one entry per staircase the game has. The Sims has no short flights, so the steps are the bottom of that staircase (a staircase rises a storey over four tiles, so its bottom piece is just a foundation's height), at a quarter of its price. Click a ground tile beside a foundation or deck; click steps that are already there to change them to another staircase's.
+- **Column Deck**: diagonal planks and a board round the edge, open underneath (the lot's own ground shows there), on columns.
+- **Foundation Steps**: one entry per straight staircase the game has (not spiral or turning ones). The Sims has no short flights, so the steps are the bottom of that staircase (a staircase rises a storey over four tiles, so its bottom piece is just a foundation's height), at a quarter of its price. Click a ground tile beside a foundation or deck; click steps that are already there to change them to another staircase's.
 
 Drag out an area of clear ground for a foundation or deck (dragging one kind over another of the same height changes it); hold Ctrl (or use the erase button on touch) to remove one. Lay floors, then build walls on it as usual; walls on its edge stand on it. Sims can only get on and off by the steps, so give each house a set at its door. As in The Sims 2, a foundation goes on empty ground: clear furniture and walls off the tiles first. Furniture can't straddle a foundation's edge, and pools can't go in one. Decks can't be painted.
 
-Everything is made from the game's own walls, floors and staircases, picked by name (a brick wall covering, plywood, dark wood and plank floors, concrete); with `-logs`, `foundations.log` in the user folder says which, and which staircases steps can be made from. Foundations are kept in Simitone's saves only: The Sims itself doesn't have them.
+Everything is made from the game's own walls, floors and staircases, picked by name (a brick wall covering, plywood and plank wood floors, concrete), and they stay on their own tiles; with `-logs`, `foundations.log` in the user folder says which, and which staircases steps can be made from. Foundations are kept in Simitone's saves only: The Sims itself doesn't have them.
 
 ### Basements
 
