@@ -306,7 +306,7 @@ namespace Simitone.Client.UI.Panels.LotControls
                 var stairs = Content.Get().WorldCatalog.GetItemsByCategory(10); //build mode's staircases
                 if (stairs != null)
                     foreach (var item in stairs)
-                        if (item.GUID != 0 && FoundationLook.StairPiece(item.GUID) != null) result.Add(item);
+                        if (item.GUID != 0 && FoundationLook.StairFor(item.GUID) != null) result.Add(item);
                 if (LogsWanted()) WriteLog(stairs?.Select(x => x.GUID));
             }
             catch (Exception) { }
