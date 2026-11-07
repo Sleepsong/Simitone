@@ -1,4 +1,4 @@
-
+﻿
 using FSO.Client;
 using FSO.Client.Debug;
 using FSO.Client.UI.Controls;
@@ -150,11 +150,8 @@ namespace Simitone.Client.UI.Screens
             }
         }
 
-        /// <summary>
-        /// The lowest level the view goes down to: the basement (0) in full 3D, where it's drawn; the ground floor (1)
-        /// otherwise.
-        /// </summary>
-        public sbyte MinLevel => (World?.State != null && World.State.CameraMode == FSO.LotView.Model.CameraRenderMode._3D) ? (sbyte)0 : (sbyte)1;
+        /// <summary>The lowest level the view goes down to: the basement (0), in 2D and 3D.</summary>
+        public sbyte MinLevel => 0;
 
         private static readonly string[] FloorNameList = new string[] { "Bsmt", "1st", "2nd", "3rd", "4th", "5th" };
 
@@ -440,8 +437,6 @@ namespace Simitone.Client.UI.Screens
             }
             base.Update(state);
             UpdateAutoFastForward();
-            //the basement is only shown in full 3D: out of it, back up to the ground floor
-            if (World != null && Level < MinLevel) Level = MinLevel;
 
             // Update weather effects (sounds and terrain)
             UpdateWeatherEffects();
