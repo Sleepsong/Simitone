@@ -62,6 +62,17 @@ static class Program
         return area;
     }
 
+    /// <summary>
+    /// Sets the per-level walls or floors: plain arrays, or (with basements) a LevelArray with the basement too, so
+    /// this check builds either way.
+    /// </summary>
+    static void SetLevels<T>(VMArchitecture arch, string name, T[] levels, T basement)
+    {
+        var field = typeof(VMArchitecture).GetField(name);
+        if (field.FieldType.IsArray) field.SetValue(arch, levels);
+        else field.SetValue(arch, field.FieldType.GetMethod("From").Invoke(null, new object[] { levels, basement }));
+    }
+
     /// <summary>Just enough of a lot for the build tools: its size, walls and floors (none), terrain, no objects.</summary>
     static VMContext Fixture(FoundationMap map)
     {
@@ -72,8 +83,8 @@ static class Program
         arch.Stories = 5;
         arch.BuildableFloors = 2;
         arch.BuildableArea = new Rectangle(1, 1, 10, 10);
-        arch.Walls = Enumerable.Range(0, 5).Select(i => new WallTile[144]).ToArray();
-        arch.Floors = Enumerable.Range(0, 5).Select(i => new FloorTile[144]).ToArray();
+        SetLevels(arch, "Walls", Enumerable.Range(0, 5).Select(i => new WallTile[144]).ToArray(), new WallTile[144]);
+        SetLevels(arch, "Floors", Enumerable.Range(0, 5).Select(i => new FloorTile[144]).ToArray(), new FloorTile[144]);
         arch.Terrain = new VMArchitectureTerrain(12, 12);
         arch.Terrain.Foundations.CopyFrom(map);
         ctx.Architecture = arch;
