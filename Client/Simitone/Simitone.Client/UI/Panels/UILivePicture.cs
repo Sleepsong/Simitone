@@ -224,7 +224,29 @@ namespace Simitone.Client.UI.Panels
 
         public override void Draw(UISpriteBatch batch)
         {
+            //-logs: how the popup shows the picture, each time that changes (to find where it goes missing)
+            if (!LogsWanted()) return;
+            var alert = Parent as UIMobileAlert;
+            var icon = alert?.IconImage;
+            string state;
+            if (alert == null) state = "in no popup";
+            else if (icon == null) state = "the popup has no picture";
+            else
+            {
+                var pos = icon.LocalPoint(Vector2.Zero);
+                var screen = alert.LocalPoint(Vector2.Zero);
+                state = "popup at " + (int)screen.X + "," + (int)screen.Y + (alert.Visible ? "" : " (hidden)") + ", animation " + alert.InterpolatedAnimation.ToString("0.0")
+                    + "; picture " + (icon.Visible ? "shown" : "hidden") + " at " + (int)pos.X + "," + (int)pos.Y + " on screen, size " + (int)icon.Width + "x" + (int)icon.Height
+                    + ", opacity " + icon.Opacity.ToString("0.0") + ", " + ((icon.Texture == Picture?.Target) ? "the live picture" : (icon.Texture == null ? "no texture" : "another texture"))
+                    + ((Picture?.Target?.IsDisposed ?? true) ? " (gone)" : "");
+            }
+            if (state != LastDrawState)
+            {
+                LastDrawState = state;
+                Log("  drawing the popup: " + state);
+            }
         }
+        private string LastDrawState;
 
         public override void Removed()
         {
