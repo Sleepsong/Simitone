@@ -255,6 +255,11 @@ static class Program
                 Check("a high window's opening", Math.Abs(high - 28 / 99f) < 0.01f && high <= band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {high:0.00}");
                 Check("an ordinary one's", Math.Abs(middle - 70 / 99f) < 0.01f && middle > band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {middle:0.00}");
                 Check("no opening: can't tell (not a basement window)", FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(mask(-1, -1)) == 1, "");
+                //and where along the wall (the foundation's side over it is cut there, to show it)
+                var opening = WallOpening.Measure(mask(8, 28));
+                Check("its opening, all round", opening != null && Math.Abs(opening.Value.Top - 8 / 99f) < 0.01f && Math.Abs(opening.Value.Bottom - 28 / 99f) < 0.01f
+                    && Math.Abs(opening.Value.Left - 9 / 39f) < 0.01f && Math.Abs(opening.Value.Right - 31 / 39f) < 0.01f,
+                    opening == null ? "none" : $"{opening.Value.Top:0.00}..{opening.Value.Bottom:0.00} down, {opening.Value.Left:0.00}..{opening.Value.Right:0.00} along");
             }
         }
         //walls: one inside, one on the basement's edge with the earth, one inside the part that's filled in
