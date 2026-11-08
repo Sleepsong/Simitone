@@ -378,14 +378,110 @@ static class Program
                     $"{inside}, from outside {outside}");
                 Check("not on the ground floor, or between its rooms", bp.BasementWindowOffset(new Vector3(3.5f, 4.5f, 0), 1, WallSegments.TopLeft) == Vector2.Zero
                     && bp.BasementWindowOffset(new Vector3(4.5f, 4.5f, 0), 0, WallSegments.TopLeft) == Vector2.Zero, "");
-                //the hole for it in the foundation's side is lined, inward, wound as the sides are
-                var quads = new List<(Vector3[] p, Vector3 n)>();
-                Modelled3DFoundation.QuadSink sink = (m, pat, p0, p1, p2, p3, n, t0, t1, t2, t3) => quads.Add((new[] { p0, p1, p2, p3 }, n));
-                typeof(Modelled3DFoundation).GetMethod("HoleReveals", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
-                    .Invoke(null, new object[] { sink, (ushort)0, new Point(3, 3), new Point(4, 3), 0f, 0f, 0.2f, 0.8f, 0.1f, 0.6f, 3f, 4f, new Vector3(0, 0, -1), 0.75f });
-                var wound = quads.All(q => Vector3.Dot(Vector3.Cross(q.p[1] - q.p[0], q.p[3] - q.p[0]), q.n) < 0);
-                var within = quads.All(q => q.p.All(v => v.Z >= 3 - 1e-4f && v.Z <= 3 + Modelled3DFoundation.RevealDepth + 1e-4f));
-                Check("its hole in the foundation: lined", quads.Count == 4 && wound && within, $"{quads.Count} sides, wound {wound}, inward {within}");
+                //and drawn there: an object component as a window in that wall, its 3D world matrix
+                {
+                    var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public;
+                    Func<bool, Vector3> drawnAt = (window) =>
+                    {
+                        var oc = (FSO.LotView.Components.ObjectComponent)RuntimeHelpers.GetUninitializedObject(typeof(FSO.LotView.Components.ObjectComponent));
+                        void set(Type t, string name, object v)
+                        {
+                            for (var tt = t; tt != null; tt = tt.BaseType)
+                            {
+                                var f = tt.GetField(name, flags);
+                                if (f != null) { f.SetValue(oc, v); return; }
+                            }
+                            throw new Exception("no field " + name);
+                        }
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "blueprint", bp);
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "_Position", new Vector3(3, 4, 0)); //on (3,4)
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "_Level", (sbyte)0);
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "_WallAttachment", WallSegments.TopLeft);
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "_WallWindow", window);
+                        set(typeof(FSO.LotView.Components.ObjectComponent), "_World3DDirty", true);
+                        return oc.World3D.Translation;
+                    };
+                    Vector3 unset = Vector3.Zero, set_ = Vector3.Zero;
+                    string err = null;
+                    try { unset = drawnAt(false); set_ = drawnAt(true); } catch (Exception e) { err = e.GetType().Name + ": " + e.Message; }
+                    var moved = (set_ - unset) / 3f;
+                    Check("a window object there is drawn set in", err == null && Math.Abs(moved.X - recess) < 1e-4f && Math.Abs(moved.Z) < 1e-4f,
+                        err ?? $"moved {moved.X:0.000}, {moved.Z:0.000} tiles");
+                }
+                //the hole for it in the foundation's side: the opening's own shape (cell by cell), lined, the right way round
+                {
+                    var op = new WallOpening { Top = 0.05f, Bottom = 0.2f, Left = 0.3f, Right = 0.7f, Open = new bool[WallOpening.GridU * WallOpening.GridK] };
+                    for (int j = 80; j <= 90; j++) for (int i = 4; i <= 12; i++) op.Open[j * WallOpening.GridU + i] = true; //(off-centre: toward u = 0)
+                    var shaped = typeof(Modelled3DFoundation).GetMethod("ShapedSide", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    var raise = 0.75f;
+                    Func<bool, List<(Vector3[] p, Vector3 n, FoundationMaterial m)>> cut = (mirrored) =>
+                    {
+                        var got = new List<(Vector3[] p, Vector3 n, FoundationMaterial m)>();
+                        Modelled3DFoundation.QuadSink qs = (m, pat, p0, p1, p2, p3, n, t0, t1, t2, t3) => got.Add((new[] { p0, p1, p2, p3 }, n, m));
+                        var ok = (bool)shaped.Invoke(null, new object[] { qs, (ushort)0, new Point(3, 3), new Point(4, 3), 0f, 0f, 0f, raise, raise, 3f, 4f, new Vector3(0, 0, -1), op, mirrored });
+                        return ok ? got : null;
+                    };
+                    Func<int, float> rowH = (j) => raise - (1 - j / (float)WallOpening.GridK) * 2.95f;
+                    foreach (var mirrored in new[] { false, true })
+                    {
+                        var quads = cut(mirrored);
+                        //the side's brick (facing out, in its plane) leaves the open cells bare, and covers the rest of a hole row
+                        var brick = quads?.Where(q => q.n == new Vector3(0, 0, -1)).ToList();
+                        Func<float, float, bool> covered = (u, h) => brick.Any(q =>
+                            u >= q.p.Min(v => v.X) - 3 && u <= q.p.Max(v => v.X) - 3 && h >= q.p.Min(v => v.Y) && h <= q.p.Max(v => v.Y));
+                        float uOpen = (8.5f / WallOpening.GridU), uShut = (24.5f / WallOpening.GridU), hMid = (rowH(85) + rowH(86)) / 2;
+                        if (mirrored) { uOpen = 1 - uOpen; uShut = 1 - uShut; }
+                        var lining = quads?.Where(q => q.n != new Vector3(0, 0, -1)).ToList();
+                        var wound = quads != null && quads.All(q => Vector3.Dot(Vector3.Cross(q.p[1] - q.p[0], q.p[3] - q.p[0]), q.n) < 0);
+                        var linedIn = lining != null && lining.Count > 0 && lining.All(q => q.p.All(v => v.Z >= 3 - 1e-4f && v.Z <= 3 + Modelled3DFoundation.RevealDepth + 1e-4f));
+                        Check("its hole in the foundation: its own shape" + (mirrored ? ", from the side's far end" : ""),
+                            quads != null && !covered(uOpen, hMid) && covered(uShut, hMid) && covered(0.5f, 0.05f) && wound && linedIn,
+                            quads == null ? "not cut" : $"{brick.Count} brick pieces, {lining.Count} lining, wound {wound}, lined inward {linedIn}");
+                    }
+                    //read from a wall style's mask as the walls lay it on (a wall, slanted, with a hole in it)
+                    var frame = (FSO.Files.Formats.IFF.Chunks.SPRFrame)RuntimeHelpers.GetUninitializedObject(typeof(FSO.Files.Formats.IFF.Chunks.SPRFrame));
+                    var ft = typeof(FSO.Files.Formats.IFF.Chunks.SPRFrame);
+                    int fw = 64, fh = 240;
+                    ft.GetProperty("Width").GetSetMethod(true).Invoke(frame, new object[] { fw });
+                    ft.GetProperty("Height").GetSetMethod(true).Invoke(frame, new object[] { fh });
+                    ft.GetMethod("Init", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(frame, null);
+                    for (int py = 0; py < fh; py++)
+                        for (int px = 0; px < fw; px++)
+                        {
+                            float u = (px + 0.5f) / fw, v = (py + 0.5f) / fh;
+                            var k = (0.1185f * (1 - u) - 0.117f + 1 - v) / (0.970f * (1 - 0.1185f)); //(the shader's mapping, back)
+                            var wall = k >= 0 && k <= 1;
+                            var hole = u > 0.3f && u < 0.6f && k > 0.82f && k < 0.92f;
+                            frame.SetPixel(px, py, (wall && !hole) ? Color.White : Color.Transparent);
+                        }
+                    var read = WallOpening.Measure(frame);
+                    bool inHole = read?.IsOpen(14, 83) == true, beside = read?.IsOpen(24, 83) == true, below = read?.IsOpen(14, 70) == true;
+                    Check("a mask's hole, cell by cell", read?.Open != null && inHole && !beside && !below,
+                        read == null ? "none" : $"in it {inHole}, beside {beside}, below {below}; {read.Value.Open.Count(o => o)} cells");
+                }
+            }
+            //the wall a window needs, from its placement flags: the low four bits (taken % 15, a window's "no corner", 16, made
+            //its wall in front read as the one on its right, so it wasn't found on the basement's edge and wasn't set in)
+            {
+                var ent = RuntimeHelpers.GetUninitializedObject(typeof(FSO.SimAntics.VMGameObject));
+                var rot = typeof(FSO.SimAntics.VMEntity).GetMethod("RotateWallSegs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                int flagsIn = 1 | 16, rotate = (8 - (0 + 1)) % 4; //(in front, no corner; facing north)
+                var needed = (WallSegments)(int)rot.Invoke(ent, new object[] { (WallSegments)(flagsIn & 15), rotate });
+                var wrong = (WallSegments)(int)rot.Invoke(ent, new object[] { (WallSegments)(flagsIn % 15), rotate });
+                Check("a window's wall: the one in front", needed == WallSegments.TopRight && wrong != needed, $"{needed} (% 15 gave {wrong})");
+            }
+            //a basement wall's top, lit as the ground floor, takes its light from the side with something lit on it there
+            {
+                var rc = (FSO.LotView.RC.WallComponentRC)RuntimeHelpers.GetUninitializedObject(typeof(FSO.LotView.RC.WallComponentRC));
+                rc.blueprint = bp;
+                var nudge = typeof(FSO.LotView.RC.WallComponentRC).GetMethod("TopNudge", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                Func<int, int, int, int> side = (tx, ty, mode) => (int)nudge.Invoke(rc, new object[] { tx, ty, mode });
+                var hole = side(3, 4, 0); //(3,4) dug, no floor over it: a stairwell; (2,4) ground
+                bp.Floors[0][4 * W + 3] = new FloorTile { Pattern = 1 };
+                var floored = side(3, 4, 0);
+                bp.Floors[0][4 * W + 3] = new FloorTile();
+                var inside = side(5, 4, 0); //between two holes
+                Check("a stairwell's edge takes the ground's light beside it", hole == 2 && floored == 0 && inside == 0, $"{hole}, floored {floored}, inside {inside}");
             }
             //a wall group left empty (all its pieces clipped, or every top lit as the ground floor) makes no buffers: it crashed
             {
