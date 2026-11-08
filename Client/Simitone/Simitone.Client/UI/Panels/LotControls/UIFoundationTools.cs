@@ -1,4 +1,4 @@
-using FSO.Client.UI.Controls.Catalog;
+﻿using FSO.Client.UI.Controls.Catalog;
 using FSO.Client.UI.Framework;
 using FSO.Client.UI.Model;
 using FSO.Client.UI.Panels.LotControls;
@@ -105,8 +105,9 @@ namespace Simitone.Client.UI.Panels.LotControls
             {
                 case VMFoundationTools.FailBlocked: return "Clear furniture and walls first";
                 case VMFoundationTools.FailNoFoundation: return "Steps go beside a foundation";
-                case VMBasementTools.FailBlocked: return "Clear bare ground of things first (and no pools or foundations)";
+                case VMBasementTools.FailBlocked: return "Clear bare ground of things first (and not under pools, decks or steps)";
                 case VMBasementTools.FailOccupied: return "Move everything out of that part of the basement first";
+                case VMBasementTools.FailUneven: return "A basement goes all under a foundation, or not under one";
                 default: return "";
             }
         }

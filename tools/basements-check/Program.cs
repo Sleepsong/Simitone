@@ -189,12 +189,44 @@ static class Program
         Check("dug tiles get a floor", arch.Floors[-1][4 * W + 4].Pattern == 5 && arch.Floors[-1][2 * W + 2].Pattern == 0, "5 in it, none outside");
         Check("and the tiles above, unless they had one", arch.Floors[0][4 * W + 4].Pattern == 5 && arch.Floors[0][3 * W + 3].Pattern == 9, "5 above, the floor that was there kept");
         Check("the earth's sides get the covering", arch.Basement.Pattern[4 * W + 4] == 7, $"{arch.Basement.Pattern[4 * W + 4]}");
+        //pools: in the basement too (not over it); taking one up brings the basement's floor back
+        Check("a pool in the basement", arch.SetFloor(4, 4, 0, new FloorTile { Pattern = 65535 }, false) && arch.Floors[-1][4 * W + 4].Pattern == 65535, $"{arch.Floors[-1][4 * W + 4].Pattern}");
+        Check("not over it", !arch.SetFloor(4, 3, 1, new FloorTile { Pattern = 65535 }, false), "");
+        Check("not in the earth", !arch.SetFloor(8, 8, 0, new FloorTile { Pattern = 65535 }, false), "");
+        Check("taken up: the floor round it comes back", arch.SetFloor(4, 4, 0, new FloorTile { Pattern = 0 }, false) && arch.Floors[-1][4 * W + 4].Pattern == 5, $"{arch.Floors[-1][4 * W + 4].Pattern}");
+        Check("a basement floor can't be taken up", !arch.SetFloor(4, 4, 0, new FloorTile { Pattern = 0 }, false) && arch.Floors[-1][4 * W + 4].Pattern == 5, "");
         Check("digging it again: nothing to do", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(3, 3, 2, 1), true, 5, 7) == 0, "");
         Check("not off the buildable area", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(0, 3, 1, 0), true, 5, 7) == 0
             && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailBlocked && !arch.Basement.IsDug(1, 3), "the lot's edge");
-        arch.Terrain.Foundations.Raise[8 * W + 8] = FoundationMap.DefaultHeight;
-        arch.Terrain.Foundations.Refresh();
-        Check("not under a foundation (yet)", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(8, 8, 0, 0), true, 5, 7) == 0, "");
+        //under a foundation: its floor's a storey under the foundation's top, so a basement is all under one, or not at all
+        {
+            var fmap = arch.Terrain.Foundations;
+            for (int y = 8; y <= 9; y++) for (int x = 8; x <= 9; x++) { fmap.Raise[y * W + x] = FoundationMap.DefaultHeight; fmap.Kind[y * W + x] = (byte)FoundationKind.Foundation; }
+            fmap.Refresh();
+            Check("under a foundation", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(8, 8, 1, 0), true, 5, 7) == 2 && arch.Basement.IsDug(9, 8), "(8,8) and (9,8)");
+            Check("not partly under it", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(8, 9, 0, 1), true, 5, 7) == 0
+                && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailUneven && !arch.Basement.IsDug(8, 9), "(8,10) isn't under it");
+            Check("nor out from under it", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(10, 8, 0, 0), true, 5, 7) == 0
+                && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailUneven, "(10,8), beside (9,8)");
+            fmap.Kind[9 * W + 9] = (byte)FoundationKind.ColumnDeck;
+            Check("not under a deck", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(9, 9, 0, 0), true, 5, 7) == 0
+                && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailBlocked, "it's open underneath");
+            fmap.Kind[9 * W + 9] = (byte)FoundationKind.Foundation;
+            Check("filled in from under it", FSO.SimAntics.Utils.VMBasementTools.Dig(arch, new Rectangle(8, 8, 1, 0), false, 5, 7) == -2, "");
+            for (int y = 8; y <= 9; y++) for (int x = 8; x <= 9; x++) { fmap.Raise[y * W + x] = 0; fmap.Kind[y * W + x] = 0; }
+            fmap.Refresh();
+            //and a foundation over a basement (3..5, 3..4): over all of it, not part
+            Check("a foundation over part of a basement: no", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 0, 0), FoundationMap.DefaultHeight, 0, FoundationKind.Foundation, out _) == 0
+                && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailUneven, "");
+            Check("a deck over it: no", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 2, 1), FoundationMap.DefaultHeight, 0, FoundationKind.LatticedDeck, out _) == 0, "");
+            Check("over all of it: yes", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(2, 2, 4, 3), FoundationMap.DefaultHeight, 0, FoundationKind.Foundation, out _) > 0
+                && fmap.RaiseOf(4, 4) == FoundationMap.DefaultHeight, "and round it");
+            Check("taken off part of it: no", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(5, 3, 0, 1), 0, 0, FoundationKind.Foundation, out _) == 0
+                && arch.LastFailReason == FSO.SimAntics.Utils.VMBasementTools.FailUneven, "");
+            Check("turned into a deck: no", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 0, 0), FoundationMap.DefaultHeight, 0, FoundationKind.ColumnDeck, out _) == 0, "");
+            Check("taken off all of it", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(2, 2, 4, 3), 0, 0, FoundationKind.Foundation, out _) < 0 //(negative: taken off)
+                && fmap.RaiseOf(4, 4) == 0, "");
+        }
         //walls: one inside, one on the basement's edge with the earth, one inside the part that's filled in
         arch.SetWall(5, 4, 0, new WallTile { Segments = WallSegments.TopLeft, TopLeftStyle = 1 }); //between (4,4) and (5,4): stays
         arch.SetWall(6, 3, 0, new WallTile { Segments = WallSegments.TopLeft, TopLeftStyle = 1 }); //the +x edge, against earth at (6,3)
@@ -256,6 +288,23 @@ static class Program
             var inward = verts.Where(v => Math.Abs(v.Position.X - 3 * 3) < 1e-3f && Math.Abs(v.Normal.X) > 0.5f).All(v => v.Normal.X > 0);
             Check("facing into the basement", inward, "the -x side faces +x");
             Check("other covering: none", new TestBasement(bp, 8).Build().Length == 0, "");
+            //under a foundation, its sides go from the floor (raised with it) to the foundation's top
+            var fnd = new FoundationMap(W, H);
+            for (int y = 3; y <= 6; y++) for (int x = 3; x <= 6; x++) { fnd.Raise[y * W + x] = FoundationMap.DefaultHeight; fnd.Kind[y * W + x] = (byte)FoundationKind.Foundation; }
+            fnd.Refresh();
+            bp.Foundations = fnd;
+            var raisedY = new TestBasement(bp, 7).Build().Select(v => v.Position.Y).ToList();
+            var r = FoundationMap.DefaultHeight * bp.TerrainFactor;
+            Check("under a foundation: raised with it", Math.Abs(raisedY.Min() - r * 3) < 1e-3f && Math.Abs(raisedY.Max() - (r + 2.95f) * 3) < 1e-3f, $"{raisedY.Min()}..{raisedY.Max()}");
+            bp.Foundations = null;
+            //walls on its edges: the earth behind them isn't drawn (it showed through them in 2D)
+            bp.Walls[-1][4 * W + 3].Segments = WallSegments.TopLeft;  //(3,4)'s -x side
+            bp.Walls[-1][3 * W + 5].Segments = WallSegments.TopRight; //(5,3)'s -y side
+            bp.Walls[-1][5 * W + 7].Segments = WallSegments.TopLeft;  //(6,5)'s +x side
+            bp.Walls[-1][5 * W + 5].Segments = WallSegments.TopLeft;  //inside, between (4,5) and (5,5): no side there anyway
+            var walled = new TestBasement(bp, 7).Build();
+            Check("no earth behind walls on its edges", walled.Length == 13 * 4, $"{walled.Length / 4} quads");
+            for (int i = 0; i < W * H; i++) bp.Walls[-1][i] = new WallTile();
             Check("level 0 is there to build on", bp.Walls[-1] != null && bp.Floors[-1] != null && bp.Walls[-1].Length == W * H, $"{bp.Walls[-1]?.Length} tiles");
         }
 
