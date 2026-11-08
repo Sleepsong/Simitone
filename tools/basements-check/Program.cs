@@ -387,6 +387,14 @@ static class Program
                 var within = quads.All(q => q.p.All(v => v.Z >= 3 - 1e-4f && v.Z <= 3 + Modelled3DFoundation.RevealDepth + 1e-4f));
                 Check("its hole in the foundation: lined", quads.Count == 4 && wound && within, $"{quads.Count} sides, wound {wound}, inward {within}");
             }
+            //a wall group left empty (all its pieces clipped, or every top lit as the ground floor) makes no buffers: it crashed
+            {
+                var empty = new FSO.LotView.RC.WallGroupRC();
+                bool ok;
+                try { empty.Complete(null); empty.Dispose(); ok = empty.PrimCount == 0 && empty.GVerts == null; }
+                catch (Exception e) { ok = false; Console.WriteLine("  " + e.GetType().Name + ": " + e.Message); }
+                Check("an empty wall group: nothing to draw, no crash", ok, "");
+            }
             bp.Foundations = null;
             //walls on its edges: the earth behind them isn't drawn (it showed through them in 2D)
             bp.Walls[-1][4 * W + 3].Segments = WallSegments.TopLeft;  //(3,4)'s -x side
