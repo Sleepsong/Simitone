@@ -255,6 +255,20 @@ static class Program
                 Check("a high window's opening", Math.Abs(high - 28 / 99f) < 0.01f && high <= band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {high:0.00}");
                 Check("an ordinary one's", Math.Abs(middle - 70 / 99f) < 0.01f && middle > band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {middle:0.00}");
                 Check("no opening: can't tell (not a basement window)", FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(mask(-1, -1)) == 1, "");
+                //a wall style's frame, once on the GPU, lets go of its pixels: where it's opaque is kept, so it still reads
+                {
+                    var f = mask(8, 28);
+                    var spr = (FSO.Files.Formats.IFF.Chunks.SPR)RuntimeHelpers.GetUninitializedObject(typeof(FSO.Files.Formats.IFF.Chunks.SPR));
+                    spr.WallStyle = true;
+                    var t = typeof(FSO.Files.Formats.IFF.Chunks.SPRFrame);
+                    var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                    t.GetField("Parent", flags).SetValue(f, spr);
+                    t.GetMethod("ReleaseData", flags).Invoke(f, null);
+                    bool gone = false;
+                    try { f.GetPixel(0, 0); } catch (NullReferenceException) { gone = true; }
+                    var kept = FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(f);
+                    Check("a wall style on the GPU still reads (the Privacy Window read as 100%)", gone && Math.Abs(kept - 28 / 99f) < 0.01f, $"pixels gone: {gone}, down to {kept:0.00}");
+                }
                 //and where along the wall (the foundation's side over it is cut there, to show it)
                 var opening = WallOpening.Measure(mask(8, 28));
                 Check("its opening, all round", opening != null && Math.Abs(opening.Value.Top - 8 / 99f) < 0.01f && Math.Abs(opening.Value.Bottom - 28 / 99f) < 0.01f
@@ -339,6 +353,22 @@ static class Program
             var skirtY = skirt.Select(v => v.Position.Y).ToList();
             Check("a skirt under it", skirt.Length == 16 * 4 && Math.Abs(skirtY.Max() - r * 3) < 1e-3f && Math.Abs(skirtY.Min() - (r - Modelled3DBasementSkirt.Depth) * 3) < 1e-3f,
                 $"{skirt.Length / 4} quads, {skirtY.Min()}..{skirtY.Max()}");
+            //its walls: what's of them outside it stops at the ground outside (the ends and corners reaching past its edge
+            //stood full height out there, as posts)
+            {
+                var band = FoundationMap.DefaultHeight * bp.TerrainFactor / 2.95f;
+                var t = 0.075f;
+                Func<float, float, float> earth = (px, py) => FSO.LotView.RC.WallComponentRC.EarthAbove(bp, new Vector2(px, py));
+                Check("a wall's outside face: cut at the ground", Math.Abs(earth(3 - t, 4.5f) - band) < 1e-4f, $"{earth(3 - t, 4.5f):0.000} of the storey");
+                Check("its inside face: not cut", earth(3 + t, 4.5f) == 0 && earth(5, 5) == 0, "");
+                Check("a corner's ends, past the edge: cut", Math.Abs(earth(3 - t / 2, 3 - 0.07f) - band) < 1e-4f && Math.Abs(earth(3 + t / 2, 3 - 0.07f) - band) < 1e-4f,
+                    "both halves of the cap");
+                Check("away from it: nothing to cut", earth(1.5f, 1.5f) == 0, "");
+                var cuts = FSO.LotView.RC.WallComponentRC.TileCuts(new Vector2(3 + t, 3 - t), new Vector2(3 + t, 4 + t));
+                Check("an inside face reaching past the corner: split at the edge", cuts.Count == 4 && Math.Abs(cuts[1] - t / (1 + 2 * t)) < 1e-4f
+                    && Math.Abs(cuts[2] - (1 + t) / (1 + 2 * t)) < 1e-4f, string.Join(", ", cuts.Select(c => c.ToString("0.000"))));
+                Check("a cap across the edge: split there", FSO.LotView.RC.WallComponentRC.TileCuts(new Vector2(3 + t, 3 - 0.07f), new Vector2(3 - t, 3 - 0.07f)).Count == 3, "");
+            }
             bp.Foundations = null;
             //walls on its edges: the earth behind them isn't drawn (it showed through them in 2D)
             bp.Walls[-1][4 * W + 3].Segments = WallSegments.TopLeft;  //(3,4)'s -x side
