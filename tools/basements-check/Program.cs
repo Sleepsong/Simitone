@@ -369,6 +369,24 @@ static class Program
                     && Math.Abs(cuts[2] - (1 + t) / (1 + 2 * t)) < 1e-4f, string.Join(", ", cuts.Select(c => c.ToString("0.000"))));
                 Check("a cap across the edge: split there", FSO.LotView.RC.WallComponentRC.TileCuts(new Vector2(3 + t, 3 - 0.07f), new Vector2(3 - t, 3 - 0.07f)).Count == 3, "");
             }
+            //a window in a wall on its edge is set into the foundation, toward the basement, whichever side of the wall it's on
+            {
+                var recess = Blueprint.BasementWindowRecess;
+                var inside = bp.BasementWindowOffset(new Vector3(3.5f, 4.5f, 0), 0, WallSegments.TopLeft);      //on (3,4), its -x wall
+                var outside = bp.BasementWindowOffset(new Vector3(2.5f, 4.5f, 0), 0, WallSegments.BottomRight); //on (2,4), the same wall
+                Check("a basement window: set in toward the basement", Vector2.Distance(inside, new Vector2(recess, 0)) < 1e-5f && Vector2.Distance(outside, new Vector2(recess, 0)) < 1e-5f,
+                    $"{inside}, from outside {outside}");
+                Check("not on the ground floor, or between its rooms", bp.BasementWindowOffset(new Vector3(3.5f, 4.5f, 0), 1, WallSegments.TopLeft) == Vector2.Zero
+                    && bp.BasementWindowOffset(new Vector3(4.5f, 4.5f, 0), 0, WallSegments.TopLeft) == Vector2.Zero, "");
+                //the hole for it in the foundation's side is lined, inward, wound as the sides are
+                var quads = new List<(Vector3[] p, Vector3 n)>();
+                Modelled3DFoundation.QuadSink sink = (m, pat, p0, p1, p2, p3, n, t0, t1, t2, t3) => quads.Add((new[] { p0, p1, p2, p3 }, n));
+                typeof(Modelled3DFoundation).GetMethod("HoleReveals", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
+                    .Invoke(null, new object[] { sink, (ushort)0, new Point(3, 3), new Point(4, 3), 0f, 0f, 0.2f, 0.8f, 0.1f, 0.6f, 3f, 4f, new Vector3(0, 0, -1), 0.75f });
+                var wound = quads.All(q => Vector3.Dot(Vector3.Cross(q.p[1] - q.p[0], q.p[3] - q.p[0]), q.n) < 0);
+                var within = quads.All(q => q.p.All(v => v.Z >= 3 - 1e-4f && v.Z <= 3 + Modelled3DFoundation.RevealDepth + 1e-4f));
+                Check("its hole in the foundation: lined", quads.Count == 4 && wound && within, $"{quads.Count} sides, wound {wound}, inward {within}");
+            }
             bp.Foundations = null;
             //walls on its edges: the earth behind them isn't drawn (it showed through them in 2D)
             bp.Walls[-1][4 * W + 3].Segments = WallSegments.TopLeft;  //(3,4)'s -x side
@@ -401,6 +419,9 @@ static class Program
             //walls work their level out from their height: min(Level, floor(height) + 0.0001), the basement's -1..0
             var wallCell = cell(Math.Min(0.001f, (float)Math.Floor(-0.5f) + 0.0001f), shift);
             Check("and its walls, seen from the ground floor", wallCell == basementCell, $"{wallCell}");
+            //their tops, flush with the ground floor, take its light while it's shown (dark from below, they looked like a gap)
+            var topCell = cell(Math.Min(0.001f, (float)Math.Floor(-0.001f) + 0.0001f), FSO.LotView.Effects.LightMappedEffect.GroundCellFromBasement);
+            Check("its walls' tops: the ground floor's cell", topCell == new Point(0, 0), $"{topCell}");
         }
 
         Console.WriteLine(Failures == 0 ? "all passed" : $"{Failures} failed");
