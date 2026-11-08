@@ -293,9 +293,17 @@ static class Program
             for (int y = 3; y <= 6; y++) for (int x = 3; x <= 6; x++) { fnd.Raise[y * W + x] = FoundationMap.DefaultHeight; fnd.Kind[y * W + x] = (byte)FoundationKind.Foundation; }
             fnd.Refresh();
             bp.Foundations = fnd;
-            var raisedY = new TestBasement(bp, 7).Build().Select(v => v.Position.Y).ToList();
+            var raisedY = new TestBasement(bp, 7, shown: true).Build().Select(v => v.Position.Y).ToList();
             var r = FoundationMap.DefaultHeight * bp.TerrainFactor;
             Check("under a foundation: raised with it", Math.Abs(raisedY.Min() - r * 3) < 1e-3f && Math.Abs(raisedY.Max() - (r + 2.95f) * 3) < 1e-3f, $"{raisedY.Min()}..{raisedY.Max()}");
+            //seen from above, they stop at the ground outside it (the foundation's own side is above: they flickered)
+            var aboveY = new TestBasement(bp, 7, shown: false).Build().Select(v => v.Position.Y).ToList();
+            Check("from above: up to the ground outside it", Math.Abs(aboveY.Max() - 2.95f * 3) < 1e-3f, $"{aboveY.Min()}..{aboveY.Max()}");
+            //and black under its floor, round its edge (what's below the floor showed in the void)
+            var skirt = new TestSkirt(bp).Build();
+            var skirtY = skirt.Select(v => v.Position.Y).ToList();
+            Check("a skirt under it", skirt.Length == 16 * 4 && Math.Abs(skirtY.Max() - r * 3) < 1e-3f && Math.Abs(skirtY.Min() - (r - Modelled3DBasementSkirt.Depth) * 3) < 1e-3f,
+                $"{skirt.Length / 4} quads, {skirtY.Min()}..{skirtY.Max()}");
             bp.Foundations = null;
             //walls on its edges: the earth behind them isn't drawn (it showed through them in 2D)
             bp.Walls[-1][4 * W + 3].Segments = WallSegments.TopLeft;  //(3,4)'s -x side
@@ -337,7 +345,17 @@ static class Program
 
 class TestBasement : Modelled3DBasement
 {
-    public TestBasement(Blueprint bp, ushort pattern) : base(bp, pattern) { }
+    public TestBasement(Blueprint bp, ushort pattern, bool shown = false) : base(bp, pattern) { Shown = shown; }
+    public TerrainParallaxVertex[] Build()
+    {
+        GenerateGeometry();
+        return Vertices;
+    }
+}
+
+class TestSkirt : Modelled3DBasementSkirt
+{
+    public TestSkirt(Blueprint bp) : base(bp) { }
     public TerrainParallaxVertex[] Build()
     {
         GenerateGeometry();
