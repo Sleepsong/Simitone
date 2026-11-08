@@ -451,7 +451,7 @@ namespace Simitone.Client.UI.Panels
                             state.UIState.TooltipProperties.Opacity = 1;
                             state.UIState.TooltipProperties.Position = new Vector2(MouseDownX,
                                 MouseDownY);
-                            state.UIState.Tooltip = GameFacade.Strings.GetString("137", ((int)Holding.CanPlace).ToString()); //"kPErr" + Holding.CanPlace.ToString()
+                            state.UIState.Tooltip = PlacementErrorText(Holding.CanPlace); //"kPErr" + Holding.CanPlace.ToString()
                                 //+ ((Holding.CanPlace == VMPlacementError.CannotPlaceComputerOnEndTable) ? "," : ""));
                             // comma added to curcumvent problem with language file. We should probably just index these with numbers?
                             state.UIState.TooltipProperties.UpdateDead = false;
@@ -596,6 +596,14 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        /// <summary>A placement error's words: the game's, or ours for the basement's windows (not in the game's table).</summary>
+        private static string PlacementErrorText(VMPlacementError error)
+        {
+            if (error == FSO.SimAntics.Utils.VMBasementWindows.NeedsFoundation) return "Basement windows go where a foundation lifts the basement above the ground";
+            if (error == FSO.SimAntics.Utils.VMBasementWindows.TooLow) return "Only high windows, like the Privacy Window, fit in a basement wall";
+            return GameFacade.Strings.GetString("137", ((int)error).ToString());
+        }
+
         private void ShowErrorAtMouse(UpdateState state, VMPlacementError error)
         {
             if (Holding == null) return;
@@ -604,7 +612,7 @@ namespace Simitone.Client.UI.Panels
             state.UIState.TooltipProperties.Opacity = 1;
             state.UIState.TooltipProperties.Position = new Vector2(MouseDownX,
                 MouseDownY);
-            state.UIState.Tooltip = GameFacade.Strings.GetString("137", ((int)error).ToString()); //((int)Holding.CanPlace).ToString()); was this the desired effect?
+            state.UIState.Tooltip = PlacementErrorText(error);
             state.UIState.TooltipProperties.UpdateDead = false;
             ShowTooltip = true;
             HITVM.Get().PlaySoundEvent(UISounds.Error);
