@@ -226,6 +226,36 @@ static class Program
             Check("turned into a deck: no", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 0, 0), FoundationMap.DefaultHeight, 0, FoundationKind.ColumnDeck, out _) == 0, "");
             Check("taken off all of it", FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(2, 2, 4, 3), 0, 0, FoundationKind.Foundation, out _) < 0 //(negative: taken off)
                 && fmap.RaiseOf(4, 4) == 0, "");
+            //basement windows: on its edge, where a foundation lifts it above the ground outside, and high in the wall
+            {
+                var W2 = FSO.SimAntics.Utils.VMBasementWindows.StoreyTiles;
+                Check("no foundation: none of the wall's above ground", FSO.SimAntics.Utils.VMBasementWindows.AboveGround(arch, 3, 3, 3) == 0, "");
+                FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 2, 1), FoundationMap.DefaultHeight, 0, FoundationKind.Foundation, out _);
+                var band = FoundationMap.DefaultHeight * FSO.SimAntics.Utils.VMBasementWindows.HeightToTiles / W2;
+                var edge = FSO.SimAntics.Utils.VMBasementWindows.AboveGround(arch, 3, 3, 3); //(3,3)'s -x side, against (2,3) outside
+                Check("under a foundation: its top's above ground", Math.Abs(edge - band) < 1e-4f && band > 0.2f && band < 0.3f, $"{edge:0.000} of the wall");
+                Check("not between two of its tiles", FSO.SimAntics.Utils.VMBasementWindows.AboveGround(arch, 3, 3, 1) == 0, "(3,3)'s +x side");
+                Check("from the outside too", Math.Abs(FSO.SimAntics.Utils.VMBasementWindows.AboveGround(arch, 2, 3, 1) - band) < 1e-4f, "(2,3)'s +x side");
+                FSO.SimAntics.Utils.VMFoundationTools.PlaceFoundation(arch, new Rectangle(3, 3, 2, 1), 0, 0, FoundationKind.Foundation, out _);
+                //how far down a window's opening goes, from the hole its wall style cuts (a wall 40 wide and 100 high here)
+                Func<int, int, FSO.Files.Formats.IFF.Chunks.SPRFrame> mask = (holeTop, holeBottom) =>
+                {
+                    var f = (FSO.Files.Formats.IFF.Chunks.SPRFrame)RuntimeHelpers.GetUninitializedObject(typeof(FSO.Files.Formats.IFF.Chunks.SPRFrame)); //(no sprite file behind it)
+                    var t = typeof(FSO.Files.Formats.IFF.Chunks.SPRFrame);
+                    t.GetProperty("Width").GetSetMethod(true).Invoke(f, new object[] { 40 });
+                    t.GetProperty("Height").GetSetMethod(true).Invoke(f, new object[] { 100 });
+                    t.GetMethod("Init", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(f, null);
+                    for (int y = 0; y < 100; y++)
+                        for (int x = 0; x < 40; x++)
+                            f.SetPixel(x, y, (y >= holeTop && y <= holeBottom && x > 8 && x < 32) ? Color.Transparent : Color.White);
+                    return f;
+                };
+                var high = FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(mask(8, 28));
+                var middle = FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(mask(30, 70));
+                Check("a high window's opening", Math.Abs(high - 28 / 99f) < 0.01f && high <= band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {high:0.00}");
+                Check("an ordinary one's", Math.Abs(middle - 70 / 99f) < 0.01f && middle > band + FSO.SimAntics.Utils.VMBasementWindows.Slack, $"down to {middle:0.00}");
+                Check("no opening: can't tell (not a basement window)", FSO.SimAntics.Utils.VMBasementWindows.MeasureOpening(mask(-1, -1)) == 1, "");
+            }
         }
         //walls: one inside, one on the basement's edge with the earth, one inside the part that's filled in
         arch.SetWall(5, 4, 0, new WallTile { Segments = WallSegments.TopLeft, TopLeftStyle = 1 }); //between (4,4) and (5,4): stays
