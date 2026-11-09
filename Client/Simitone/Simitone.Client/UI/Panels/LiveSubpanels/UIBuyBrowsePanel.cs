@@ -343,6 +343,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
             CatContainer.Margin = 15;
             CatContainer.SetScroll(-15);
             CatContainer.Size = new Vector2(775, 128);
+            CatContainer.PadHighlightOnly = true; //selecting creates the object, so the pad browses without selecting
             Category = category;
 
             Add(CatContainer);

@@ -31,6 +31,7 @@ namespace Simitone.Client.UI.Panels
         };
 
         private UITextBox baseTextbox;
+        private bool PadOpened; //opened with the pad combo: closing the on-screen keyboard enters the cheat
         private Texture2D baseTexture;
         private VM ts1VM;
 
@@ -79,6 +80,19 @@ namespace Simitone.Client.UI.Panels
                 else state.InputManager.SetFocus(baseTextbox);
             }
             baseTextbox.Visible = Visible;
+            if (Visible && PadOpened && state.InputManager.GetFocus() != baseTextbox)
+            {
+                //the on-screen keyboard closed (Done, or B on an empty box): enter what was typed, as Enter does
+                PadOpened = false;
+                commandEntered(baseTextbox.CurrentText, out bool hide);
+                if (hide) Visible = false;
+                else
+                {
+                    //not a cheat: leave it up to fix (B empties it, then closes it)
+                    PadOpened = true;
+                    state.InputManager.SetFocus(baseTextbox);
+                }
+            }
             if (Visible)
             {
                 if (state.NewKeys.Contains(Keys.Enter))
@@ -94,10 +108,33 @@ namespace Simitone.Client.UI.Panels
         /// 
         /// </summary>
         /// <param name="commandString"></param>
+        /// <summary>Opens the box for the pad (the LB+RB+LT+RT combo): the on-screen keyboard comes up for it.</summary>
+        public void OpenForPad(UpdateState state)
+        {
+            Visible = true;
+            PadOpened = true;
+            baseTextbox.CurrentText = "";
+            state.InputManager.SetFocus(baseTextbox);
+            FSO.HIT.HITVM.Get().PlaySoundEvent(UISounds.Click);
+        }
+
         private void commandEntered(string commandString, out bool shouldHide)
         {
             shouldHide = true;
             if (string.IsNullOrWhiteSpace(commandString)) return; // a blank textbox should close after hitting enter -- even if a command was never run.
+            //the console games' FISH EYE: B (Circle on PlayStation) looks through the active Sim's eyes
+            var squashed = commandString.ToLowerInvariant().Replace(" ", "").Replace("_", "");
+            if (squashed == "fisheye" || squashed == "fisheyes")
+            {
+                UILotControlPadHelper.FishEyeCheat = !UILotControlPadHelper.FishEyeCheat;
+                Simitone.Client.UI.Controls.UIPadOverlay.ShowToast(UILotControlPadHelper.FishEyeCheat
+                    ? "FISH EYE on: in live mode, " + FSO.Common.Rendering.Framework.IO.PadGlyphs.ActionName(
+                        FSO.Common.Rendering.Framework.IO.PadAction.Cancel, null) + " looks through your Sim's eyes"
+                    : "FISH EYE off", 4f);
+                FSO.HIT.HITVM.Get().PlaySoundEvent(UISounds.Click);
+                baseTextbox.CurrentText = "";
+                return;
+            }
 
             // Handle weather commands separately (they don't use VMCheatContext)
             if (trimRepetitions(commandString).StartsWith("weather", StringComparison.OrdinalIgnoreCase))

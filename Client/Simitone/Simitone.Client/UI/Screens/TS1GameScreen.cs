@@ -27,11 +27,13 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.WorldUI;
 using Simitone.Client.Utils;
 using Simitone.Client.Services;
 using System;
+using FSO.Common.Rendering.Framework.IO;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -40,11 +42,17 @@ using System.Threading.Tasks;
 
 namespace Simitone.Client.UI.Screens
 {
-    public class TS1GameScreen : FSO.Client.UI.Framework.GameScreen
+    public class TS1GameScreen : FSO.Client.UI.Framework.GameScreen, IPadScope
     {
         public UIContainer WindowContainer;
         public bool Downtown;
+        /// <summary>
+        /// True for the desktop lot layout (UIDesktopUCP), false for the mobile one. Chosen when each lot's frontend
+        /// is created (see CreateFrontend); with UILayout "auto" it then follows the device in use, and the frontend is
+        /// rebuilt when it changes (see UpdateAutoLayout).
+        /// </summary>
         public bool Desktop = !FSOEnvironment.SoftwareKeyboard;
+        private InputDevice LastInputDevice;
 
         public UILotControl LotControl { get; set; }
         public UISimitoneFrontend Frontend { get; set; }
@@ -56,6 +64,24 @@ namespace Simitone.Client.UI.Screens
 
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
+        private UIScreenPadNavigator NeighPadNav; //gamepad on the neighbourhood map and house panel
+
+        /// <summary>Showing the neighbourhood map (rather than a lot).</summary>
+        public bool InNeighbourhood => TS1NeighPanel != null && GetChildren().Contains(TS1NeighPanel);
+
+        /// <summary>
+        /// The map on screen: the neighbourhood, or a town a Sim is travelling to from a lot (vacation, Studio Town,
+        /// Magic Town...), which the lot shows over itself. Null if neither.
+        /// </summary>
+        public UINeighborhoodSelectionPanel ActiveNeighPanel
+        {
+            get
+            {
+                if (InNeighbourhood) return TS1NeighPanel;
+                var travel = LotControl?.TravelSelector;
+                return (travel?.Parent == this) ? travel : null;
+            }
+        }
         public FAMI ActiveFamily;
         private ushort CurrentNeighborhoodMode = 4; // default to Normal/Old Town
 
@@ -256,8 +282,130 @@ namespace Simitone.Client.UI.Screens
             };
             Add(TS1NeighPanel);
             Add(switcher);
+            CreateNeighPadNav();
             if (TestMode.TakeLot(out var testLot)) PlayHouse(testLot, switcher);
         }
+
+        /// <summary>The pad's navigator for the map on screen (<see cref="ActiveNeighPanel"/>), replacing any old one.</summary>
+        private void CreateNeighPadNav()
+        {
+            if (NeighPadNav != null) Remove(NeighPadNav);
+            var nav = new UIScreenPadNavigator(NeighbourhoodPadScope);
+            NeighPadNav = nav;
+            //uses its own navigator, not the field: entering a lot clears the field while this navigator is updating
+            nav.Prompts = () =>
+            {
+                var housePanel = ActiveNeighPanel?.LastHS;
+                if (housePanel?.Parent != null && nav.Navigator.Scope == housePanel)
+                    return new[] { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"), PadPrompt.Of(PadAction.Cancel, "Back") };
+                var label = (nav.Navigator.Focused is UINeighborhoodHouseButton house) ? house.PadLabel(MoveInFamily != null) : "Select";
+                var items = new List<PadPrompt> { PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, label) };
+                if (GamePadSettings.VirtualCursor) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
+                return items.ToArray();
+            };
+            NeighPadNav.FocusChanged += (previous, current) =>
+            {
+                (previous as UINeighborhoodHouseButton)?.SetPadHover(false);
+                (current as UINeighborhoodHouseButton)?.SetPadHover(true);
+            };
+            Add(NeighPadNav);
+        }
+
+        /// <summary>
+        /// What the pad navigates on the neighbourhood screen: the open house panel, or else the whole screen (the
+        /// houses on the map and the neighbourhood buttons). Null outside the neighbourhood.
+        /// </summary>
+        private UIElement NeighbourhoodPadScope()
+        {
+            var map = ActiveNeighPanel;
+            if (map == null) return null;
+            var house = map.LastHS;
+            if (house?.Parent != null) return house;
+            if (NeighCursorActive) return null; //the virtual cursor has the pad
+            return this;
+        }
+
+        /// <summary>
+        /// Neighbourhood pad mode, toggled with X. Browse (false) jumps between the lots and buttons with the focus
+        /// frame; cursor (true) hands the map to the virtual cursor: the left stick moves the pointer and A clicks, which
+        /// is quicker for reaching a lot across the map. The house panel is navigated as usual either way. Remembered
+        /// for the session; needs the virtual cursor setting.
+        /// </summary>
+        private static bool NeighCursorMode;
+        private bool NeighCursorActive => NeighCursorMode && GamePadSettings.VirtualCursor;
+
+        private void UpdateNeighbourhoodPad(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            //a travel map (from a lot) gets the neighbourhood's navigator while it's up
+            var panel = ActiveNeighPanel;
+            if (panel != null && NeighPadNav == null) CreateNeighPadNav();
+            else if (panel == null && NeighPadNav != null && TS1NeighPanel?.Parent == null)
+            {
+                Remove(NeighPadNav);
+                NeighPadNav = null;
+            }
+            if (panel?.Parent == null || NeighPadNav == null) return;
+            var pad = state.Pad;
+            var free = pad.Connected && GlobalSettings.Default.GamePadEnabled && !state.PadTextEntry
+                && state.InputManager?.GetFocus() == null && !GameFacade.Screens.HasModalDialog
+                && state.LastInputDevice == InputDevice.GamePad;
+            if (!free) return;
+
+            if (panel.LastHS?.Parent != null)
+            {
+                //the house panel has the pad; when it closes, the cursor comes back on its lot
+                if (NeighCursorActive && panel.HouseButtons.TryGetValue(panel.LastHouse, out var open))
+                    state.PadCursorStart = UIFocusNavigator.GlobalRect(open).Center;
+                return;
+            }
+
+            if (GamePadSettings.VirtualCursor && pad.Pressed(PadAction.FaceLeft))
+            {
+                NeighCursorMode = !NeighCursorMode;
+                if (NeighCursorMode)
+                {
+                    //start the cursor on whatever had the focus
+                    var focused = NeighPadNav.Navigator.Focused;
+                    if (focused != null) state.PadCursorStart = UIFocusNavigator.GlobalRect(focused).Center;
+                }
+                else
+                {
+                    //and the focus on the lot under the cursor
+                    var under = panel.HouseButtons.Values.FirstOrDefault(b => b.MouseHovered);
+                    if (under != null) panel.LastHouse = under.House;
+                }
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                return;
+            }
+
+            if (!NeighCursorActive) return;
+            var hovered = panel.HouseButtons.Values.FirstOrDefault(b => b.MouseHovered);
+            if (hovered != null)
+            {
+                //name it, as the focus does in browse mode, clear of the other lots
+                PadFocusStyle.Label(hovered, UIFocusNavigator.GlobalRect(hovered), null); //lot pictures may be covered
+            }
+            PadPrompts.Set(PadPrompt.For(PadStick.Left, "Cursor"),
+                PadPrompt.Of(PadAction.Confirm, hovered?.PadLabel(MoveInFamily != null) ?? "Select"),
+                PadPrompt.Of(PadAction.FaceLeft, "Browse"));
+        }
+
+        /// <summary>Neighbourhood map: start on the house last selected, or the one nearest the middle.</summary>
+        public UIElement PadDefaultFocus
+        {
+            get
+            {
+                var panel = ActiveNeighPanel;
+                if (panel == null || panel.HouseButtons.Count == 0) return null;
+                if (panel.HouseButtons.TryGetValue(panel.LastHouse, out var last)) return last;
+                var middle = new Vector2(ScreenWidth, ScreenHeight) / 2;
+                return panel.HouseButtons.Values
+                    .OrderBy(b => Vector2.DistanceSquared(UIFocusNavigator.GlobalRect(b).Center.ToVector2(), middle))
+                    .First();
+            }
+        }
+
+        public bool PadCancel() => false;
 
         public void PlayHouse(short house, UIElement switcher)
         {
@@ -265,6 +413,11 @@ namespace Simitone.Client.UI.Screens
             CurrentNeighborhoodMode = GetNeighborhoodModeFromHouse(house);
             InitializeLot(Content.Get().Neighborhood.GetHousePath(house), false);// "UserData/Houses/House21.iff"
             Remove(TS1NeighPanel);
+            if (NeighPadNav != null)
+            {
+                Remove(NeighPadNav);
+                NeighPadNav = null;
+            }
             if (switcher != null) Remove(switcher);
         }
 
@@ -410,7 +563,9 @@ namespace Simitone.Client.UI.Screens
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             
             Visible = World?.Visible != false && World?.State.Cameras.HideUI != true;
-            GameFacade.Game.IsMouseVisible = Visible;
+            LastInputDevice = state.LastInputDevice;
+            //the lot hides the pointer while it drives the pad natively; it comes back for the mouse or the virtual cursor.
+            GameFacade.Game.IsMouseVisible = Visible && !(state.PadWasCaptured && state.LastInputDevice == InputDevice.GamePad);
             TestMode.Update(this);
 
             var nofocus = state.InputManager.GetFocus() == null;
@@ -425,6 +580,8 @@ namespace Simitone.Client.UI.Screens
                 GameThread.NextUpdate((FSO.Common.Rendering.Framework.Model.UpdateState ustate) => ChangeSpeedTo(0));
             }
             base.Update(state);
+            UpdateNeighbourhoodPad(state);
+            UpdateAutoLayout(state);
             UpdateAutoFastForward();
 
             // Update weather effects (sounds and terrain)
@@ -619,6 +776,7 @@ namespace Simitone.Client.UI.Screens
             Driver = new VMServerDriver(globalLink);
 
             vm = new VM(new VMContext(World), Driver, new UIHeadlineRendererProvider());
+            vm.AllowDirectControl = true; //walking Sims with the gamepad (UILotControlPadHelper)
             vm.ListenBHAVChanges();
             vm.Init();
 
@@ -682,8 +840,127 @@ namespace Simitone.Client.UI.Screens
             GameFacade.Cursor.SetCursor(CursorType.Normal);
             ZoomLevel = 1;
 
+            CreateFrontend();
+        }
+
+        private void CreateFrontend()
+        {
+            Desktop = UseDesktopLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard, LastInputDevice);
+            LayoutDevice = LastInputDevice;
+            LayoutPendingFor = 0;
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
+        }
+
+        /// <summary>
+        /// Resolves the UILayout setting. "desktop" and "mobile" force a layout; anything else is "auto", which picks
+        /// the mobile layout for touch screens, or when the gamepad is the device in use (see <see cref="UpdateAutoLayout"/>).
+        /// </summary>
+        public static bool UseDesktopLayout(string setting, bool touch, InputDevice lastDevice)
+        {
+            switch ((setting ?? "").Trim().ToLowerInvariant())
+            {
+                case "desktop": return true;
+                case "mobile": return false;
+                default: return !touch && lastDevice != InputDevice.GamePad;
+            }
+        }
+
+        /// <summary>Whether the layout follows the device in use: UILayout "auto", off touch screens.</summary>
+        public static bool AutoLayout(string setting, bool touch)
+        {
+            var value = (setting ?? "").Trim().ToLowerInvariant();
+            return !touch && value != "desktop" && value != "mobile";
+        }
+
+        /// <summary>Seconds the other device has to be the one in use before the lot's layout switches to it.</summary>
+        public const float LayoutSwitchDelay = 0.75f;
+        /// <summary>The device the layout follows: the pad, or the mouse (the keyboard counts as the mouse here).</summary>
+        private InputDevice LayoutDevice = InputDevice.Mouse;
+        private InputDevice LastPointerDevice = InputDevice.Mouse;
+        private float LayoutPendingFor;
+
+        /// <summary>
+        /// The device the layout should follow after this frame's input. A pad press means the pad; a key press, or
+        /// the pointer passing to the mouse (it moved, clicked or scrolled), means the mouse. Keys the pad itself sends
+        /// (Escape for B under the virtual cursor) arrive on frames the pad is active, and keyboard and mouse echoes
+        /// from Steam's desktop layout are already dropped while the pad is held (PadEchoFilter).
+        /// </summary>
+        public static InputDevice LayoutDeviceAfter(InputDevice current, InputDevice lastPointer, InputDevice pointer,
+            bool padActive, bool keyPressed)
+        {
+            if (padActive) return InputDevice.GamePad;
+            if (keyPressed) return InputDevice.Mouse;
+            if (pointer != lastPointer) return pointer;
+            return current;
+        }
+
+        /// <summary>
+        /// With UILayout "auto", switches the lot between the desktop and mobile layouts as the player changes device:
+        /// the pad gets the mobile layout (big buttons, the mode wheel), the mouse or keyboard the desktop one. The other
+        /// device has to stay the one in use for <see cref="LayoutSwitchDelay"/> seconds, and the lot's UI has to be at
+        /// rest (<see cref="LayoutAtRest"/>); until then the switch waits. The frontend is rebuilt in the new layout in
+        /// the same mode (live, buy, build or options).
+        /// </summary>
+        private void UpdateAutoLayout(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            var pointer = state.LastInputDevice;
+            LayoutDevice = LayoutDeviceAfter(LayoutDevice, LastPointerDevice, pointer, state.Pad.Active, state.NewKeys.Count > 0);
+            LastPointerDevice = pointer;
+            if (Frontend == null || vm == null || LotControl == null) return;
+            if (!AutoLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard)) return;
+
+            var desktop = UseDesktopLayout(GlobalSettings.Default.UILayout, FSOEnvironment.SoftwareKeyboard, LayoutDevice);
+            if (desktop == Desktop)
+            {
+                LayoutPendingFor = 0;
+                return;
+            }
+            LayoutPendingFor += (float)(state.Time?.ElapsedGameTime.TotalSeconds ?? 1 / 60.0);
+            if (LayoutPendingFor < LayoutSwitchDelay || !LayoutAtRest(state)) return;
+            LayoutPendingFor = 0;
+            SwitchLayout(desktop);
+        }
+
+        /// <summary>
+        /// Nothing in progress that rebuilding the frontend would lose: no pie menu, no object in hand, no build tool,
+        /// no text box being typed in, no dialog, no mode selection, and the pad isn't in one of the lot's menus. (The
+        /// pad helper captures the pad all through live mode, so being captured on its own doesn't count.)
+        /// </summary>
+        private bool LayoutAtRest(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            return Frontend.Visible && !LotControl.PieMenuOpen && LotControl.ObjectHolder?.Holding == null
+                && LotControl.CustomControl == null && state.InputManager?.GetFocus() == null
+                && !GameFacade.Screens.HasModalDialog && !Frontend.MainPanel.ShowingSelect
+                && !(LotControl.PadHelper?.InMenu ?? false) && !(Frontend.CheatTextbox?.Visible ?? false);
+        }
+
+        /// <summary>Rebuilds the lot's frontend in the other layout, where the old one was, in the same mode.</summary>
+        private void SwitchLayout(bool desktop)
+        {
+            var old = Frontend;
+            var mode = old.MainPanel.Mode;
+            var wasOpen = old.MainPanel.PanelActive;
+            var category = old.MainPanel.Switcher.ActiveCategory;
+            var children = GetChildren();
+            var index = children.IndexOf(old);
+            var next = (index >= 0 && index + 1 < children.Count) ? children[index + 1] : null;
+
+            Remove(old);
+            Desktop = desktop;
+            Frontend = new UISimitoneFrontend(this);
+            if (next != null) AddBefore(Frontend, next);
+            else Add(Frontend);
+
+            //the new frontend starts in live mode (or buy, for a lot that asks for it): put it back as it was
+            if (Frontend.MainPanel.Mode != mode) Frontend.SetModeDirect(mode);
+            if (wasOpen)
+            {
+                //opening the panel doesn't fill it (the expand button selects the tab too): without this the needs
+                //tab came back empty, its bars gone until the panel was closed and opened again
+                if (!Frontend.MainPanel.PanelActive) Frontend.MainPanel.Open();
+                Frontend.MainPanel.Switcher.Select(category);
+            }
         }
 
         public void ShowLoadErrors(List<VMLoadError> errors, bool verbose)
@@ -798,8 +1075,7 @@ namespace Simitone.Client.UI.Screens
                 ZoomLevel = 1;
             }
 
-            Frontend = new UISimitoneFrontend(this);
-            this.Add(Frontend);
+            CreateFrontend();
         }
 
         public void LoadSurrounding(short houseID)

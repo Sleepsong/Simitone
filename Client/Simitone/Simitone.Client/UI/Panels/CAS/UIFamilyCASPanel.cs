@@ -56,8 +56,8 @@ namespace Simitone.Client.UI.Panels.CAS
         private List<UICategory> AvatarCategories = new List<UICategory>()
         {
             new UICategory() { ID = 0, IconName = "live_motives.png" }, //dummy
-            new UICategory() { ID = 1, IconName = "cas_cat_edit.png" },
-            new UICategory() { ID = 2, IconName = "cas_cat_del.png" },
+            new UICategory() { ID = 1, IconName = "cas_cat_edit.png", Name = "Edit Sim" },
+            new UICategory() { ID = 2, IconName = "cas_cat_del.png", Name = "Delete Sim" },
         };
 
         private int ActiveSelection = -1;
@@ -160,6 +160,9 @@ namespace Simitone.Client.UI.Panels.CAS
         private List<VMAvatar> Avatars;
         private List<UIAvatarSelectButton> Btns = new List<UIAvatarSelectButton>();
         private Texture2D Bg;
+
+        /// <summary>The "add a member" button at the end of the list.</summary>
+        public UIElement AddButton => Btns.LastOrDefault();
         public event Action<int> OnSelection;
         public UIAvatarListPanel(List<VMAvatar> avatar)
         {

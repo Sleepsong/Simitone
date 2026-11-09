@@ -84,6 +84,8 @@ namespace Simitone.Client.UI.Panels
         public event Action<int> OnHouseSelect;
         public HITSound BgSound;
         public Dictionary<int, Vector2> HousePositions;
+        public Dictionary<int, UINeighborhoodHouseButton> HouseButtons = new Dictionary<int, UINeighborhoodHouseButton>();
+        public int LastHouse = -1; //the house last selected, where gamepad focus returns
 
         private Vector2 _cp = new Vector2(800, 600) / 2;
         public float CenterPositionX
@@ -134,7 +136,8 @@ namespace Simitone.Client.UI.Panels
         public void UpdatePosition()
         {
             base.GameResized();
-            var scale = GlobalSettings.Default.GraphicsHeight / 600.0f;
+            //the map is 800x600: fit it to the screen whichever way is tighter (narrower than 4:3 is width)
+            var scale = Math.Min(GlobalSettings.Default.GraphicsHeight / 600.0f, GlobalSettings.Default.GraphicsWidth / 800.0f);
             ScaleX = ScaleY = scale * Zoom;
 
             X = (GlobalSettings.Default.GraphicsWidth) / 2 - _cp.X * ScaleX;
@@ -144,6 +147,17 @@ namespace Simitone.Client.UI.Panels
         public override void GameResized()
         {
             UpdatePosition();
+            //the house panel is laid out for the screen size it was opened at: open it again at the new size
+            if (LastHS != null) GameThread.NextUpdate((state) => ReopenHousePanel());
+        }
+
+        private void ReopenHousePanel()
+        {
+            if (LastHS == null) return;
+            var house = LastHS.HouseID;
+            LastHS.Parent?.Remove(LastHS);
+            LastHS = null;
+            OpenHousePanel(house);
         }
 
         private Texture2D texture;
@@ -161,14 +175,19 @@ namespace Simitone.Client.UI.Panels
             shad.Position = new Vector2(-24);
             Add(shad);
 
-            var bg = new UIImage(((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice));
+            var bgTex = ((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice);
+            var bg = new UIImage(bgTex);
             Add(bg);
+            //the original game ran at the map's size, so lots past its edges were simply off screen: clip them to it
+            var mapBounds = new Rectangle(0, 0, bgTex.Width, bgTex.Height);
             bg.ListenForMouse((evt, state) =>
             {
                 if (evt == UIMouseEventType.MouseDown) ResetZoom();
             });
 
             HousePositions = new Dictionary<int, Vector2>();
+            HouseButtons = new Dictionary<int, UINeighborhoodHouseButton>();
+            LastHouse = -1;
             var locationIff = Content.Get().Neighborhood.LotLocations;
             var locations = locationIff.Get<STR>(mode);
             if (locations == null) return;
@@ -182,7 +201,9 @@ namespace Simitone.Client.UI.Panels
                 if (num == 99) continue;
                 var button = new UINeighborhoodHouseButton(num, SelectHouse, config.Scale);
                 button.Position = new Vector2(int.Parse(loc[1].TrimStart()), int.Parse(loc[2].TrimStart()));
+                button.MapBounds = mapBounds;
                 HousePositions[num] = button.Position;
+                HouseButtons[num] = button;
                 buttons.Add(button);
             }
 
@@ -222,6 +243,7 @@ namespace Simitone.Client.UI.Panels
 
         public void SelectHouse(int house)
         {
+            LastHouse = house;
             if (LastHS != null && LastHS.HouseID == house)
             {
                 ResetZoom();
@@ -229,19 +251,25 @@ namespace Simitone.Client.UI.Panels
             else
             {
                 LastHS?.Kill();
-                LastHS = new UIHouseSelectPanel(house);
-                GameFacade.Screens.CurrentUIScreen.Add(LastHS);
-                GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
-                    { "Zoom", (Mode==4)?3f:1.5f },
-                    { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
-                    { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
-
-                LastHS.OnSelected += (h) =>
-                {
-                    OnHouseSelect?.Invoke(h);
-                    //HITVM.Get().PlaySoundEvent("bkground_fade");
-                };
+                OpenHousePanel(house);
             }
+        }
+
+        private void OpenHousePanel(int house)
+        {
+            LastHS = new UIHouseSelectPanel(house);
+            GameFacade.Screens.CurrentUIScreen.Add(LastHS);
+            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
+                { "Zoom", (Mode==4)?3f:1.5f },
+                { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
+                { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
+
+            LastHS.OnClose += ResetZoom;
+            LastHS.OnSelected += (h) =>
+            {
+                OnHouseSelect?.Invoke(h);
+                //HITVM.Get().PlaySoundEvent("bkground_fade");
+            };
         }
 
         public override void Removed()
@@ -331,7 +359,7 @@ namespace Simitone.Client.UI.Panels
         }
     }
 
-    public class UINeighborhoodHouseButton : UIElement
+    public class UINeighborhoodHouseButton : UIElement, IPadNavigable, Simitone.Client.UI.Model.IPadLabelCoverable
     {
         private Texture2D HouseTex;
         private Texture2D HouseOpenTex;
@@ -340,8 +368,99 @@ namespace Simitone.Client.UI.Panels
         private THMB Offsets;
         public float AlphaTime { get; set; }
 
+        private readonly int HouseNumber;
+        private readonly Action<int> SelectionCallback;
+        private Rectangle HitRect; //what the mouse reacts to: a band across the middle of the lot picture
+        private Rectangle DrawRect; //the lot picture as drawn
+
+        /// <summary>The map picture's rectangle in the map's coordinates (this button's parent); the lot is clipped to it.</summary>
+        public Rectangle MapBounds;
+
+        public bool PadFocusable => Visible;
+
+        public int House => HouseNumber;
+        /// <summary>The mouse (or the pad's virtual cursor) is over the lot.</summary>
+        public bool MouseHovered => Hovered;
+        /// <summary>A family lives here.</summary>
+        public readonly bool Occupied;
+        /// <summary>A community lot (downtown, vacation, studio town...), as the house panel decides it.</summary>
+        public readonly bool Community;
+
+        /// <summary>What Confirm does here, for the prompt bar: what the house panel it opens is for.</summary>
+        public string PadLabel(bool movingIn)
+        {
+            if (Occupied) return movingIn ? "View house" : "Visit house";
+            if (Community) return movingIn ? "View lot" : "Visit lot";
+            return movingIn ? "Move in" : "View lot";
+        }
+
+        /// <summary>The focus frame goes round the lot picture, as far as it's on the map.</summary>
+        public Rectangle PadBounds
+        {
+            get
+            {
+                if (MapBounds.IsEmpty) return DrawRect;
+                var onMap = new Rectangle(DrawRect.X + (int)X, DrawRect.Y + (int)Y, DrawRect.Width, DrawRect.Height);
+                onMap = Rectangle.Intersect(onMap, MapBounds);
+                if (onMap.Width <= 0 || onMap.Height <= 0) return DrawRect;
+                return new Rectangle(onMap.X - (int)X, onMap.Y - (int)Y, onMap.Width, onMap.Height);
+            }
+        }
+        public bool PadMove(PadDirection direction) => false;
+
+        public void PadActivate()
+        {
+            HITVM.Get().PlaySoundEvent(FSO.Client.UI.Model.UISounds.NeighborhoodClick);
+            SelectionCallback(HouseNumber);
+        }
+
+        /// <summary>Gamepad focus: shows the house opened up, as hovering with the mouse does.</summary>
+        public void SetPadHover(bool hover)
+        {
+            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "AlphaTime", hover ? 1f : 0f } });
+            if (hover) HITVM.Get().PlaySoundEvent(FSO.Client.UI.Model.UISounds.NeighborhoodRollover);
+        }
+
+        /// <summary>"Lot name - Family name" for the gamepad focus tooltip (the street address if the lot has no name).</summary>
+        private static string HouseTitle(int houseNumber)
+        {
+            try
+            {
+                var neigh = Content.Get().Neighborhood;
+                var name = neigh.GetHouseNameDesc(houseNumber).Item1;
+                if (string.IsNullOrEmpty(name))
+                {
+                    var assignment = neigh.StreetNames.Get<STR>(2001)?.GetString(houseNumber - 1);
+                    if (int.TryParse(assignment, out var street))
+                        name = neigh.StreetNames.Get<STR>(2000).GetString(street - 1).Replace("%s", houseNumber.ToString());
+                }
+                name = name?.Trim().TrimEnd(':').TrimEnd(); //some lot names end in a colon ("Reclaimed Public Beach:")
+                var family = neigh.GetFamilyForHouse((short)houseNumber);
+                var familyName = family?.ChunkParent.Get<FAMs>(family.ChunkID)?.GetString(0);
+                if (!string.IsNullOrEmpty(familyName)) name = string.IsNullOrEmpty(name) ? familyName : name + " - " + familyName;
+                return name;
+            }
+            catch
+            {
+                return null; //a missing string isn't worth failing the neighbourhood over
+            }
+        }
+
         public UINeighborhoodHouseButton(int houseNumber, Action<int> selectionCallback, float scale)
         {
+            HouseNumber = houseNumber;
+            SelectionCallback = selectionCallback;
+            Tooltip = HouseTitle(houseNumber);
+            try
+            {
+                var neigh = Content.Get().Neighborhood;
+                Occupied = neigh.GetFamilyForHouse((short)houseNumber) != null;
+                //as UIHouseSelectPanel works it out
+                if (!neigh.ZoningDictionary.TryGetValue((short)houseNumber, out var zone))
+                    zone = (short)((houseNumber >= 81 && houseNumber <= 89) ? 2 : 1);
+                Community = !Occupied && zone > 0;
+            }
+            catch { } //only for prompt labels
             if (houseNumber == 71) { }
             AlphaTime = 0;
             var house = Content.Get().Neighborhood.GetHouse(houseNumber);
@@ -360,8 +479,11 @@ namespace Simitone.Client.UI.Panels
 
             var w = (int)(HouseTex.Width / HouseScale);
             var h = (int)(HouseTex.Height / HouseScale);
+            HitRect = new Rectangle(w / -2, w / -4, w, h / 2);
+            //as Draw places the closed picture
+            DrawRect = new Rectangle((int)((Offsets.XOff - Offsets.Width) / HouseScale), (int)((-Offsets.BaseYOff - Offsets.Height) / HouseScale), w, h);
             var clickHandler =
-                ListenForMouse(new Rectangle(w / -2, w / -4, w, h/2), (evt, state) =>
+                ListenForMouse(HitRect, (evt, state) =>
                 {
                     switch (evt)
                     {
@@ -386,9 +508,41 @@ namespace Simitone.Client.UI.Panels
             yOff2.Y -= Offsets.AddYOff / (HouseScale);
             if (AlphaTime > 0)
             {
-                DrawLocalTexture(batch, HouseOpenTex, null, new Vector2(-Offsets.Width, -Offsets.Height)/ HouseScale + yOff2, new Vector2(1f / HouseScale, 1f / HouseScale));
+                DrawOnMap(batch, HouseOpenTex, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff2, 1f / HouseScale, Color.White);
             }
-            DrawLocalTexture(batch, HouseTex, null, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff, new Vector2(1f / HouseScale, 1f / HouseScale), Color.White * (1 - AlphaTime));
+            DrawOnMap(batch, HouseTex, new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + yOff, 1f / HouseScale, Color.White * (1 - AlphaTime));
+        }
+
+        /// <summary>Draws a texture at a local position and scale, cropped to <see cref="MapBounds"/>.</summary>
+        private void DrawOnMap(UISpriteBatch batch, Texture2D tex, Vector2 local, float scale, Color color)
+        {
+            if (tex == null) return;
+            if (MapBounds.IsEmpty)
+            {
+                DrawLocalTexture(batch, tex, null, local, new Vector2(scale), color);
+                return;
+            }
+            //in the map's coordinates
+            var left = X + local.X;
+            var top = Y + local.Y;
+            var right = left + tex.Width * scale;
+            var bottom = top + tex.Height * scale;
+            var cl = Math.Max(left, MapBounds.Left);
+            var ct = Math.Max(top, MapBounds.Top);
+            var cr = Math.Min(right, MapBounds.Right);
+            var cb = Math.Min(bottom, MapBounds.Bottom);
+            if (cr <= cl || cb <= ct) return;
+            if (cl == left && ct == top && cr == right && cb == bottom)
+            {
+                DrawLocalTexture(batch, tex, null, local, new Vector2(scale), color);
+                return;
+            }
+            var sx = (int)Math.Floor((cl - left) / scale);
+            var sy = (int)Math.Floor((ct - top) / scale);
+            var sw = Math.Min(tex.Width - sx, (int)Math.Ceiling((cr - cl) / scale));
+            var sh = Math.Min(tex.Height - sy, (int)Math.Ceiling((cb - ct) / scale));
+            if (sw <= 0 || sh <= 0) return;
+            DrawLocalTexture(batch, tex, new Rectangle(sx, sy, sw, sh), local + new Vector2(sx, sy) * scale, new Vector2(scale), color);
         }
 
         public override void Removed()

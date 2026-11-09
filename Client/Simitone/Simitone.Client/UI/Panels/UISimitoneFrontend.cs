@@ -36,6 +36,9 @@ namespace Simitone.Client.UI.Panels
         public bool PanelActive;
         public int LastCut = 0;
 
+        /// <summary>Gamepad navigation inside the main panel (the needs panel when focused, and Options).</summary>
+        public UIFocusNavigator PanelNavigator = new UIFocusNavigator();
+
         public UISimitoneFrontend(TS1GameScreen screen)
         {
             var ui = Content.Get().CustomUI;
@@ -167,6 +170,8 @@ namespace Simitone.Client.UI.Panels
         /// </summary>
         public void SwitchMode(UIMainPanelMode mode)
         {
+            //with the pad, skip the mode-selection animation: the pad can't drive it.
+            if (Game.LotControl.PadHelper.PadActive && SetModeDirect(mode)) return;
             LiveButtonClicked(mode);
         }
 
@@ -206,6 +211,81 @@ namespace Simitone.Client.UI.Panels
             ModeSwitcher?.EndSwitch(MainPanel.Mode);
         }
 
+        /// <summary>
+        /// Selects the next (direction 1) or previous (direction -1) member of the household on this lot.
+        /// </summary>
+        public void CycleSim(int direction)
+        {
+            var family = Game.vm.TS1State.CurrentFamily;
+            if (family == null) return;
+            var selected = Game.LotControl.ActiveEntity;
+            var familyMembers = Game.vm.Context.ObjectQueries.Avatars.Where(x =>
+                family.RuntimeSubset.Contains(x.Object.OBJ.GUID)
+                    ).ToList();
+            if (familyMembers.Count == 0) return;
+            var index = familyMembers.IndexOf(selected);
+            index = (index < 0) ? 0 : (index + direction + familyMembers.Count) % familyMembers.Count;
+            HITVM.Get().PlaySoundEvent(UISounds.QueueAdd);
+            Game.vm.SendCommand(new VMNetChangeControlCmd() { TargetID = familyMembers[index].ObjectID });
+        }
+
+        /// <summary>
+        /// Switches straight to a mode, skipping the mode-selection animation the mode buttons use.
+        /// Returns false if the mode isn't available on this lot.
+        /// </summary>
+        public bool SetModeDirect(UIMainPanelMode mode)
+        {
+            if (!ModeAvailable(mode)) return false;
+            MainPanel.SwitchAvatar?.Kill();
+            if (mode != UIMainPanelMode.LIVE && !MainPanel.PanelActive) MainPanel.Open();
+            MainPanel.SetMode(mode);
+            ModeSwitcher?.EndSwitch(mode);
+            return true;
+        }
+
+        /// <summary>Moves to the next available mode in the order Live, Buy, Build, Options.</summary>
+        public void CycleMode()
+        {
+            var order = new UIMainPanelMode[] { UIMainPanelMode.LIVE, UIMainPanelMode.BUY, UIMainPanelMode.BUILD, UIMainPanelMode.OPTIONS };
+            var start = Array.IndexOf(order, MainPanel.Mode);
+            for (int i = 1; i <= order.Length; i++)
+            {
+                var mode = order[(start + i) % order.Length];
+                if (SetModeDirect(mode))
+                {
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                    return;
+                }
+            }
+        }
+
+        public bool ModeAvailable(UIMainPanelMode mode)
+        {
+            switch (mode)
+            {
+                case UIMainPanelMode.LIVE:
+                    return Game.LotControl.ActiveEntity != null;
+                case UIMainPanelMode.BUY:
+                case UIMainPanelMode.BUILD:
+                    return Game.vm.Context.Architecture?.BuildBuyEnabled ?? false;
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary>Sets walls down (0), cutaway (1), up (2) or roofs (3).</summary>
+        public void SetWallsMode(int mode)
+        {
+            Game.LotControl.World.State.DrawRoofs = (mode == 3);
+            Game.LotControl.WallsMode = mode;
+            if (CutPanel != null)
+            {
+                CutBtn.Selected = false;
+                CutPanel.Kill();
+                CutPanel = null;
+            }
+        }
+
         private void CutButton(UIElement button)
         {
             if (CutPanel != null)
@@ -239,17 +319,7 @@ namespace Simitone.Client.UI.Panels
             // Only switch Sims with Space if no text input has focus
             if (state.NewKeys.Contains(Keys.Space) && state.InputManager.GetFocus() == null)
             {
-                var selected = Game.LotControl.ActiveEntity;
-                var familyMembers = Game.vm.Context.ObjectQueries.Avatars.Where(x =>
-                    Game.vm.TS1State.CurrentFamily.RuntimeSubset.Contains(x.Object.OBJ.GUID)
-                        ).ToList();
-                var index = familyMembers.IndexOf(selected);
-                if (familyMembers.Count > 0)
-                {
-                    index = (index + 1) % (familyMembers.Count);
-                    HITVM.Get().PlaySoundEvent(UISounds.QueueAdd);
-                    Game.vm.SendCommand(new VMNetChangeControlCmd() { TargetID = familyMembers[index].ObjectID });
-                }
+                CycleSim(1);
             }
 
             base.Update(state);
@@ -302,6 +372,12 @@ namespace Simitone.Client.UI.Panels
                 CutPanel.Kill();
                 CutPanel = null;
             }
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
+            base.Draw(batch);
+            PanelNavigator.Draw(batch); //outline above the panel it navigates
         }
 
         public override void GameResized()

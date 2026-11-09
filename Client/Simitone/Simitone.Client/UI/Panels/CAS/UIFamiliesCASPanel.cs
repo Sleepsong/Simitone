@@ -50,6 +50,7 @@ namespace Simitone.Client.UI.Panels.CAS
             FamilyList.ItemWidth = 180;
             FamilyList.Margin = 90;
             FamilyList.DrawBounds = false;
+            FamilyList.PadSelectionVisible = true; //the selected family lights up
             Add(FamilyList);
             WhitePx = TextureGenerator.GetPxWhite(GameFacade.GraphicsDevice);
 
@@ -62,11 +63,13 @@ namespace Simitone.Client.UI.Panels.CAS
             Add(Title);
 
             DeleteButton = new UITwoStateButton(ui.Get("btn_deletefam.png").Get(gd));
+            DeleteButton.Tooltip = "Delete family";
             DeleteButton.Position = new Vector2(sw - 140, sh - 260);
             Add(DeleteButton);
             DeleteButton.OnButtonClick += (btn) => OnDeleteFamily?.Invoke();
 
             NewButton = new UITwoStateButton(ui.Get("btn_createfam.png").Get(gd));
+            NewButton.Tooltip = "Create a new family";
             NewButton.Position = new Vector2(sw - 140, sh - 380);
             Add(NewButton);
             NewButton.OnButtonClick += (btn) => OnNewFamily?.Invoke();

@@ -23,6 +23,9 @@ namespace Simitone.Client.UI.Controls
         public event Action OnOpen;
         public int ActiveCategory;
         public List<UICategory> Categories;
+
+        /// <summary>The fan of categories is open, or opening (false as soon as it starts closing).</summary>
+        public bool Expanded { get; private set; }
         public List<UIStencilButton> CatSwitchButtons = new List<UIStencilButton>();
 
         private float _ce;
@@ -86,6 +89,7 @@ namespace Simitone.Client.UI.Controls
                 if (catG.ID == cat)
                 {
                     MainButton.Texture = Content.Get().CustomUI.Get(catG.IconName).Get(GameFacade.GraphicsDevice);
+                    MainButton.Tooltip = catG.Name;
                 }
                 if (catG.ID != cat || UIScreen.Current.ScreenHeight >= 720)
                 {
@@ -94,6 +98,7 @@ namespace Simitone.Client.UI.Controls
                     btn.X = 10;
                     btn.Visible = false;
                     btn.OnButtonClick += (b) => { Select(id); };
+                    btn.Tooltip = catG.Name;
                     Add(btn);
                     CatSwitchButtons.Add(btn);
                 }
@@ -120,11 +125,13 @@ namespace Simitone.Client.UI.Controls
                 Close(); return;
             }
             OnOpen?.Invoke();
+            Expanded = true;
             GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "CategoryExpand", 1f } }, TweenQuad.EaseOut);
         }
 
         public void Close()
         {
+            Expanded = false;
             GameFacade.Screens.Tween.To(this, 0.3f, new Dictionary<string, float>() { { "CategoryExpand", 0f } }, TweenQuad.EaseOut);
         }
 
@@ -138,6 +145,7 @@ namespace Simitone.Client.UI.Controls
     {
         public int ID;
         public string IconName;
+        public string Name; //tooltip
     }
 
     public class UIVertGrad : UIElement

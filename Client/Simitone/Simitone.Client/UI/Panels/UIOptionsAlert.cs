@@ -1,4 +1,4 @@
-﻿using FSO.Client;
+using FSO.Client;
 using FSO.Client.UI.Controls;
 using FSO.Client.UI.Framework;
 using FSO.Common;
@@ -27,7 +27,7 @@ namespace Simitone.Client.UI.Panels
     /// Changes apply immediately where the engine allows it and are saved to config.ini.
     /// Opened from Options > Settings on a lot, and from the "..." button on the neighbourhood.
     /// </summary>
-    public class UIOptionsAlert : UIMobileDialog
+    public class UIOptionsAlert : UIMobileDialog, IPadScope
     {
         private List<OptionRow> Rows = new List<OptionRow>();
         private List<UIBigButton> TabButtons = new List<UIBigButton>();
@@ -327,6 +327,18 @@ namespace Simitone.Client.UI.Panels
             row.Set(value);
             GlobalSettings.Default.Save();
             Refresh();
+        }
+
+        /// <summary>Gamepad: start on the first setting of the open tab.</summary>
+        public UIElement PadDefaultFocus => Rows.Where(x => x.Tab == ActiveTab)
+            .SelectMany(x => new UIElement[] { x.Button, x.Minus })
+            .FirstOrDefault(x => x != null && x.Visible && !((x as UIButton)?.Disabled ?? false)) ?? DoneButton;
+
+        /// <summary>Gamepad Cancel closes the dialog, like Done: every change is already applied and saved.</summary>
+        public bool PadCancel()
+        {
+            DoneButton.PerformClick();
+            return true;
         }
 
         private void SetTab(int tab)

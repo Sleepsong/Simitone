@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 
 namespace Simitone.Client.UI.Panels.LotControls
 {
-    public class UICallNeighborAlert : UIMobileDialog
+    public class UICallNeighborAlert : UIMobileDialog, IPadScope
     {
         public UICallNeighborPanel NPanel;
         public short SelectedNeighbour
@@ -35,6 +35,15 @@ namespace Simitone.Client.UI.Panels.LotControls
             NPanel.OnResult += (res) => { OnResult?.Invoke(res); Close(); };
             Add(NPanel);
         }
+
+        /// <summary>Gamepad: start in the family list.</summary>
+        public UIElement PadDefaultFocus => NPanel.FamilyList.ScrollElem;
+
+        public bool PadCancel()
+        {
+            NPanel.CancelButton.PerformClick();
+            return true;
+        }
     }
 
     public class UICallNeighborPanel : UIContainer
@@ -44,6 +53,7 @@ namespace Simitone.Client.UI.Panels.LotControls
         public UITouchStringList NeighbourList;
         public UIAvatarSelectButton Icon;
         public UIBigButton CallButton;
+        public UIBigButton CancelButton;
         public int SelectedFamily = -1;
         public short SelectedNeighbour = -1;
         public VM VM;
@@ -90,6 +100,7 @@ namespace Simitone.Client.UI.Panels.LotControls
             Add(NeighbourList);
 
             var cancelButton = new UIBigButton(false);
+            CancelButton = cancelButton;
             cancelButton.Caption = "Cancel";
             cancelButton.Position = new Microsoft.Xna.Framework.Vector2(370 + 385, 135);
             cancelButton.OnButtonClick += (btn) => { OnResult?.Invoke(-1); };

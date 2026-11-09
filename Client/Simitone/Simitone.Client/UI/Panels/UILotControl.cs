@@ -78,6 +78,7 @@ namespace Simitone.Client.UI.Panels
         public bool PanelActive = false;
         public UILotControlTouchHelper Touch;
         public UIArchTouchHelper ArchTouch;
+        public UILotControlPadHelper PadHelper;
 
         public int WallsMode = 1;
 
@@ -85,6 +86,15 @@ namespace Simitone.Client.UI.Panels
         /// Fired when CustomControl (floor/wallpaper tool) is released via ESC key.
         /// </summary>
         public event Action OnCustomControlReleased;
+
+        /// <summary>
+        /// Set by the pad helper while the pad drives buy or build mode: the cursor position (the screen centre) in
+        /// UI units, which the build tools and the object holder use instead of the mouse. Null otherwise.
+        /// </summary>
+        public Point? PadCursor;
+
+        /// <summary>Build tool modifiers held on the pad (they replace Shift/Ctrl while <see cref="PadCursor"/> is set).</summary>
+        public UILotControlModifiers PadModifiers;
 
         private int OldMX;
         private int OldMY;
@@ -107,6 +117,8 @@ namespace Simitone.Client.UI.Panels
         // If we are to implement controlling multiple sims, this must be changed.
         private UIMobileDialog BlockingDialog;
         private UINeighborhoodSelectionPanel TS1NeighSelector;
+        /// <summary>The town map shown while a Sim travels (vacation, Studio Town, Magic Town...), or null.</summary>
+        public UINeighborhoodSelectionPanel TravelSelector => TS1NeighSelector;
         private ulong LastDialogID;
 
         private static uint GOTO_GUID = 0x000007C4;
@@ -147,6 +159,8 @@ namespace Simitone.Client.UI.Panels
             Add(Touch);
             ArchTouch = new UIArchTouchHelper(this);
             Add(ArchTouch);
+            PadHelper = new UILotControlPadHelper(this);
+            Add(PadHelper);
             SetupQuery();
 
 
@@ -260,6 +274,9 @@ namespace Simitone.Client.UI.Panels
                     Parent.Add(TS1NeighSelector);
                     ((TS1GameScreen)Parent).Bg.Visible = true;
                     ((TS1GameScreen)Parent).LotControl.Visible = false;
+                    //the lot's bar and clock were left over the map
+                    var frontend = ((TS1GameScreen)Parent).Frontend;
+                    if (frontend != null) frontend.Visible = false;
                     TS1NeighSelector.OnHouseSelect += HouseSelected;
                     return;
                 case VMDialogType.TS1PhoneBook:
@@ -346,6 +363,14 @@ namespace Simitone.Client.UI.Panels
             });
             Parent.Remove(TS1NeighSelector);
             TS1NeighSelector = null;
+            if (Parent is TS1GameScreen screen)
+            {
+                //back to the lot: the Sim sets off from it, and the new lot loads when they leave. If the trip fails
+                //(an interaction error), the player is left on the lot rather than an empty background.
+                screen.Bg.Visible = false;
+                screen.LotControl.Visible = true;
+                if (screen.Frontend != null) screen.Frontend.Visible = true;
+            }
         }
 
         private void DialogButton0(UIElement button) { DialogResponse(0); }
@@ -413,6 +438,15 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
+        /// <summary>Puts away the current build tool (wall, floor, wallpaper...), as Escape does.</summary>
+        public void ReleaseCustomControl()
+        {
+            if (CustomControl == null) return;
+            CustomControl.Release();
+            CustomControl = null;
+            OnCustomControlReleased?.Invoke();
+        }
+
         public void SimulateMD(UpdateState state)
         {
             if (CustomControl != null) CustomControl.MouseDown(state);
@@ -453,113 +487,149 @@ namespace Simitone.Client.UI.Panels
             }
             if (PieMenu == null && ActiveEntity != null)
             {
-                VMEntity obj;
-                //get new pie menu, make new pie menu panel for it
+                //get new pie menu, make new pie menu panel for it (in screen pixels: the zoomed view's scale is taken off)
                 var tilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(pt.X, pt.Y)));
 
-                LotTilePos targetPos = LotTilePos.FromBigTile((short)tilePos.X, (short)tilePos.Y, World.State.Level);
-                if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
+                ObjectHover = World.GetObjectIDAtScreenTap(pt, GameFacade.GraphicsDevice);
 
-                GotoObject.SetPosition(targetPos, Direction.NORTH, vm.Context);
-
-                var newHover = World.GetObjectIDAtScreenTap(pt, GameFacade.GraphicsDevice);
-
-                ObjectHover = newHover;
-
-                bool objSelected = ObjectHover > 0;
-                if (objSelected || (GotoObject.Position != LotTilePos.OUT_OF_WORLD && ObjectHover <= 0))
+                VMEntity target = null;
+                if (ObjectHover > 0)
                 {
-                    if (objSelected)
-                    {
-                        obj = vm.GetObjectById(ObjectHover);
-                    }
-                    else
-                    {
-                        obj = GotoObject;
-                    }
-                    if (obj is VMAvatar && state.CtrlDown)
-                    {
-                        //debug switch to avatar
-                        vm.SendCommand(new VMNetChangeControlCmd()
-                        {
-                            TargetID = obj.ObjectID
-                        });
-                    }
-                    else if (obj != null)
-                    {
-                        obj = obj.MultitileGroup.GetInteractionGroupLeader(obj);
-                        if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
-                        {
-                            var flags = ((VMGameObject)obj).Disabled;
-                            Console.WriteLine($"[tap] {pt.X},{pt.Y}: {obj} (id {obj.ObjectID}) is disabled ({flags})");
-
-                            if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
-                            {
-                                //for sale
-                                var retailPrice = obj.MultitileGroup.Price; //wrong... should get this from catalog
-                                var salePrice = obj.MultitileGroup.SalePrice;
-                                ShowErrorTooltip(state, 22, true, "$" + retailPrice.ToString("##,#0"), "$" + salePrice.ToString("##,#0"));
-                            }
-                            else if ((flags & VMGameObjectDisableFlags.LotCategoryWrong) > 0)
-                                ShowErrorTooltip(state, 21, true); //category wrong
-                            else if ((flags & VMGameObjectDisableFlags.TransactionIncomplete) > 0)
-                                ShowErrorTooltip(state, 27, true); //transaction not yet complete
-                            else if ((flags & VMGameObjectDisableFlags.ObjectLimitExceeded) > 0)
-                                ShowErrorTooltip(state, 24, true); //object is temporarily disabled... todo: something more helpful
-                            else if ((flags & VMGameObjectDisableFlags.PendingRoommateDeletion) > 0)
-                                ShowErrorTooltip(state, 16, true); //pending roommate deletion
-                        }
-                        else
-                        {
-                            var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
-                            Console.WriteLine($"[tap] {pt.X},{pt.Y}: {(objSelected ? obj.ToString() + " (id " + obj.ObjectID + ")" : "the ground")}, {menu.Count} actions" +
-                                (menu.Count > 0 ? ": " + string.Join(", ", menu.Select(x => x.Name)) : ""));
-                            if (menu.Count == 0)
-                            {
-                                // touch has no cursor to show "not available", so say so (a mouse hover shows it on PCs)
-                                ShowTextTooltip(state, objSelected ? $"Nothing to do with the {obj} right now" : "Can't go there right now", true);
-                            }
-                            else
-                            {
-                                HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);
-                                PieMenu = new UIPieMenu(menu, obj, ActiveEntity, this);
-                                this.Add(PieMenu);
-                                PieMenu.X = state.MouseState.X / FSOEnvironment.DPIScaleFactor;
-                                PieMenu.Y = state.MouseState.Y / FSOEnvironment.DPIScaleFactor;
-                                PieMenu.UpdateHeadPosition(state.MouseState.X, state.MouseState.Y);
-                            }
-                        }
-                    }
-
+                    target = vm.GetObjectById(ObjectHover);
+                    if (target == null) return; //stale id: do nothing, as before
                 }
-                else
-                {
-                    Console.WriteLine($"[tap] {pt.X},{pt.Y}: nothing there, and the tile at {tilePos.X:0.0},{tilePos.Y:0.0} can't be walked to");
-                    ShowErrorTooltip(state, 0, true);
-                }
+                OpenPieMenu(target, tilePos, new Vector2(state.MouseState.X, state.MouseState.Y) / FSOEnvironment.DPIScaleFactor, state);
             }
             else
             {
-                if (PieMenu != null) PieMenu.RemoveSimScene();
-                this.Remove(PieMenu);
-                PieMenu = null;
+                CancelPie();
             }
         }
 
-        private void ShowTextTooltip(UpdateState state, string text, bool playSound)
+        private void ShowTextTooltip(UpdateState state, Vector2 position, string text, bool playSound)
         {
-            ShowErrorTooltip(state, 0, playSound);
+            ShowErrorTooltip(state, position, 0, playSound);
             state.UIState.Tooltip = text;
         }
 
+        public bool PieMenuOpen => PieMenu != null;
+
+        /// <summary>
+        /// Opens the pie menu for an object, or the "go here" menu at a floor tile when target is null.
+        /// </summary>
+        /// <param name="menuPos">Where the menu appears, in UI coordinates.</param>
+        /// <param name="fromPad">Opened with the gamepad: errors show as a message on screen rather than at the mouse.</param>
+        public void OpenPieMenu(VMEntity target, Vector2 tile, Vector2 menuPos, UpdateState state, bool fromPad = false)
+        {
+            if (PieMenu != null || ActiveEntity == null) return;
+            var tooltipPos = menuPos * FSOEnvironment.DPIScaleFactor;
+            void ShowErrorTooltip(UpdateState s, Vector2 position, uint id, bool playSound, params string[] args)
+            {
+                if (!fromPad)
+                {
+                    this.ShowErrorTooltip(s, position, id, playSound, args);
+                    return;
+                }
+                if (playSound) HITVM.Get().PlaySoundEvent(UISounds.Error);
+                UIPadOverlay.ShowToast(GameFacade.Strings.GetString("159", id.ToString(), args));
+            }
+
+            LotTilePos targetPos = LotTilePos.FromBigTile((short)tile.X, (short)tile.Y, World.State.Level);
+            if (vm.Context.SolidToAvatars(targetPos).Solid) targetPos = LotTilePos.OUT_OF_WORLD;
+
+            GotoObject.SetPosition(targetPos, Direction.NORTH, vm.Context);
+
+            VMEntity obj;
+            if (target != null) obj = target;
+            else if (GotoObject.Position != LotTilePos.OUT_OF_WORLD) obj = GotoObject;
+            else
+            {
+                Console.WriteLine($"[tap] {tooltipPos.X:0},{tooltipPos.Y:0}: nothing there, and the tile at {tile.X:0.0},{tile.Y:0.0} can't be walked to");
+                ShowErrorTooltip(state, tooltipPos, 0, true);
+                return;
+            }
+
+            if (obj is VMAvatar && state.CtrlDown)
+            {
+                //debug switch to avatar
+                vm.SendCommand(new VMNetChangeControlCmd()
+                {
+                    TargetID = obj.ObjectID
+                });
+            }
+            else
+            {
+                obj = obj.MultitileGroup.GetInteractionGroupLeader(obj);
+                if (obj is VMGameObject && ((VMGameObject)obj).Disabled > 0)
+                {
+                    var flags = ((VMGameObject)obj).Disabled;
+                    Console.WriteLine($"[tap] {tooltipPos.X:0},{tooltipPos.Y:0}: {obj} (id {obj.ObjectID}) is disabled ({flags})");
+
+                    if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
+                    {
+                        //for sale
+                        var retailPrice = obj.MultitileGroup.Price; //wrong... should get this from catalog
+                        var salePrice = obj.MultitileGroup.SalePrice;
+                        ShowErrorTooltip(state, tooltipPos, 22, true, "$" + retailPrice.ToString("##,#0"), "$" + salePrice.ToString("##,#0"));
+                    }
+                    else if ((flags & VMGameObjectDisableFlags.LotCategoryWrong) > 0)
+                        ShowErrorTooltip(state, tooltipPos, 21, true); //category wrong
+                    else if ((flags & VMGameObjectDisableFlags.TransactionIncomplete) > 0)
+                        ShowErrorTooltip(state, tooltipPos, 27, true); //transaction not yet complete
+                    else if ((flags & VMGameObjectDisableFlags.ObjectLimitExceeded) > 0)
+                        ShowErrorTooltip(state, tooltipPos, 24, true); //object is temporarily disabled... todo: something more helpful
+                    else if ((flags & VMGameObjectDisableFlags.PendingRoommateDeletion) > 0)
+                        ShowErrorTooltip(state, tooltipPos, 16, true); //pending roommate deletion
+                }
+                else
+                {
+                    var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
+                    Console.WriteLine($"[tap] {tooltipPos.X:0},{tooltipPos.Y:0}: {(target != null ? obj.ToString() + " (id " + obj.ObjectID + ")" : "the ground")}, {menu.Count} actions" +
+                        (menu.Count > 0 ? ": " + string.Join(", ", menu.Select(x => x.Name)) : ""));
+                    if (menu.Count == 0)
+                    {
+                        // touch has no cursor to show "not available", so say so (a mouse hover shows it on PCs)
+                        var text = (target != null) ? $"Nothing to do with the {obj} right now" : "Can't go there right now";
+                        if (fromPad)
+                        {
+                            HITVM.Get().PlaySoundEvent(UISounds.Error);
+                            UIPadOverlay.ShowToast(text);
+                        }
+                        else ShowTextTooltip(state, tooltipPos, text, true);
+                    }
+                    else
+                    {
+                        HITVM.Get().PlaySoundEvent(UISounds.PieMenuAppear);
+                        PieMenu = new UIPieMenu(menu, obj, ActiveEntity, this);
+                        this.Add(PieMenu);
+                        PieMenu.X = menuPos.X;
+                        PieMenu.Y = menuPos.Y;
+                        PieMenu.UpdateHeadPosition((int)tooltipPos.X, (int)tooltipPos.Y);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Closes the pie menu without choosing anything.</summary>
+        public void CancelPie()
+        {
+            if (PieMenu != null) PieMenu.RemoveSimScene();
+            this.Remove(PieMenu);
+            PieMenu = null;
+        }
+
         private void ShowErrorTooltip(UpdateState state, uint id, bool playSound, params string[] args)
+        {
+            ShowErrorTooltip(state, new Vector2(state.MouseState.X, state.MouseState.Y), id, playSound, args);
+        }
+
+        private void ShowErrorTooltip(UpdateState state, Vector2 position, uint id, bool playSound, params string[] args)
         {
             if (playSound) HITVM.Get().PlaySoundEvent(UISounds.Error);
             state.UIState.TooltipProperties.Show = true;
             state.UIState.TooltipProperties.Color = Color.Black;
             state.UIState.TooltipProperties.Opacity = 1;
-            state.UIState.TooltipProperties.Position = new Vector2(state.MouseState.X,
-                state.MouseState.Y);
+            state.UIState.TooltipProperties.Position = position;
             state.UIState.Tooltip = GameFacade.Strings.GetString("159", id.ToString(), args);
             state.UIState.TooltipProperties.UpdateDead = false;
             ShowTooltip = true;
@@ -584,7 +654,7 @@ namespace Simitone.Client.UI.Panels
 
         public void LiveModeUpdate(UpdateState state, bool scrolled)
         {
-            if (MouseIsOn && !RMBScroll && ActiveEntity != null && !FSOEnvironment.SoftwareKeyboard)
+            if (MouseIsOn && !RMBScroll && ActiveEntity != null && !FSOEnvironment.SoftwareKeyboard && !PadHelper.PadActive)
             {
 
                 if (state.MouseState.X != OldMX || state.MouseState.Y != OldMY)
@@ -876,6 +946,7 @@ namespace Simitone.Client.UI.Panels
 
             if (Visible)
             {
+                if (PadHelper.PadActive && !TipIsError) ShowTooltip = false; //mouse hover tooltips don't apply; the pad helper shows its own
                 if (ShowTooltip) state.UIState.TooltipProperties.UpdateDead = false;
 
                 bool scrolled = false;
@@ -920,7 +991,11 @@ namespace Simitone.Client.UI.Panels
                     World.Scroll(scrollBy * (60f / FSOEnvironment.RefreshRate));
                     scrolled = true;
                 }
-                if (MouseIsOn)
+                //the hardware cursor only scrolls the lot while the mouse is the device in use. With the pad, it's
+                //parked (hidden) wherever it was left, maybe at a window edge, and the pad helper stands down while a
+                //popup is open: checking only the helper let the camera drift under popups.
+                var mouseInUse = state.LastInputDevice != InputDevice.GamePad;
+                if (MouseIsOn && mouseInUse)
                 {
                     if (state.MouseState.RightButton == ButtonState.Pressed)
                     {
@@ -1028,13 +1103,16 @@ namespace Simitone.Client.UI.Panels
                     // ESC cancels floor/wallpaper/wall tools
                     if (state.KeyboardState.IsKeyDown(Keys.Escape))
                     {
-                        CustomControl.Release();
-                        CustomControl = null;
-                        OnCustomControlReleased?.Invoke();
+                        ReleaseCustomControl();
                     }
                     else
                     {
-                        if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2);
+                        if (PadCursor != null)
+                        {
+                            CustomControl.MousePosition = PadCursor.Value;
+                            CustomControl.Modifiers = PadModifiers;
+                        }
+                        else if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2);
                         else
                         {
                             CustomControl.Modifiers = 0;
@@ -1071,7 +1149,9 @@ namespace Simitone.Client.UI.Panels
             {
                 World.State.DynamicCutaway = (WallsMode == 1);
                 //first we need to cycle the rooms that are being cutaway. Keep this up even if we're in all-cut mode.
-                var mouseTilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(state.MouseState.X, state.MouseState.Y)));
+                //with the pad, the cutaway follows the selector or the active sim instead of the mouse.
+                var padFocus = PadHelper.CutawayFocus;
+                var mouseTilePos = padFocus ?? World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(state.MouseState.X, state.MouseState.Y)));
                 var roomHover = vm.Context.GetRoomAt(LotTilePos.FromBigTile((short)(mouseTilePos.X), (short)(mouseTilePos.Y), World.State.Level));
                 var outside = (vm.Context.RoomInfo[roomHover].Room.IsOutside);
                 if (!outside && !CutRooms.Contains(roomHover))
@@ -1115,7 +1195,7 @@ namespace Simitone.Client.UI.Panels
                     }
                     else
                     {
-                        if (RMBScroll || !MouseIsOn) return;
+                        if (padFocus == null && (RMBScroll || !MouseIsOn)) return;
                         finalRooms = new HashSet<uint>(CutRooms);
                         var newCut = new Rectangle((int)(mouseTilePos.X - 2.5), (int)(mouseTilePos.Y - 2.5), 5, 5);
                         newCut.X -= VMArchitectureTools.CutCheckDir[(int)World.State.CutRotation][0] * 2;

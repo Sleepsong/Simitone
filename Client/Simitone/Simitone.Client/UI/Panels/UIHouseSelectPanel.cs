@@ -21,8 +21,27 @@ using System.Threading.Tasks;
 
 namespace Simitone.Client.UI.Panels
 {
-    public class UIHouseSelectPanel : UIContainer
+    public class UIHouseSelectPanel : UIContainer, IPadScope
     {
+        /// <summary>The player backed out (gamepad B): the neighbourhood closes the panel and zooms out.</summary>
+        public event Action OnClose;
+
+        public UIElement PadDefaultFocus
+        {
+            get
+            {
+                if (MoreTween > 0.5f) return OptionButtons.LastOrDefault(); //"Back"
+                return (EnterLot != null && !EnterLot.Disabled) ? EnterLot : (UIElement)More;
+            }
+        }
+
+        public bool PadCancel()
+        {
+            if (MoreTween > 0.5f) ShowMore(false);
+            else OnClose?.Invoke();
+            return true;
+        }
+
         public UIDiagonalStripe Diag;
         public UIDiagonalStripe TitleStripe;
 
@@ -397,6 +416,10 @@ namespace Simitone.Client.UI.Panels
         {
             EnterLot.Opacity = 0.99f; //force an unpressable state
             More.Opacity = 0.99f;
+            //and out of gamepad navigation while it slides away
+            EnterLot.Disabled = true;
+            More.Disabled = true;
+            foreach (var btn in OptionButtons) btn.Disabled = true;
             var screen = GameFacade.Screens.CurrentUIScreen;
             GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "X", (screen.ScreenWidth / -2) - 32 } }, TweenQuad.EaseIn);
             GameThread.SetTimeout(() => { Parent.Remove(this); }, 500);

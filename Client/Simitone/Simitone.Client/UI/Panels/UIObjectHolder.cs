@@ -213,11 +213,23 @@ namespace Simitone.Client.UI.Panels
             rgrp.Delete(context);
         }
 
+        /// <summary>
+        /// Where the holder's pointer is, in mouse pixels: the pad cursor while the pad drives buy/build mode,
+        /// otherwise the mouse.
+        /// </summary>
+        private Point PointerPosition(UpdateState state)
+        {
+            var pad = ParentControl.PadCursor;
+            if (pad != null) return (pad.Value.ToVector2() * FSOEnvironment.DPIScaleFactor).ToPoint();
+            return state.MouseState.Position;
+        }
+
         public void MouseDown(UpdateState state)
         {
             MouseIsDown = true;
-            MouseDownX = state.MouseState.X;
-            MouseDownY = state.MouseState.Y;
+            var pointer = PointerPosition(state);
+            MouseDownX = pointer.X;
+            MouseDownY = pointer.Y;
             if (Holding != null)
             {
                 Rotation = Holding.Dir;
@@ -358,7 +370,7 @@ namespace Simitone.Client.UI.Panels
             if (Holding != null && Roommate)
             {
                 if (MouseClicked) Holding.Clicked = true;
-                var mpos = FSOEnvironment.SoftwareKeyboard ? new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2) : state.MouseState.Position;
+                var mpos = (FSOEnvironment.SoftwareKeyboard && ParentControl.PadCursor == null) ? new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2) : PointerPosition(state);
                 if (MouseIsDown && Holding.Clicked)
                 {
                     bool updatePos = MouseClicked;
@@ -423,7 +435,8 @@ namespace Simitone.Client.UI.Panels
             else if (MouseClicked)
             {
                 //not holding an object, but one can be selected
-                var newHover = World.GetObjectIDAtScreenTap(state.MouseState.Position, GameFacade.GraphicsDevice);
+                var pointer = PointerPosition(state);
+                var newHover = World.GetObjectIDAtScreenTap(pointer, GameFacade.GraphicsDevice);
 
                 // Eyedropper mode - pick object GUID or architecture pattern
                 // Priority: Objects (doors/windows in walls) → Walls → Floors
@@ -451,8 +464,7 @@ namespace Simitone.Client.UI.Panels
                     // Check for floor tiles (architecture without GUIDs)
                     if (!handled)
                     {
-                        var tilePos = World.EstTileAtPosWithScroll(
-                            World.ScreenToWorldPx(new Vector2(state.MouseState.X, state.MouseState.Y)));
+                        var tilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(pointer.ToVector2()));
                         var tileX = (short)Math.Floor(tilePos.X);
                         var tileY = (short)Math.Floor(tilePos.Y);
                         var level = World.State.Level;
@@ -485,7 +497,7 @@ namespace Simitone.Client.UI.Panels
                         if (UseNet) RecursiveHide(Holding.RealEnt);
                         Holding.CanDelete = canDelete;
                         Holding.MoveTarget = newHover;
-                        var estBase = state.MouseState.Position; //FSOEnvironment.SoftwareKeyboard ? new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2) : state.MouseState.Position;
+                        var estBase = pointer; //FSOEnvironment.SoftwareKeyboard ? new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2) : state.MouseState.Position;
                         Holding.TilePosOffset = new Vector2(objBasePos.x / 16f, objBasePos.y / 16f) - World.EstTileAtPosWithScroll(World.ScreenToWorldPx(new Vector2(estBase.X, estBase.Y)));
                         if (OnPickup != null) OnPickup(Holding, state);
                         //ExecuteEntryPoint(12); //User Pickup
