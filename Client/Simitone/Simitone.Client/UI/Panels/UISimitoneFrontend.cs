@@ -377,6 +377,9 @@ namespace Simitone.Client.UI.Panels
             CutBtn.Visible = !dual;
             ModeSwitcher.Visible = !dual || MainPanel.ShowingSelect; //(the pad's mode menu, held Select, is its fan)
             if (!dual) return;
+            // shown even while closed: the object info and picked-up object panels it holds show for the second
+            // screen's catalog too (a closed panel draws nothing else)
+            MainPanel.Visible = true;
             Money.Visible = false;
             ExtendPanelBtn.Visible = false;
             if (CutPanel != null)

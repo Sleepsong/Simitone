@@ -28,6 +28,15 @@ namespace Simitone.Client.UI.Controls
         public bool VerticalMode;
 
         /// <summary>
+        /// Horizontal lists: items in this many rows (a column at a time, top to bottom), sharing the height. One by
+        /// default, as the catalog strip has; the second screen's catalog has room for two.
+        /// </summary>
+        public int Rows = 1;
+        private int RowsUsed => VerticalMode ? 1 : Math.Max(1, Rows);
+        private float RowHeight => Size.Y / RowsUsed;
+        private int Columns(int length) => (length + RowsUsed - 1) / RowsUsed;
+
+        /// <summary>
         /// Gamepad: directions move a highlight over the items without selecting them, and Confirm selects the
         /// highlighted one. For lists where selecting does something costly or irreversible, like the catalog (it
         /// creates the object). Otherwise directions select as they move.
@@ -120,7 +129,9 @@ namespace Simitone.Client.UI.Controls
 
         public void Select(Point at)
         {
-            var item = (int)(GetPAxis(at) + Scroll) / ItemWidth;
+            var column = (int)(GetPAxis(at) + Scroll) / ItemWidth;
+            var row = (RowsUsed > 1) ? Math.Max(0, Math.Min(RowsUsed - 1, (int)(at.Y / RowHeight))) : 0;
+            var item = column * RowsUsed + row;
             if (item >= LengthProvider()) return;
             var rItem = GetOrPrepare(item);
             if (rItem != null)
@@ -185,24 +196,34 @@ namespace Simitone.Client.UI.Controls
 
             Scroll += ScrollVelocity;
             ScrollVelocity *= 0.9f;
-            Scroll = Math.Max(-Margin, Math.Min(length * ItemWidth - GetPAxis(Size) + Margin, Scroll));
+            Scroll = Math.Max(-Margin, Math.Min(Columns(length) * ItemWidth - GetPAxis(Size) + Margin, Scroll));
 
             //update children positions.
             //delete ones that are not 
 
             var untouched = new HashSet<UIElement>(Children);
 
+            var rows = RowsUsed;
             var b = (int)(Scroll / ItemWidth);
             var e = b + (GetPAxis(Size) + (ItemWidth - 1)) / ItemWidth;
-            for (int i=b; i<e; i++)
+            for (int c=b; c<e; c++)
             {
-                if (i < 0) continue;
-                if (i >= length) break;
-                var item = GetOrPrepare(i);
-                untouched.Remove(item);
-                if (VerticalMode) item.Y = i * ItemWidth - Scroll;
-                else item.X = i * ItemWidth - Scroll;
-                item.Visible = true;
+                if (c < 0) continue;
+                if (c * rows >= length) break;
+                for (int r = 0; r < rows; r++)
+                {
+                    var i = c * rows + r;
+                    if (i >= length) break;
+                    var item = GetOrPrepare(i);
+                    untouched.Remove(item);
+                    if (VerticalMode) item.Y = i * ItemWidth - Scroll;
+                    else
+                    {
+                        item.X = c * ItemWidth - Scroll;
+                        if (rows > 1) item.Y = r * RowHeight;
+                    }
+                    item.Visible = true;
+                }
             }
 
             foreach (var child in untouched)
@@ -220,11 +241,11 @@ namespace Simitone.Client.UI.Controls
 
         public void ScrollToItem(int itemIndex)
         {
-            // Center the item in the visible area
-            var targetScroll = itemIndex * ItemWidth - (GetPAxis(Size) / 2) + (ItemWidth / 2);
+            // Center the item (its column) in the visible area
+            var targetScroll = (itemIndex / RowsUsed) * ItemWidth - (GetPAxis(Size) / 2) + (ItemWidth / 2);
             // Clamp to valid scroll range
             var length = LengthProvider();
-            Scroll = Math.Max(-Margin, Math.Min(length * ItemWidth - GetPAxis(Size) + Margin, targetScroll));
+            Scroll = Math.Max(-Margin, Math.Min(Columns(length) * ItemWidth - GetPAxis(Size) + Margin, targetScroll));
             ScrollVelocity = 0; // Stop any ongoing momentum
         }
 
@@ -268,8 +289,10 @@ namespace Simitone.Client.UI.Controls
         /// The highlighted item (in <see cref="PadHighlightOnly"/> mode) or the selected one (else the first, which
         /// Confirm would select), clipped to the list; the whole list if it's out of view.
         /// </summary>
-        public Rectangle PadBounds =>
-            PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
+        public Rectangle PadBounds => (RowsUsed > 1)
+            ? Rectangle.Intersect(new Rectangle((int)((HighlightedIndex() / RowsUsed) * ItemWidth - Scroll),
+                (int)((HighlightedIndex() % RowsUsed) * RowHeight), ItemWidth, (int)RowHeight), new Rectangle(0, 0, (int)Size.X, (int)Size.Y))
+            : PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
 
         /// <summary>The item the highlight is on: where the pad left it, else the selected item, else the first.</summary>
         private int HighlightedIndex()

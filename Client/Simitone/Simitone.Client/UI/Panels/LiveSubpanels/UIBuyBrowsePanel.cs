@@ -826,7 +826,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
         public void InitCategory(sbyte category, bool build)
         {
             //start by populating with entries from the catalog
-            if (!build) ((UIMainPanel)Parent)?.Switcher?.MainButton?.RestoreImage();
+            if (!build) (Parent as UIMainPanel)?.Switcher?.MainButton?.RestoreImage();
             var catalog = Content.Get().WorldCatalog;
 
             var items = catalog.GetItemsByCategory(category);
@@ -914,7 +914,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
                 label.Caption = str;
                 label.Alignment = TextAlignment.Middle | TextAlignment.Center;
                 label.Wrapped = true;
-                label.Position = new Vector2(boff * (1.5f+i*2) - (120/2), 106);
+                label.Position = new Vector2(boff * (1.5f+i*2) - (120/2), SubcatTop + 106);
                 label.Size = new Vector2(120, 1);
                 label.CaptionStyle = label.CaptionStyle.Clone();
                 label.CaptionStyle.Size = 12;
@@ -942,7 +942,7 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
 
                 var subbutton = new UICatButton(Content.Get().CustomUI.Get("cat_"+name+".png").Get(GameFacade.GraphicsDevice));
                 subbutton.OnButtonClick += (btn) => { InitSubcategory(cat); };
-                subbutton.Position = new Vector2(boff * (1.5f + i * 2) - (65 / 2), 16);
+                subbutton.Position = new Vector2(boff * (1.5f + i * 2) - (65 / 2), SubcatTop + 16);
                 subbutton.Disabled = SubcatIsEmpty(cat);
                 SelButtons.Add(subbutton);
                 Add(subbutton);
@@ -1138,10 +1138,31 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
             });
         }
 
+        /// <summary>
+        /// Width and rows when it isn't in the main panel (the second screen's catalog), instead of the main screen's
+        /// width and one row.
+        /// </summary>
+        private float? HostWidth;
+        private int HostRows = 1;
+
+        /// <summary>Hosts the catalog outside the main panel: this wide, with the items in this many rows.</summary>
+        public void SetHost(float width, int rows)
+        {
+            HostWidth = width;
+            HostRows = Math.Max(1, rows);
+            GameResized();
+            InitCategory(Category, false); //(the subcategory buttons are spread over the width)
+        }
+
+        /// <summary>Where the subcategory buttons go: centred in the panel's height.</summary>
+        private float SubcatTop => (Size.Y - 128) / 2;
+
         public override void GameResized()
         {
             base.GameResized();
-            CatContainer.Size = new Vector2(Size.X, 128);
+            if (HostWidth != null) Size = new Vector2(HostWidth.Value, 128 * HostRows);
+            CatContainer.Rows = HostRows;
+            CatContainer.Size = new Vector2(Size.X, 128 * HostRows);
             if (NoResultsLabel != null)
                 NoResultsLabel.Size = new Vector2(Size.X, 25);
             if (ChoosingSub) Reset();
@@ -1256,8 +1277,9 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
             var index = cat.MaskBit;
             if (!ChoosingSub) return;
             ChoosingSub = false;
-            ((UIMainPanel)Parent).Switcher.Close();
-            ((UIMainPanel)Parent).Switcher.MainButton.ReplaceImage(Content.Get().CustomUI.Get("cat_" + cat.IconName + ".png").Get(GameFacade.GraphicsDevice));
+            //(in the main panel; the second screen's catalog shows its categories itself)
+            (Parent as UIMainPanel)?.Switcher.Close();
+            (Parent as UIMainPanel)?.Switcher.MainButton.ReplaceImage(Content.Get().CustomUI.Get("cat_" + cat.IconName + ".png").Get(GameFacade.GraphicsDevice));
 
             foreach (var btn in SelButtons)
             {

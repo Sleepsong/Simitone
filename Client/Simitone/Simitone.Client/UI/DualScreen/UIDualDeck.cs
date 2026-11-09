@@ -21,15 +21,18 @@ namespace Simitone.Client.UI.DualScreen
 {
     /// <summary>
     /// A lot's controls on the second screen, so the main screen only shows the lot:
-    /// - the money, the cutaway button and the clock (tap the clock for the speed buttons), along the top;
+    /// - the money, the floor (up and down), the cutaway button and the clock (tap the clock for the speed buttons),
+    ///   along the top;
+    /// In live (and options) mode:
     /// - the family: tap a Sim to control them (the one you control is outlined);
     /// - the controlled Sim's needs, in the game's two columns;
     /// - the controlled Sim's actions (tap one to cancel it, as on the main screen, which hides its own queue unless the
     ///   controller is using it);
-    /// - Live, Buy, Build and Options. Buy, Build and Options open their panel on the main screen (as its mode
-    ///   button does); tapping the lit one again closes it and goes back to Live. From those, Live goes back to live
-    ///   mode; in live mode it opens or closes the Sim's panels (needs, relationships, job, personality, inventory)
-    ///   on the main screen.
+    /// In buy and build mode, the catalog instead (<see cref="UIDualCatalog"/>).
+    /// - Live, Buy, Build and Options, along the bottom. Buy and Build show their catalog here; Options opens its panel
+    ///   on the main screen (as its mode button does). Tapping the lit one again goes back to Live. From those, Live
+    ///   goes back to live mode; in live mode it opens or closes the Sim's panels (needs, relationships, job,
+    ///   personality, inventory) on the main screen.
     /// The main screen hides its own copies of these while the second screen shows them (UISimitoneFrontend).
     /// </summary>
     public class UIDualDeck : UIContainer
@@ -38,6 +41,12 @@ namespace Simitone.Client.UI.DualScreen
         private readonly float W, H;
 
         private UIClockPanel Clock;
+        private UIStencilButton FloorUp, FloorDown;
+        private UILabel FloorLabel;
+        private int LastFloor = -1;
+        /// <summary>Live mode's part (family, needs, actions); hidden while the catalog shows.</summary>
+        private UIContainer LiveGroup = new UIContainer();
+        private UIDualCatalog Catalog;
         private UIMoneyPanel Money;
         private UITwoStateButton CutBtn;
         private int LastCut = -1;
@@ -79,10 +88,30 @@ namespace Simitone.Client.UI.DualScreen
             CutBtn.OnButtonClick += (b) => NextCutaway();
             Add(CutBtn);
 
+            // the floor (as the main screen's panel has it): down, the floor's name, up
+            FloorDown = new UIStencilButton(ui.Get("level_down.png").Get(gd));
+            FloorDown.Position = new Vector2(152, 15);
+            FloorDown.OnButtonClick += (b) => { if (Game.Level > 1) Game.Level--; };
+            Add(FloorDown);
+            FloorLabel = new UILabel();
+            FloorLabel.CaptionStyle = FloorLabel.CaptionStyle.Clone();
+            FloorLabel.CaptionStyle.Size = 15;
+            FloorLabel.CaptionStyle.Color = UIStyle.Current.Text;
+            FloorLabel.Alignment = TextAlignment.Middle | TextAlignment.Center;
+            FloorLabel.Position = new Vector2(203, 30);
+            FloorLabel.Size = new Vector2(44, 20);
+            Add(FloorLabel);
+            FloorUp = new UIStencilButton(ui.Get("level_up.png").Get(gd));
+            FloorUp.Position = new Vector2(247, 15);
+            FloorUp.OnButtonClick += (b) => { if (Game.Level < 5) Game.Level++; };
+            Add(FloorUp);
+
             Clock = new UIClockPanel(game.vm);
             Clock.X = W - (334 + 15);
             Clock.Y = 15;
             Add(Clock);
+
+            Add(LiveGroup);
 
             // --- needs: two columns of four (hunger, comfort, hygiene, bladder | energy, fun, social, room)
             var colWidth = (W - 45) / 2;
@@ -99,12 +128,12 @@ namespace Simitone.Client.UI.DualScreen
                 label.Size = new Vector2(1);
                 label.Position = new Vector2(x + 2, y);
                 label.Caption = GameFacade.Strings.GetString("f102", (i + 1).ToString());
-                Add(label);
+                LiveGroup.Add(label);
 
                 var bar = new UIMotiveBar();
                 bar.Width = (int)colWidth;
                 bar.Position = new Vector2(x, y + 6);
-                Add(bar);
+                LiveGroup.Add(bar);
                 Motives[i] = bar;
             }
 
@@ -113,7 +142,7 @@ namespace Simitone.Client.UI.DualScreen
             Queue = new UIInteractionQueue(game.LotControl?.ActiveEntity, game.vm);
             Queue.ScaleX = Queue.ScaleY = QueueScale;
             Queue.Position = new Vector2(15, 404 - 73 * QueueScale);
-            Add(Queue);
+            LiveGroup.Add(Queue);
 
             // --- modes, along the bottom
             for (int i = 0; i < 4; i++)
@@ -138,8 +167,55 @@ namespace Simitone.Client.UI.DualScreen
             var owner = Game.LotControl?.ActiveEntity;
             if (Queue.QueueOwner != owner) Queue.QueueOwner = owner;
             UpdateCutaway();
+            UpdateFloor();
+            UpdateCatalog();
             UpdateTabs();
             base.Update(state);
+        }
+
+        // ---- floor
+
+        private void UpdateFloor()
+        {
+            var level = Game.Level;
+            if (level != LastFloor)
+            {
+                LastFloor = level;
+                var names = Game.Frontend?.MainPanel?.FloorNames;
+                FloorLabel.Caption = (names != null && level >= 1 && level <= names.Length) ? names[level - 1] : level.ToString();
+                FloorDown.Disabled = level <= 1;
+                FloorUp.Disabled = level >= 5;
+            }
+            // (the clock's speed buttons, while it shows them, reach over here)
+            var show = Clock.TweenHook == 0;
+            FloorDown.Visible = FloorUp.Visible = FloorLabel.Visible = show;
+        }
+
+        // ---- buy and build: the catalog in place of live mode's part
+
+        private void UpdateCatalog()
+        {
+            var mode = Game.Frontend?.MainPanel?.Mode ?? UIMainPanelMode.LIVE;
+            var catalogMode = mode == UIMainPanelMode.BUY || mode == UIMainPanelMode.BUILD;
+            if (Catalog != null && (!catalogMode || Catalog.Mode != mode))
+            {
+                Catalog.Destroy();
+                Catalog = null;
+            }
+            if (catalogMode && Catalog == null)
+            {
+                Catalog = new UIDualCatalog(Game, mode, W, 70);
+                Add(Catalog);
+            }
+            LiveGroup.Visible = !catalogMode;
+        }
+
+        /// <summary>The second screen leaves the lot: its catalog lets go of what it picked.</summary>
+        public override void Removed()
+        {
+            Catalog?.Destroy();
+            Catalog = null;
+            base.Removed();
         }
 
         // ---- family
@@ -161,7 +237,7 @@ namespace Simitone.Client.UI.DualScreen
             if (key != FamilyKey)
             {
                 FamilyKey = key;
-                foreach (var old in Family) Remove(old.Item2);
+                foreach (var old in Family) LiveGroup.Remove(old.Item2);
                 Family.Clear();
                 var spacing = Math.Min(100f, (W - 30) / Math.Max(1, members.Count));
                 var start = W / 2 - spacing * (members.Count - 1) / 2;
@@ -173,7 +249,7 @@ namespace Simitone.Client.UI.DualScreen
                     btn.Name = sim.Name;
                     btn.Position = new Vector2(start + spacing * (i++), 112);
                     btn.OnButtonClick += (b) => SelectSim(id);
-                    Add(btn);
+                    LiveGroup.Add(btn);
                     Family.Add(Tuple.Create(id, btn));
                 }
             }
@@ -271,6 +347,13 @@ namespace Simitone.Client.UI.DualScreen
                 // Live from buy, build or options: back to live mode, the main screen showing just the lot
                 panel.SetMode(UIMainPanelMode.LIVE);
                 if (panel.PanelActive) panel.Close();
+            }
+            else if (mode == UIMainPanelMode.BUY || mode == UIMainPanelMode.BUILD)
+            {
+                // their catalog is on this screen: the lit one again goes back to live mode
+                var back = panel.Mode == mode;
+                if (panel.PanelActive) panel.Close();
+                panel.SetMode(back ? UIMainPanelMode.LIVE : mode);
             }
             else
             {

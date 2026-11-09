@@ -91,7 +91,7 @@ namespace Simitone.Client.UI.Panels
         };
 
 
-        private List<UICategory> BuyCategories = new List<UICategory>()
+        public List<UICategory> BuyCategories = new List<UICategory>()
         {
             new UICategory() { ID = 0, IconName = "cat_seat.png", Name = "Seating" },
             new UICategory() { ID = 1, IconName = "cat_surf.png", Name = "Surfaces" },
@@ -103,7 +103,7 @@ namespace Simitone.Client.UI.Panels
             new UICategory() { ID = 7, IconName = "cat_ligt.png", Name = "Lighting" },
         };
 
-        private List<UICategory> BuildCategories = new List<UICategory>()
+        public List<UICategory> BuildCategories = new List<UICategory>()
         {
             new UICategory() { ID = 0, IconName = "cat_build_arch.png", Name = "Walls, floors and roofs" },
             new UICategory() { ID = 1, IconName = "cat_build_outs.png", Name = "Outdoors" },
@@ -333,7 +333,8 @@ namespace Simitone.Client.UI.Panels
         {
             //used to hide subpanels to make way for the PickupPanel
             if (SubPanel != null) GameFacade.Screens.Tween.To(SubPanel, 0.3f, new Dictionary<string, float>() { { "Opacity", opacity } }, TweenQuad.EaseOut);
-            GameFacade.Screens.Tween.To(Switcher.MainButton, 0.3f, new Dictionary<string, float>() { { "Opacity", opacity } }, TweenQuad.EaseOut);
+            //(a closed panel keeps its category button hidden: the second screen's catalog uses this too)
+            if (PanelActive || opacity < 1) GameFacade.Screens.Tween.To(Switcher.MainButton, 0.3f, new Dictionary<string, float>() { { "Opacity", opacity } }, TweenQuad.EaseOut);
             GameFacade.Screens.Tween.To(Game.LotControl.PickupPanel, 0.3f, new Dictionary<string, float>() { { "Opacity", 1-opacity } }, TweenQuad.EaseOut);
             if (opacity == 0) Switcher.Close();
         }
