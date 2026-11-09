@@ -260,7 +260,8 @@ namespace Simitone.Android
                     $"update avg {(Updates > 0 ? UpdateSum / Updates : 0):0.0} max {UpdateMax:0} ({Updates} updates) | draw avg {DrawSum / Frames:0.0} max {DrawMax:0} | " +
                     $"slow frames {Slow} (>33 ms), {VerySlow} (>100 ms) | GC {g0 - Gen0}/{g1 - Gen1}/{g2 - Gen2} | heap {GC.GetTotalMemory(false) / (1024 * 1024)} MB" +
                     $" | 2D redraws {FSO.LotView.WorldStatic.Redraws - LastRedraws}" +
-                    ((FSO.LotView.WorldStatic.Redraws != LastRedraws) ? $" ({FSO.LotView.BlueprintChanges.TakeStaticReasons()})" : ""));
+                    ((FSO.LotView.WorldStatic.Redraws != LastRedraws) ? $" ({FSO.LotView.BlueprintChanges.TakeStaticReasons()})" : "") +
+                    ((FSO.Files.RC.DGRP3DMesh.Building > 0) ? $" | 3D meshes building {FSO.Files.RC.DGRP3DMesh.Building}" : ""));
                 LastRedraws = FSO.LotView.WorldStatic.Redraws;
                 var texLoads = FSO.Content.Model.AbstractTextureRef.Loads;
                 var texMs = FSO.Content.Model.AbstractTextureRef.LoadTicks * 1000 / Stopwatch.Frequency;

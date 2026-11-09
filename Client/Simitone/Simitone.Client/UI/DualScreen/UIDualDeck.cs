@@ -24,6 +24,8 @@ namespace Simitone.Client.UI.DualScreen
     /// - the money, the cutaway button and the clock (tap the clock for the speed buttons), along the top;
     /// - the family: tap a Sim to control them (the one you control is outlined);
     /// - the controlled Sim's needs, in the game's two columns;
+    /// - the controlled Sim's actions (tap one to cancel it, as on the main screen, which hides its own queue unless the
+    ///   controller is using it);
     /// - Live, Buy, Build and Options. Buy, Build and Options open their panel on the main screen (as its mode
     ///   button does); tapping the lit one again closes it and goes back to Live. Live opens or closes the Sim's
     ///   panels (needs, relationships, job, personality, inventory) on the main screen.
@@ -44,6 +46,7 @@ namespace Simitone.Client.UI.DualScreen
         private string FamilyKey;
 
         private readonly UIMotiveBar[] Motives = new UIMotiveBar[8];
+        private UIInteractionQueue Queue;
         private static readonly VMMotive[] MotiveOrder =
         {
             VMMotive.Hunger, VMMotive.Comfort, VMMotive.Hygiene, VMMotive.Bladder,
@@ -103,6 +106,11 @@ namespace Simitone.Client.UI.DualScreen
                 Motives[i] = bar;
             }
 
+            // --- the controlled Sim's actions, under the needs (the running one large, on the left)
+            Queue = new UIInteractionQueue(game.LotControl?.ActiveEntity, game.vm);
+            Queue.Position = new Vector2(20, 395);
+            Add(Queue);
+
             // --- modes, along the bottom
             for (int i = 0; i < 4; i++)
             {
@@ -123,6 +131,8 @@ namespace Simitone.Client.UI.DualScreen
         {
             UpdateFamily();
             UpdateMotives();
+            var owner = Game.LotControl?.ActiveEntity;
+            if (Queue.QueueOwner != owner) Queue.QueueOwner = owner;
             UpdateCutaway();
             UpdateTabs();
             base.Update(state);

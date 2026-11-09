@@ -148,6 +148,9 @@ namespace Simitone.Client
             FSO.Content.Content.Target = FSO.Content.FSOEngineMode.TS1;
             FSO.Content.Content.TS1HybridBasePath = GlobalSettings.Default.TS1HybridPath;
             if (FSOEnvironment.Enable3D) FSO.Files.RC.DGRP3DMesh.InitRCWorkers();
+            //3D objects that needed help to be made, and remesh files that couldn't be used: one line each, to the log
+            FSO.Files.RC.DGRP3DMesh.Note = Console.WriteLine;
+            FSO.Content.RCMeshProvider.Note = (msg) => Console.WriteLine("[meshreplace] " + msg);
             //FSO.Content.Content.Init(GlobalSettings.Default.StartupPath, GraphicsDevice);
             FSO.SimAntics.VMAvatar.MissingIconProvider = Simitone.Client.UI.Model.UIIconCache.GetObject;
             

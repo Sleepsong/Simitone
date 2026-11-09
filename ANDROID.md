@@ -30,6 +30,17 @@ The log says which 2D method is in use: `2D depth: one pass (framebuffer fetch)`
 On devices with a second screen, such as the AYN Thor, the lot's controls go on the second screen and the
 Graphics tab also shows **Second Screen**. See [DUAL_SCREEN.md](DUAL_SCREEN.md).
 
+### Remesh packs (3D)
+
+Put a remesh pack's files (the `.fsom` meshes and their `_TEX_` textures) straight into
+**Download/Simitone/MeshReplace**, not in a subfolder. File names can be in any case. They're used in 3D. If a mesh's
+textures are missing, the object keeps its own look. Problems go to `simitone.log` on lines starting `[meshreplace]`.
+Objects whose own 3D shape needed help (sprites without depth, drawn as flat cards) are noted on lines starting
+`[3d]`. While objects are still being made into 3D, the perf lines end with `3D meshes building N`.
+
+On phones, the depth masks remesh packs give windows, fireplaces and sinks are drawn without `gl_FragDepth`, which
+phone shaders don't have. They write the far depth through the projection instead.
+
 ## Building
 
 You need:

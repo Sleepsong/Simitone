@@ -14,10 +14,13 @@ This is the first version. It needs testing on a Thor, and `simitone.log` says w
      the cutaway button goes to the next wall view: cut away, walls up, roof, walls down.
    - the family. Tap a Sim to control them; the one you control is outlined.
    - the controlled Sim's needs, in two columns as in the original game.
+   - the controlled Sim's actions, under the needs: the running one large, then the queued ones. Tap one to cancel
+     it. The top screen only shows its own copy while the controller is using it (Y).
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy, Build and Options open their panel on the
      top screen, as the mode button does on a phone. Tap the lit one again to close it and go back to Live. Live
      opens or closes the Sim's panels (needs, relationships, job, personality, inventory) on the top screen.
-3. The top screen leaves out its own clock, money, cutaway and mode buttons while the bottom screen shows them.
+3. The top screen leaves out its own clock, money, cutaway, mode buttons and action queue while the bottom screen
+   shows them.
    Pie menus, dialogs and the keyboard stay on the top screen.
 4. The Thor's built-in controls work the lot on the top screen, as with any controller (the controller port,
    `claude/intelligent-cray-f9z43d`, is merged in; its controls are listed in `UILotControlPadHelper`). What they

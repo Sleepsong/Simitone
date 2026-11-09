@@ -360,6 +360,9 @@ namespace Simitone.Client.UI.Panels
         private void HideForSecondScreen()
         {
             var dual = DualScreen.SecondScreen.Active;
+            // the action queue is on the second screen too; here only while the controller is using it (Y)
+            var queue = Game.LotControl?.Queue;
+            if (queue != null) queue.Visible = !dual || queue.HasPadFocus;
             Clock.Visible = !dual;
             CutBtn.Visible = !dual;
             ModeSwitcher.Visible = !dual || MainPanel.ShowingSelect; //(the pad's mode menu, held Select, is its fan)
