@@ -1,4 +1,4 @@
-using FSO.Client;
+﻿using FSO.Client;
 using FSO.Client.UI.Controls;
 using FSO.Client.UI.Framework;
 using FSO.Common;
@@ -142,6 +142,13 @@ namespace Simitone.Client.UI.Panels
                 () => new List<Tuple<string, int>>() { Tuple.Create("Fast", 1), Tuple.Create("Compatible", 0) },
                 () => settings.FastDepth2D ? 1 : 0,
                 (v) => settings.FastDepth2D = v == 1);
+
+            // devices with a second screen (the AYN Thor's bottom screen): the lot's controls go there, or stay here
+            if (DualScreen.SecondScreen.Host != null)
+            AddRow(0, "Second Screen",
+                () => new List<Tuple<string, int>>() { Tuple.Create("Controls", 1), Tuple.Create("Off", 0) },
+                () => settings.DualScreen ? 1 : 0,
+                (v) => settings.DualScreen = v == 1);
 
             if (!Mobile)
             AddRow(0, "Display",

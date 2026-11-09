@@ -27,6 +27,9 @@ On phones the Graphics tab shows:
 
 The log says which 2D method is in use: `2D depth: one pass (framebuffer fetch)`, or `two passes (reason)`.
 
+On devices with a second screen, such as the AYN Thor, the lot's controls go on the second screen and the
+Graphics tab also shows **Second Screen**. See [DUAL_SCREEN.md](DUAL_SCREEN.md).
+
 ## Building
 
 You need:

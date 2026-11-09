@@ -279,6 +279,28 @@ namespace Simitone.Client.UI.Panels
                 }
                 ModeSwitcher.LiveButton.Switching = MainPanel.ShowingSelect;
                 ExtendPanelBtn.Visible = !MainPanel.PanelActive;
+                HideForSecondScreen();
+            }
+        }
+
+        /// <summary>
+        /// With a second screen (the AYN Thor's bottom screen), the clock, money, cutaway and mode buttons are there
+        /// (UIDualDeck), so the main screen leaves them out and only shows the lot (and the panels opened from there).
+        /// </summary>
+        private void HideForSecondScreen()
+        {
+            var dual = DualScreen.SecondScreen.Active;
+            Clock.Visible = !dual;
+            CutBtn.Visible = !dual;
+            ModeSwitcher.Visible = !dual;
+            if (!dual) return;
+            Money.Visible = false;
+            ExtendPanelBtn.Visible = false;
+            if (CutPanel != null)
+            {
+                CutBtn.Selected = false;
+                CutPanel.Kill();
+                CutPanel = null;
             }
         }
 

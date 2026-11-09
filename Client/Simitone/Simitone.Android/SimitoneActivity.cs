@@ -1,4 +1,4 @@
-using Android;
+﻿using Android;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -41,6 +41,7 @@ namespace Simitone.Android
         public static string MediaLogPath;
         private static readonly object LogLock = new object();
         private SimitoneGame Game;
+        private SecondScreenHost SecondScreen; //(a second display, such as the AYN Thor's bottom screen)
         private TextView Status;
         private string AppFolder; //Android/data/<package>/files: always writable, but not reachable without root
         private string Downloads; //the phone's Download folder
@@ -190,6 +191,13 @@ namespace Simitone.Android
             base.OnResume();
             Log("resumed");
             RestartIfAccessGranted();
+            SecondScreen?.OnActivityResumed();
+        }
+
+        protected override void OnStop()
+        {
+            SecondScreen?.OnActivityStopped();
+            base.OnStop();
         }
 
         protected override void OnPause()
@@ -419,6 +427,10 @@ namespace Simitone.Android
                 Log("starting the game");
                 Game = new AndroidSimitoneGame();
                 Game.Components.Add(new FrameLogger(Game));
+                SecondScreen = new SecondScreenHost(this, userDir);
+                Simitone.Client.UI.DualScreen.SecondScreen.Host = SecondScreen;
+                Simitone.Client.UI.DualScreen.SecondScreen.Note = Log;
+                SecondScreen.Start();
                 SetContentView((View)Game.Services.GetService(typeof(View)));
                 Game.Run();
                 Log("game running");

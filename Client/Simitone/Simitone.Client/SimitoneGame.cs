@@ -417,6 +417,7 @@ namespace Simitone.Client
         {
             CountFrame();
             base.Draw(gameTime);
+            UI.DualScreen.SecondScreen.Present(); //(a second screen's new image, if it has one)
             TestMode.AfterDraw(GraphicsDevice);
         }
 
@@ -479,6 +480,7 @@ namespace Simitone.Client
                 GameController.EnterLoading();
             }
             GameThread.UpdateExecuting = true;
+            UI.DualScreen.SecondScreen.Update(); //(before the UI: a second screen's panel and touches)
 
             if (HITVM.Get() != null) HITVM.Get().Tick();
 
