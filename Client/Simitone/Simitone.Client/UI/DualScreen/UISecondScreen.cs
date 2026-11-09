@@ -32,6 +32,8 @@ namespace Simitone.Client.UI.DualScreen
         private int UpdatesSinceDraw;
 
         private bool TouchDown, Touched;
+        /// <summary>Updates left before a new touch presses: the UI only presses what the pointer is already over.</summary>
+        private int PressDelay;
         private Point TouchPos;
         private int ReleasedUpdates = 10;
         private static readonly MouseState Away = new MouseState(-10000, -10000, 0, ButtonState.Released, ButtonState.Released,
@@ -114,33 +116,42 @@ namespace Simitone.Client.UI.DualScreen
         }
 
         /// <summary>
-        /// The platform's touches become this screen's mouse. One press or release per update, so a quick tap
-        /// (down and up between two frames) still clicks. After a release the mouse leaves the screen, so nothing
-        /// stays highlighted.
+        /// The platform's touches become this screen's mouse:
+        /// - a new touch first only moves the mouse there, for one update, and presses on the next: the UI presses
+        ///   what the mouse was over the update before, and a finger, unlike a mouse, arrives without hovering first
+        ///   (the main screen gives each new finger the same update's wait);
+        /// - one press or release per update, so a quick tap (down and up between two frames) still clicks;
+        /// - after a release the mouse leaves the screen, so nothing stays highlighted.
         /// </summary>
         private void PollTouches()
         {
             var host = SecondScreen.Host;
             if (host == null) return;
-            var count = 0;
-            while (host.NextTouch(out var x, out var y, out var down))
+            if (PressDelay > 0) PressDelay--; //(the press happens now; the next touch event waits for the next update)
+            else
             {
-                TouchPos = new Point(x, y);
-                Touched = true;
-                if (down != TouchDown)
+                var count = 0;
+                while (host.NextTouch(out var x, out var y, out var down))
                 {
-                    TouchDown = down;
-                    if (!down) ReleasedUpdates = 0;
-                    break;
+                    TouchPos = new Point(x, y);
+                    Touched = true;
+                    if (down != TouchDown)
+                    {
+                        TouchDown = down;
+                        if (down) PressDelay = 1;
+                        else ReleasedUpdates = 0;
+                        break;
+                    }
+                    if (++count > 64) break;
                 }
-                if (++count > 64) break;
             }
             if (TouchDown) ReleasedUpdates = 0;
             else ReleasedUpdates++;
 
             if (TouchDown || ReleasedUpdates <= 1)
             {
-                mouse = new MouseState(TouchPos.X, TouchPos.Y, 0, TouchDown ? ButtonState.Pressed : ButtonState.Released,
+                var pressed = TouchDown && PressDelay == 0;
+                mouse = new MouseState(TouchPos.X, TouchPos.Y, 0, pressed ? ButtonState.Pressed : ButtonState.Released,
                     ButtonState.Released, ButtonState.Released, ButtonState.Released, ButtonState.Released);
             }
             else mouse = Away;

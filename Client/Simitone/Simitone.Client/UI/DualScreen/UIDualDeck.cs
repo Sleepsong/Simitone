@@ -27,8 +27,9 @@ namespace Simitone.Client.UI.DualScreen
     /// - the controlled Sim's actions (tap one to cancel it, as on the main screen, which hides its own queue unless the
     ///   controller is using it);
     /// - Live, Buy, Build and Options. Buy, Build and Options open their panel on the main screen (as its mode
-    ///   button does); tapping the lit one again closes it and goes back to Live. Live opens or closes the Sim's
-    ///   panels (needs, relationships, job, personality, inventory) on the main screen.
+    ///   button does); tapping the lit one again closes it and goes back to Live. From those, Live goes back to live
+    ///   mode; in live mode it opens or closes the Sim's panels (needs, relationships, job, personality, inventory)
+    ///   on the main screen.
     /// The main screen hides its own copies of these while the second screen shows them (UISimitoneFrontend).
     /// </summary>
     public class UIDualDeck : UIContainer
@@ -47,6 +48,7 @@ namespace Simitone.Client.UI.DualScreen
 
         private readonly UIMotiveBar[] Motives = new UIMotiveBar[8];
         private UIInteractionQueue Queue;
+        private const float QueueScale = 0.75f;
         private static readonly VMMotive[] MotiveOrder =
         {
             VMMotive.Hunger, VMMotive.Comfort, VMMotive.Hygiene, VMMotive.Bladder,
@@ -87,7 +89,7 @@ namespace Simitone.Client.UI.DualScreen
             for (int i = 0; i < 8; i++)
             {
                 var x = 15 + (i / 4) * (colWidth + 15);
-                var y = 214 + (i % 4) * 50;
+                var y = 196 + (i % 4) * 44;
 
                 var label = new UILabel();
                 label.CaptionStyle = label.CaptionStyle.Clone();
@@ -106,9 +108,11 @@ namespace Simitone.Client.UI.DualScreen
                 Motives[i] = bar;
             }
 
-            // --- the controlled Sim's actions, under the needs (the running one large, on the left)
+            // --- the controlled Sim's actions, under the needs (the running one large, on the left), at 3/4 size to fit
+            // between the needs and the modes: the running one's ring is 106 across, centred 73 in
             Queue = new UIInteractionQueue(game.LotControl?.ActiveEntity, game.vm);
-            Queue.Position = new Vector2(20, 395);
+            Queue.ScaleX = Queue.ScaleY = QueueScale;
+            Queue.Position = new Vector2(15, 404 - 73 * QueueScale);
             Add(Queue);
 
             // --- modes, along the bottom
@@ -167,7 +171,7 @@ namespace Simitone.Client.UI.DualScreen
                     var id = sim.ObjectID;
                     var btn = new UIAvatarSelectButton(UIIconCache.GetObject(sim));
                     btn.Name = sim.Name;
-                    btn.Position = new Vector2(start + spacing * (i++), 118);
+                    btn.Position = new Vector2(start + spacing * (i++), 112);
                     btn.OnButtonClick += (b) => SelectSim(id);
                     Add(btn);
                     Family.Add(Tuple.Create(id, btn));
@@ -261,6 +265,12 @@ namespace Simitone.Client.UI.DualScreen
                 // the lit one again: close it, back to Live
                 panel.Close();
                 if (mode != UIMainPanelMode.LIVE) panel.SetMode(UIMainPanelMode.LIVE);
+            }
+            else if (mode == UIMainPanelMode.LIVE && panel.Mode != UIMainPanelMode.LIVE)
+            {
+                // Live from buy, build or options: back to live mode, the main screen showing just the lot
+                panel.SetMode(UIMainPanelMode.LIVE);
+                if (panel.PanelActive) panel.Close();
             }
             else
             {

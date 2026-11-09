@@ -17,8 +17,10 @@ This is the first version. It needs testing on a Thor, and `simitone.log` says w
    - the controlled Sim's actions, under the needs: the running one large, then the queued ones. Tap one to cancel
      it. The top screen only shows its own copy while the controller is using it (Y).
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy, Build and Options open their panel on the
-     top screen, as the mode button does on a phone. Tap the lit one again to close it and go back to Live. Live
-     opens or closes the Sim's panels (needs, relationships, job, personality, inventory) on the top screen.
+     top screen, as the mode button does on a phone. Tap the lit one again to close it and go back to Live. From
+     those, Live goes back to live mode; in live mode it opens or closes the Sim's panels (needs, relationships,
+     job, personality, inventory) on the top screen. However you get back to live mode (the controller's Select
+     too), the top screen's panel closes, so the top screen shows just the lot.
 3. The top screen leaves out its own clock, money, cutaway, mode buttons and action queue while the bottom screen
    shows them.
    Pie menus, dialogs and the keyboard stay on the top screen.

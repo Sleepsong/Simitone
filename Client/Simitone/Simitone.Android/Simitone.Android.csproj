@@ -8,8 +8,8 @@
     <OutputType>Exe</OutputType>
     <ApplicationId>com.sleepsong.simitone</ApplicationId>
     <ApplicationTitle>Simitone</ApplicationTitle>
-    <ApplicationVersion>38</ApplicationVersion>
-    <ApplicationDisplayVersion>0.38-dual</ApplicationDisplayVersion>
+    <ApplicationVersion>39</ApplicationVersion>
+    <ApplicationDisplayVersion>0.39-dual</ApplicationDisplayVersion>
     <RootNamespace>Simitone.Android</RootNamespace>
     <AssemblyName>Simitone.Android</AssemblyName>
     <Nullable>disable</Nullable>

@@ -357,9 +357,19 @@ namespace Simitone.Client.UI.Panels
         /// With a second screen (the AYN Thor's bottom screen), the clock, money, cutaway and mode buttons are there
         /// (UIDualDeck), so the main screen leaves them out and only shows the lot (and the panels opened from there).
         /// </summary>
+        private UIMainPanelMode LastDualMode = UIMainPanelMode.LIVE;
+
         private void HideForSecondScreen()
         {
             var dual = DualScreen.SecondScreen.Active;
+            // back in live mode from buy, build or options (by any route: the pad's Select, the bottom screen), the
+            // panel left open here would show the needs the second screen already shows: close it. (LT, or Live on
+            // the second screen, still opens it for the Sim's other panels.)
+            if (MainPanel.Mode != LastDualMode)
+            {
+                if (dual && MainPanel.Mode == UIMainPanelMode.LIVE && MainPanel.PanelActive) MainPanel.Close();
+                LastDualMode = MainPanel.Mode;
+            }
             // the action queue is on the second screen too; here only while the controller is using it (Y)
             var queue = Game.LotControl?.Queue;
             if (queue != null) queue.Visible = !dual || queue.HasPadFocus;

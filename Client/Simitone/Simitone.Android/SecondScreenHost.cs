@@ -61,6 +61,7 @@ namespace Simitone.Android
         // touches (UI thread in, game thread out)
         private readonly ConcurrentQueue<(int x, int y, bool down)> Touches = new ConcurrentQueue<(int, int, bool)>();
         private bool TouchIsDown;
+        private int TouchesLogged;
 
         // OpenGL (game thread, under Lock)
         private EGLDisplay EglDisplay;
@@ -417,6 +418,7 @@ namespace Simitone.Android
                 case MotionEventActions.Down:
                     TouchIsDown = true;
                     Touches.Enqueue((x, y, true));
+                    if (TouchesLogged < 3) Log($"touch {++TouchesLogged} at {x},{y}" + (TouchesLogged == 3 ? " (no more touches logged)" : ""));
                     break;
                 case MotionEventActions.Move:
                     if (TouchIsDown) Touches.Enqueue((x, y, true));
