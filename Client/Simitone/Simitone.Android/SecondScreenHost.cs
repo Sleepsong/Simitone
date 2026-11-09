@@ -302,6 +302,71 @@ namespace Simitone.Android
             if (why != null) Log("closed (" + why + ")");
         }
 
+        /// <summary>
+        /// The second screen's window over the whole display: its system bars hidden where Android lets this window
+        /// hide them (a swipe from the edge shows them for a moment), and the drawing kept clear of any bars that
+        /// stay (the Thor's bottom screen has its own navigation bar). Returns the view to show.
+        /// </summary>
+        public static View EdgeToEdge(Window window, SurfaceView surface)
+        {
+            var frame = new global::Android.Widget.FrameLayout(surface.Context);
+            frame.AddView(surface, new global::Android.Widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.MatchParent));
+            if (window == null) return frame;
+            try
+            {
+                var decor = window.DecorView; //(makes the window's decor first: its bar controller comes from there)
+                if (Build.VERSION.SdkInt >= BuildVersionCodes.P)
+                {
+                    var attributes = window.Attributes;
+                    attributes.LayoutInDisplayCutoutMode = LayoutInDisplayCutoutMode.ShortEdges;
+                    window.Attributes = attributes;
+                }
+                if (Build.VERSION.SdkInt >= BuildVersionCodes.R)
+                {
+                    window.SetDecorFitsSystemWindows(false);
+                    var bars = window.InsetsController;
+                    if (bars != null)
+                    {
+                        bars.Hide(WindowInsets.Type.SystemBars());
+                        bars.SystemBarsBehavior = (int)WindowInsetsControllerBehavior.ShowTransientBarsBySwipe;
+                    }
+                    // bars that stay: keep the drawing out from under them
+                    string last = null;
+                    frame.SetOnApplyWindowInsetsListener(new InsetsPadding((v, insets) =>
+                    {
+                        var bar = insets.GetInsets(WindowInsets.Type.SystemBars() | WindowInsets.Type.DisplayCutout());
+                        v.SetPadding(bar.Left, bar.Top, bar.Right, bar.Bottom);
+                        var text = $"{bar.Left},{bar.Top},{bar.Right},{bar.Bottom}";
+                        if (text != last)
+                        {
+                            last = text;
+                            Log("system bars left/top/right/bottom: " + text + " px");
+                        }
+                        return WindowInsets.Consumed;
+                    }));
+                }
+                else
+                {
+#pragma warning disable CA1422
+                    decor.SystemUiFlags = SystemUiFlags.ImmersiveSticky | SystemUiFlags.HideNavigation | SystemUiFlags.Fullscreen
+                        | SystemUiFlags.LayoutStable | SystemUiFlags.LayoutHideNavigation | SystemUiFlags.LayoutFullscreen;
+#pragma warning restore CA1422
+                }
+            }
+            catch (Exception e)
+            {
+                Log("couldn't hide the system bars: " + e.Message);
+            }
+            return frame;
+        }
+
+        private class InsetsPadding : Java.Lang.Object, View.IOnApplyWindowInsetsListener
+        {
+            private readonly Func<View, WindowInsets, WindowInsets> Apply;
+            public InsetsPadding(Func<View, WindowInsets, WindowInsets> apply) { Apply = apply; }
+            public WindowInsets OnApplyWindowInsets(View v, WindowInsets insets) => Apply(v, insets);
+        }
+
         // ---- the window's surface (UI thread)
 
         /// <summary>Called by the presentation or activity with the view it draws on.</summary>
@@ -594,7 +659,7 @@ namespace Simitone.Android
             Window?.AddFlags(WindowManagerFlags.NotFocusable | WindowManagerFlags.KeepScreenOn | WindowManagerFlags.Fullscreen);
             var view = new SurfaceView(Context);
             Host.Attach(view);
-            SetContentView(view);
+            SetContentView(SecondScreenHost.EdgeToEdge(Window, view));
         }
     }
 
@@ -631,7 +696,7 @@ namespace Simitone.Android
             var view = new SurfaceView(this);
             if (SecondScreenHost.Current != null) SecondScreenHost.Current.Attach(view);
             else Finish();
-            SetContentView(view);
+            SetContentView(SecondScreenHost.EdgeToEdge(Window, view));
         }
 
         protected override void OnDestroy()

@@ -362,7 +362,7 @@ namespace Simitone.Client.UI.Panels
             var dual = DualScreen.SecondScreen.Active;
             Clock.Visible = !dual;
             CutBtn.Visible = !dual;
-            ModeSwitcher.Visible = !dual;
+            ModeSwitcher.Visible = !dual || MainPanel.ShowingSelect; //(the pad's mode menu, held Select, is its fan)
             if (!dual) return;
             Money.Visible = false;
             ExtendPanelBtn.Visible = false;

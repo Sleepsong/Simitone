@@ -85,6 +85,7 @@ namespace Simitone.Android
         {
             try
             {
+                var decor = Window.DecorView; //(makes the window's decor first: its bar controller comes from there)
                 if (Build.VERSION.SdkInt >= BuildVersionCodes.P)
                 {
                     var attributes = Window.Attributes;

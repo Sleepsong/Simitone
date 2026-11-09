@@ -19,7 +19,12 @@ This is the first version. It needs testing on a Thor, and `simitone.log` says w
      opens or closes the Sim's panels (needs, relationships, job, personality, inventory) on the top screen.
 3. The top screen leaves out its own clock, money, cutaway and mode buttons while the bottom screen shows them.
    Pie menus, dialogs and the keyboard stay on the top screen.
-4. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
+4. The Thor's built-in controls work the lot on the top screen, as with any controller (the controller port,
+   `claude/intelligent-cray-f9z43d`, is merged in; its controls are listed in `UILotControlPadHelper`). What they
+   change shows on the bottom screen too: the mode (Select), the speed (D-pad left/right), the walls (L3) and the
+   Sim (LB/RB). Holding Select opens the mode menu on the top screen. Touching the bottom screen doesn't take the
+   controls away from the game: its window can't take the focus.
+5. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
 
 **Options > Second Screen** (Graphics tab, only on devices with a second screen) turns it off and back on without
 a restart. Off, the bottom screen goes back to whatever was there, and the controls return to the top screen.
@@ -31,6 +36,8 @@ Every display and every step goes to `Download/Simitone/simitone.log`, on lines 
 - one line per display: size, density, refresh rate, state, flags, and which one Simitone is on;
 - the window: `window on display N (WxH), as a presentation`, or as an activity (see below), or why not;
 - `surface WxH`, `drawing with a context sharing the game's`, and `first image shown`;
+- `system bars left/top/right/bottom`: any bars Android keeps on the second screen (the Thor's bottom screen has its
+  own navigation bar). Simitone asks to hide them and keeps its drawing clear of any that stay;
 - from the game: `second screen: 1240x1080 px, UI scale 1.93` and `showing the controls`.
 
 The window on the second screen is a **Presentation**, a dialog of Simitone's activity shown on the other display, as
@@ -80,6 +87,5 @@ image's top lands at the top, and that the first context is current again afterw
 
 - The buy and build catalogues and tools are still on the top screen. Putting them on the bottom screen is next.
 - Create-a-Sim and the neighbourhood don't use the bottom screen yet.
-- This branch doesn't have the controller port (`claude/intelligent-cray-f9z43d`), so the Thor's buttons don't
-  control the game yet.
+- The controller doesn't reach the bottom screen's buttons yet (everything there can also be done with the pad).
 - Swapping the screens, and a phone with a bigger external screen (lot on the TV, controls on the phone).
