@@ -63,7 +63,8 @@ namespace Simitone.Client.UI.Panels
     /// </summary>
     public class UILotControlPadHelper : UIElement
     {
-        private const float SelectorSpeed = 520f; //UI px per second at full deflection (quadratic response)
+        //(speeds and distances on screen are in screen pixels, as tuned on desktops: see PxToUI)
+        private const float SelectorSpeed = 520f; //px per second at full deflection (quadratic response)
         private const float SnapPixels = 36f; //on-screen distance from a footprint at which the selector snaps to it
         private const float MinSnapTiles = 0.2f;
         private const float MaxSnapTiles = 0.6f;
@@ -79,7 +80,7 @@ namespace Simitone.Client.UI.Panels
         private const float RunOff = 0.75f; //...and below which it walks again
         private const float DirectCameraRate = 15f; //camera follow, fraction of the gap closed per second (exponential)
         private const float DirectCameraSnapTiles = 3f; //further than this (stairs, a new Sim) the camera jumps
-        private const float BuildScrollSpeed = 640f; //buy/build: UI px per second the lot scrolls at full deflection
+        private const float BuildScrollSpeed = 640f; //buy/build: px per second the lot scrolls at full deflection
         private const float BuildCursorSize = 22f;
 
         private readonly UILotControl Master;
@@ -738,7 +739,7 @@ namespace Simitone.Client.UI.Panels
         private void ScrollLot(Vector2 stick, float dt, Vector2 centreTile, sbyte level)
         {
             if (stick == Vector2.Zero) return;
-            var screenDelta = new Vector2(stick.X, -stick.Y) * (BuildScrollSpeed * stick.Length() * dt);
+            var screenDelta = new Vector2(stick.X, -stick.Y) * (BuildScrollSpeed * PxToUI * stick.Length() * dt);
             var tileDelta = ScreenToTileDelta(centreTile, screenDelta, level);
             tileDelta = ClampToLot(centreTile + tileDelta) - centreTile;
             World.State.CenterTile += tileDelta;
@@ -1255,7 +1256,7 @@ namespace Simitone.Client.UI.Panels
                 Selector = ClampToLot(World.EstTileAtPosWithScroll(FromUI(new Vector2(width, height) / 2)));
             }
 
-            var screenDelta = new Vector2(stick.X, -stick.Y) * (SelectorSpeed * stick.Length() * dt);
+            var screenDelta = new Vector2(stick.X, -stick.Y) * (SelectorSpeed * PxToUI * stick.Length() * dt);
             Selector = ClampToLot(Selector + ScreenToTileDelta(Selector, screenDelta, level));
             LastSelectorMove = now;
 
@@ -1304,7 +1305,7 @@ namespace Simitone.Client.UI.Panels
         private void UpdateTargetAtSelector(VMEntity active)
         {
             var point = Selector;
-            var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, World.State.Level), SnapPixels, MinSnapTiles, MaxSnapTiles);
+            var snapRadius = PadMath.SnapRadius(PixelsPerTile(Selector, World.State.Level), SnapPixels * PxToUI, MinSnapTiles, MaxSnapTiles);
             PickTarget(active, World.State.Level, Math.Min(1f, snapRadius / MaxSnapTiles), (entity, x1, y1, x2, y2) =>
             {
                 var distance = PadMath.DistanceToFootprint(point, x1, y1, x2, y2);
@@ -1637,7 +1638,7 @@ namespace Simitone.Client.UI.Panels
             {
                 var cursorRing = PadGraphics.GetRing(GameFacade.GraphicsDevice);
                 var cursorPulse = 0.75f + 0.25f * (float)Math.Sin(AnimTime * 5);
-                DrawLocalTexture(batch, cursorRing, null, GlobalPoint(BuildCursor.Value) - new Vector2(BuildCursorSize / 2),
+                DrawLocalTexture(batch, cursorRing, null, DrawPoint(BuildCursor.Value) - new Vector2(BuildCursorSize / 2),
                     new Vector2(BuildCursorSize / cursorRing.Width), Color.White * cursorPulse);
             }
             if (MarkerBase == null) return;
@@ -1665,7 +1666,7 @@ namespace Simitone.Client.UI.Panels
                 {
                     var width = Math.Max(10f, Math.Min(36f, reach * 0.5f));
                     var beamAngle = (float)Math.Atan2(up.X, -up.Y);
-                    DrawLocalTexture(batch, beam, null, GlobalPoint(MarkerBase.Value), new Vector2(width / beam.Width, length / beam.Height),
+                    DrawLocalTexture(batch, beam, null, DrawPoint(MarkerBase.Value), new Vector2(width / beam.Width, length / beam.Height),
                         color * 0.65f, beamAngle, new Vector2(beam.Width / 2f, beam.Height));
                 }
 
@@ -1673,7 +1674,7 @@ namespace Simitone.Client.UI.Panels
                 var note = PadGraphics.GetNote(gd);
                 var noteScale = 42f / note.Height;
                 var bob = (float)Math.Sin(AnimTime * 3) * 4;
-                DrawLocalTexture(batch, note, null, GlobalPoint(MarkerTop.Value) - new Vector2(note.Width * noteScale / 2f, note.Height * noteScale - bob),
+                DrawLocalTexture(batch, note, null, DrawPoint(MarkerTop.Value) - new Vector2(note.Width * noteScale / 2f, note.Height * noteScale - bob),
                     new Vector2(noteScale), color);
             }
         }
@@ -1698,7 +1699,7 @@ namespace Simitone.Client.UI.Panels
                 var dir = d / length;
                 var extend = overlap ? thickness * 0.3f : 0f;
                 var start = a - dir * extend;
-                DrawLocalTexture(batch, line, null, GlobalPoint(start), new Vector2((length + extend * 2) / line.Width, thickness / line.Height),
+                DrawLocalTexture(batch, line, null, DrawPoint(start), new Vector2((length + extend * 2) / line.Width, thickness / line.Height),
                     color, (float)Math.Atan2(d.Y, d.X), new Vector2(0, line.Height / 2f));
             }
         }
@@ -1709,6 +1710,21 @@ namespace Simitone.Client.UI.Panels
 
         private float ScreenWidth => GameFacade.Screens.CurrentUIScreen.ScreenWidth;
         private float ScreenHeight => GameFacade.Screens.CurrentUIScreen.ScreenHeight;
+
+        /// <summary>
+        /// Screen pixels to UI units. The UI is scaled up by DPIScaleFactor (1 on desktops, about 2 on phones and the
+        /// Thor); the pad's speeds and on-screen distances were tuned on desktops, in pixels, and keep that feel.
+        /// </summary>
+        private static float PxToUI => 1f / FSOEnvironment.DPIScaleFactor;
+
+        /// <summary>
+        /// A point in UI units to this element's drawing space. (GlobalPoint takes screen pixels: the UI screen is
+        /// scaled by DPIScaleFactor.)
+        /// </summary>
+        private Vector2 DrawPoint(Vector2 ui)
+        {
+            return GlobalPoint(ui * FSOEnvironment.DPIScaleFactor);
+        }
 
         /// <summary>
         /// World screen space (what EstTileAtPosWithScroll takes: screen pixels, in the world's image) to UI space,

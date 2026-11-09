@@ -19,9 +19,11 @@ namespace Simitone.Client.UI.DualScreen
     /// - the mode's categories along the top (buy: seating, surfaces, ...; build: walls, floors and roofs; outdoors;
     ///   doors, windows and more), the open one lit;
     /// - under them the game's own catalog panel (<see cref="UIBuyBrowsePanel"/>): first the category's subcategories,
-    ///   then its items, here in two rows. Picking an item works as from the main screen's catalog: the object (or the
-    ///   build tool) is in hand, to place on the lot on the main screen, whose info panel shows what it is;
-    /// - the picked item's name and price, and a button back to the subcategories.
+    ///   then its items, here in two rows (a little smaller). Picking an item works as from the main screen's catalog:
+    ///   the object (or the build tool) is in hand, to place on the lot on the main screen;
+    /// - the picked item's name and price, and a button back to the subcategories; under them, while it's in hand,
+    ///   its description and what it does for the Sims' needs. (The main screen's info panel, which shows these on
+    ///   one screen, sits over the middle of the lot, where the item is placed: with two screens it stays hidden.)
     /// The controller uses it too: LT moves the pad between the lot and this catalog (its focus is outlined here), RT
     /// opens the next category, and the highlighted item's name and price show under the items.
     /// </summary>
@@ -42,8 +44,13 @@ namespace Simitone.Client.UI.DualScreen
         public static bool PadShown;
         private float Time;
         private UILabel ItemLabel;
+        private UILabel DescLabel;
+        private UILabel AdLabel;
+        private string DescFor; //the description DescLabel was laid out for
         private UIBigButton BackButton;
         private const int Rows = 2;
+        private const float BrowseScale = 0.8f; //the items' size, to leave room for the description
+        private const int DescLines = 4;
 
         /// <param name="top">Where the catalog starts (under the money and clock).</param>
         public UIDualCatalog(TS1GameScreen game, UIMainPanelMode mode, float width, float top)
@@ -74,15 +81,35 @@ namespace Simitone.Client.UI.DualScreen
             ItemLabel.CaptionStyle.Size = 15;
             ItemLabel.CaptionStyle.Color = UIStyle.Current.Text;
             ItemLabel.Alignment = TextAlignment.Left | TextAlignment.Middle;
-            ItemLabel.Position = new Vector2(15, BrowseTop + 128 * Rows + 4);
-            ItemLabel.Size = new Vector2(W - 160, 30);
+            ItemLabel.Position = new Vector2(15, RowsBottom + 2);
+            ItemLabel.Size = new Vector2(W - 160, 24);
             Add(ItemLabel);
+
+            DescLabel = new UILabel();
+            DescLabel.CaptionStyle = DescLabel.CaptionStyle.Clone();
+            DescLabel.CaptionStyle.Size = 12;
+            DescLabel.CaptionStyle.Color = UIStyle.Current.Text * 0.85f;
+            DescLabel.Alignment = TextAlignment.Left | TextAlignment.Top;
+            DescLabel.Wrapped = true;
+            DescLabel.MaxLines = DescLines;
+            DescLabel.Position = new Vector2(15, RowsBottom + 28);
+            DescLabel.Size = new Vector2(W - 160, DescLines * 16);
+            Add(DescLabel);
+
+            AdLabel = new UILabel();
+            AdLabel.CaptionStyle = AdLabel.CaptionStyle.Clone();
+            AdLabel.CaptionStyle.Size = 12;
+            AdLabel.CaptionStyle.Color = UIStyle.Current.SecondaryText;
+            AdLabel.Alignment = TextAlignment.Left | TextAlignment.Top;
+            AdLabel.Position = new Vector2(15, RowsBottom + 28);
+            AdLabel.Size = new Vector2(W - 30, 16);
+            Add(AdLabel);
 
             BackButton = new UIBigButton(false);
             BackButton.Caption = "Back";
             BackButton.Width = 220;
             BackButton.ScaleX = BackButton.ScaleY = 0.5f; //(110 x 50)
-            BackButton.Position = new Vector2(W - 125, BrowseTop + 128 * Rows + 2);
+            BackButton.Position = new Vector2(W - 125, RowsBottom + 2);
             BackButton.OnButtonClick += (b) => Browse?.Reset(); //items -> the category's subcategories
             Add(BackButton);
 
@@ -101,7 +128,8 @@ namespace Simitone.Client.UI.DualScreen
         /// <summary>Whether the pad is moving over this catalog, and its focus is to be shown.</summary>
         private bool PadFocusShown => PadShown && Browse != null && Navigator.Scope == Browse && Navigator.Focused != null;
 
-        private float BrowseTop => Top + 85;
+        private float BrowseTop => Top + 78;
+        private float RowsBottom => BrowseTop + 128 * Rows * BrowseScale;
 
         public void SelectCategory(int id)
         {
@@ -113,8 +141,9 @@ namespace Simitone.Client.UI.DualScreen
             var lotType = (Mode == UIMainPanelMode.BUILD) ? UICatalogMode.Build : Game.Frontend.MainPanel.GetLotType(false);
             Browse = new UIBuyBrowsePanel(Game, (sbyte)id, lotType);
             Browse.Position = new Vector2(0, BrowseTop);
+            Browse.ScaleX = Browse.ScaleY = BrowseScale;
             Add(Browse);
-            Browse.SetHost(W, Rows);
+            Browse.SetHost(W / BrowseScale, Rows);
         }
 
         public override void Update(UpdateState state)
@@ -136,6 +165,28 @@ namespace Simitone.Client.UI.DualScreen
             else if (browse != null && browse.ChoosingSub) text = "Choose a kind of item";
             if (ItemLabel.Caption != text) ItemLabel.Caption = text;
             BackButton.Visible = browse != null && !browse.ChoosingSub;
+            UpdateDescription(browse != null && !browse.ChoosingSub && index >= 0 && index == browse.ItemID);
+        }
+
+        /// <summary>
+        /// The description and needs of the item in hand, from the main screen's info panel (which fills them in when
+        /// an item is picked), shown while the label names that item.
+        /// </summary>
+        private void UpdateDescription(bool showingPicked)
+        {
+            var query = Game.LotControl?.QueryPanel;
+            var show = showingPicked && query != null && query.Active && query.Mode == 1;
+            var desc = show ? (query.Body.Caption ?? "") : "";
+            var ads = show ? (query.Ad.Caption ?? "") : "";
+            if (desc != DescFor)
+            {
+                DescFor = desc;
+                DescLabel.Caption = desc;
+            }
+            if (AdLabel.Caption != ads) AdLabel.Caption = ads;
+            //the needs go straight under however many lines the description took
+            var lines = (desc.Length > 0) ? System.Math.Min(DescLines, System.Math.Max(1, DescLabel.NumLines)) : 0;
+            AdLabel.Y = RowsBottom + 28 + lines * DescLabel.CaptionStyle.LineHeight + 2;
         }
 
         public override void Draw(UISpriteBatch batch)

@@ -364,8 +364,10 @@ namespace Simitone.Client.UI.Panels
         /// </summary>
         private UIMainPanelMode LastDualMode = UIMainPanelMode.LIVE;
         /// <summary>
-        /// With two screens, holds the object info and picked-up object panels (normally the main panel's), where the
-        /// main panel would put them: they show for the second screen's catalog while the main panel is closed.
+        /// With two screens, holds the picked-up object panel (normally the main panel's), where the main panel would
+        /// put it: it shows while the main panel is closed. The catalog's info panel stays in the closed main panel,
+        /// unseen: it would sit over the middle of the lot, where the item in hand goes, and the second screen shows
+        /// what it says.
         /// </summary>
         private UIContainer InfoHost;
 
@@ -403,8 +405,8 @@ namespace Simitone.Client.UI.Panels
         }
 
         /// <summary>
-        /// Moves the object info and picked-up object panels out of the main panel (to <see cref="InfoHost"/>, in the
-        /// same place) while there are two screens, and back when there's one.
+        /// Moves the picked-up object panel out of the main panel (to <see cref="InfoHost"/>, in the same place) while
+        /// there are two screens, and back when there's one.
         /// </summary>
         private void MoveInfoPanels(bool dual)
         {
@@ -421,7 +423,6 @@ namespace Simitone.Client.UI.Panels
                     if (next != null) AddBefore(InfoHost, next);
                     else Add(InfoHost);
                 }
-                MoveTo(lot.QueryPanel, InfoHost);
                 MoveTo(lot.PickupPanel, InfoHost);
                 InfoHost.Position = MainPanel.Position;
                 lot.PickupPanel.Visible = lot.PickupPanel.Opacity > 0;

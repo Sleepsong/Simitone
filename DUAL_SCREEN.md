@@ -35,9 +35,11 @@ screens and the bottom screen's window and drawing.
    - in buy and build mode: the catalog. Its categories run along the top (buy: seating, surfaces, appliances and
      so on; build: walls, floors and roofs; outdoors; doors, windows and more), the open one lit. Under them, the
      category's kinds of item, then its items, in two rows: drag them sideways to scroll. Tap an item to buy it
-     (or take the build tool), then place it on the lot on the top screen, where the info panel shows what it is.
-     The picked item's name and price show under the items, with **Back** to go back to the kinds of item. The top
-     screen's own catalog stays closed in buy and build mode; the info panel for the item in hand still shows there.
+     (or take the build tool), then place it on the lot on the top screen, at the circle in the middle.
+     The picked item's name and price show under the items, with **Back** to go back to the kinds of item, and
+     under them its description and what it does for your Sims' needs. The top screen's own catalog and its big
+     info panel stay hidden in buy and build mode, so nothing covers the spot where the item goes; the panel for an
+     object picked up off the lot still shows there, along the bottom.
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy and Build show their catalog here; Options
      opens its panel on the top screen, as the mode button does on a phone. Tap the lit one again to go back to
      Live. In live mode, Live opens or closes the Sim's panels (needs, relationships, job, personality,
