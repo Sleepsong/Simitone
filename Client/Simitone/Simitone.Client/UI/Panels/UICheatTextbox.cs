@@ -137,7 +137,6 @@ namespace Simitone.Client.UI.Panels
             }
 
             //for a Sim stuck in an interaction: every Sim's script stack, queue and animation go to travel.log (-travellog)
-            var squashed = commandString.ToLowerInvariant().Replace(" ", "").Replace("_", "");
             if (squashed == "dumpsims" || squashed == "simdump")
             {
                 FSO.SimAntics.Engine.VMTravelLog.DumpSims(ts1VM, "dump sims cheat");

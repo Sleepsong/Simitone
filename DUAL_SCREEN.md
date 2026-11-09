@@ -5,6 +5,20 @@ and the lot's controls on the second (bottom) screen. On a phone with one screen
 
 This is the first version. It needs testing on a Thor, and `simitone.log` says what happened (see below).
 
+## What this branch includes
+
+`claude/dual-screen` is the AYN Thor build: the Android port (`claude/android`) with these merged in:
+- the controller port (`claude/intelligent-cray-f9z43d`);
+- remesh packs (`claude/meshreplace`);
+- the TS1 sound fixes (`claude/sound-fixes`);
+- sinks cut into counters in 3D (`claude/sink-basins`);
+- doors in 3D walls following the 2D rule (`claude/door-cutaway`);
+- fast-forward while the household is away (`claude/auto-fast-forward`);
+- travel to the expansion packs' lots (`claude/expansion-travel`).
+
+Each has a FreeSO side on `simitone/dual-screen`. The code is the same as the local Android combo build, plus the two
+screens and the bottom screen's window and drawing.
+
 ## Using it
 
 1. Open Simitone on the **top** screen. In AYN's launcher you can long-press Simitone and set *Screen Launch* to
