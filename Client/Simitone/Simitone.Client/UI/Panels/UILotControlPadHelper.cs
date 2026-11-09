@@ -459,8 +459,19 @@ namespace Simitone.Client.UI.Panels
             else if (direct) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
             else if (is3D) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Direct control"));
             items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
-            items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
-            items.Add(PadPrompt.Of(PadAction.TriggerRight, NextPanelLabel(panel)));
+            var deck = DualDeck;
+            if (deck != null)
+            {
+                //the second screen's pages (needs, job, personality, relationships, inventory)
+                var names = UIDualDeck.PageNames;
+                items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Prev: " + names[(deck.Page + names.Length - 1) % names.Length]));
+                items.Add(PadPrompt.Of(PadAction.TriggerRight, "Next: " + names[(deck.Page + 1) % names.Length]));
+            }
+            else
+            {
+                items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Needs"));
+                items.Add(PadPrompt.Of(PadAction.TriggerRight, NextPanelLabel(panel)));
+            }
             items.Add(PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
             items.Add(PadPrompt.Of(PadAction.LeftStickClick, "Walls"));
             if (!direct) items.Add(PadPrompt.Of(PadAction.RightStickClick, "Find Sim")); //the cursor back on the Sim
@@ -1040,9 +1051,29 @@ namespace Simitone.Client.UI.Panels
                 else if (Master.ActiveEntity is VMAvatar sim) EnterFishEye(frontend, sim);
             }
 
-            HandlePanelTriggers(pad, frontend, canClose: true);
+            var deck = DualDeck;
+            if (deck != null) HandleDualPageTriggers(deck);
+            else HandlePanelTriggers(pad, frontend, canClose: true);
 
             if (!PanelFocus && pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
+        }
+
+        /// <summary>The second screen's live controls, while it shows them: the Sim's pages are there.</summary>
+        private static UIDualDeck DualDeck
+        {
+            get
+            {
+                var deck = UIDualDeck.Current;
+                return (SecondScreen.Active && deck != null && deck.Parent != null) ? deck : null;
+            }
+        }
+
+        /// <summary>LT and RT in live mode with two screens: the previous and next of the Sim's pages there.</summary>
+        private void HandleDualPageTriggers(UIDualDeck deck)
+        {
+            PanelFocus = false;
+            if (Chords.Tap[PadChords.LT]) deck.TurnPage(-1);
+            if (Chords.Tap[PadChords.RT]) deck.TurnPage(1);
         }
 
         /// <summary>

@@ -73,7 +73,8 @@ namespace Simitone.Client.UI.Panels.LotControls
         public override void Update(UpdateState state)
         {
             LastState = state;
-            if (Owner.LiveMode || !FSOEnvironment.SoftwareKeyboard) Visible = false;
+            //(not while the controller is in use: it has its own buttons for these. Touching the screen brings them back.)
+            if (Owner.LiveMode || !FSOEnvironment.SoftwareKeyboard || (Owner.PadHelper?.PadActive ?? false)) Visible = false;
             else
             {
                 var custom = (Owner.CustomControl != null);

@@ -28,25 +28,27 @@ screens and the bottom screen's window and drawing.
      the speed buttons. Each tap of the cutaway button goes to the next wall view: cut away, walls up, roof, walls
      down. Choosing a floor (here, or with the D-pad) stops the camera following the Sim, so it stays on that floor;
      R3 follows them again. In direct control the view still moves to the Sim's floor when they take the stairs.
-   - in live mode: the family (tap a Sim to control them; the one you control is outlined), the controlled Sim's
-     needs in two columns as in the original game, and their actions under the needs: the running one large, then
-     the queued ones. Tap one to cancel it. The top screen only shows its own action queue while the controller is
-     using it (Y).
+   - in live mode: the family (tap a Sim to control them; the one you control is outlined), then the controlled
+     Sim's pages: **Needs** (two columns, as in the original game), **Job**, **Personality**, **Relationships** and
+     **Inventory**. Tap a page's name to show it, or turn the pages with the controller's LT and RT. Under them, the
+     Sim's actions: the running one large, then the queued ones. Tap one to cancel it. The top screen only shows its
+     own action queue while the controller is using it (Y).
    - in buy and build mode: the catalog. Its categories run along the top (buy: seating, surfaces, appliances and
      so on; build: walls, floors and roofs; outdoors; doors, windows and more), the open one lit. Under them, the
      category's kinds of item, then its items, in two rows: drag them sideways to scroll. Tap an item to buy it
      (or take the build tool), then place it on the lot on the top screen, at the circle in the middle.
      The picked item's name and price show under the items, with **Back** to go back to the kinds of item, and
-     under them its description and what it does for your Sims' needs. The top screen's own catalog and its big
-     info panel stay hidden in buy and build mode, so nothing covers the spot where the item goes; the panel for an
-     object picked up off the lot still shows there, along the bottom.
+     under them its description and what it does for your Sims' needs. With an object picked up off the lot, it
+     shows the object's name and what it sells for, with **Sell** and **Put back**; anything in hand can be put back
+     from here. The top screen's own catalog and info panels stay hidden in buy and build mode, so nothing covers
+     the spot where the item goes.
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy and Build show their catalog here; Options
      opens its panel on the top screen, as the mode button does on a phone. Tap the lit one again to go back to
-     Live. In live mode, Live opens or closes the Sim's panels (needs, relationships, job, personality,
-     inventory) on the top screen. However you get back to live mode (the controller's Select too), the top
-     screen's panel closes, so the top screen shows just the lot.
-3. The top screen leaves out its own clock, money, cutaway, mode buttons and action queue while the bottom screen
-   shows them.
+     Live. In live mode, Live goes back to the needs. Apart from Options, the top screen's panel stays closed,
+     however it was opened, so the top screen shows just the lot.
+3. The top screen leaves out its own clock, money, cutaway, mode buttons, Sim panels, catalog and action queue
+   while the bottom screen shows them. Its touch buttons for placing objects and using build tools (rotate, the
+   tool buttons) hide while the controller is in use, and come back when you touch the top screen.
    Pie menus, dialogs and the keyboard stay on the top screen.
 4. The Thor's built-in controls work the lot on the top screen, as with any controller (the controller port,
    `claude/intelligent-cray-f9z43d`, is merged in; its controls are listed in `UILotControlPadHelper`). What they
@@ -55,9 +57,9 @@ screens and the bottom screen's window and drawing.
    bottom screen's catalog: LT moves the controller between the lot and the catalog, where its focus is outlined;
    the D-pad moves over the kinds of item, then over the items (left/right along the rows, up/down between them);
    A opens a kind or picks an item, which puts it in hand on the lot; B goes back to the kinds of item, then to the
-   lot; RT opens the next category. The highlighted item's name and price show under the items. In live mode LT
-   still opens the Sim's panels on the top screen. Touching the bottom screen doesn't take the controls away from
-   the game: its window can't take the focus.
+   lot; RT opens the next category. The highlighted item's name and price show under the items. In live mode LT and
+   RT turn the bottom screen's pages (needs, job, personality, relationships, inventory). Touching the bottom
+   screen doesn't take the controls away from the game: its window can't take the focus.
 5. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
 
 **Options > Second Screen** (Graphics tab, only on devices with a second screen) turns it off and back on without
@@ -123,5 +125,5 @@ image's top lands at the top, and that the first context is current again afterw
   one).
 - Create-a-Sim and the neighbourhood don't use the bottom screen yet.
 - Apart from the catalog, the controller doesn't reach the bottom screen's buttons yet (everything there can also be
-  done with the pad).
+  done with the pad, except picking things in the relationships and inventory pages).
 - Swapping the screens, and a phone with a bigger external screen (lot on the TV, controls on the phone).

@@ -24,6 +24,8 @@ namespace Simitone.Client.UI.DualScreen
     /// - the picked item's name and price, and a button back to the subcategories; under them, while it's in hand,
     ///   its description and what it does for the Sims' needs. (The main screen's info panel, which shows these on
     ///   one screen, sits over the middle of the lot, where the item is placed: with two screens it stays hidden.)
+    /// - with an object picked up off the lot: its name, what it sells for, and Sell and Put back (the main screen's
+    ///   panel for this stays hidden too). Anything in hand can be put back from here.
     /// The controller uses it too: LT moves the pad between the lot and this catalog (its focus is outlined here), RT
     /// opens the next category, and the highlighted item's name and price show under the items.
     /// </summary>
@@ -48,17 +50,23 @@ namespace Simitone.Client.UI.DualScreen
         private UILabel AdLabel;
         private string DescFor; //the description DescLabel was laid out for
         private UIBigButton BackButton;
+        private UIBigButton PutBackButton;
+        private UIBigButton SellButton;
+        /// <summary>How far down the catalog may reach (the mode buttons are below).</summary>
+        private readonly float Bottom;
         private const int Rows = 2;
         private const float BrowseScale = 0.8f; //the items' size, to leave room for the description
         private const int DescLines = 4;
 
         /// <param name="top">Where the catalog starts (under the money and clock).</param>
-        public UIDualCatalog(TS1GameScreen game, UIMainPanelMode mode, float width, float top)
+        /// <param name="bottom">How far down it may reach (the mode buttons are below).</param>
+        public UIDualCatalog(TS1GameScreen game, UIMainPanelMode mode, float width, float top, float bottom)
         {
             Game = game;
             Mode = mode;
             W = width;
             Top = top;
+            Bottom = bottom;
             var panel = game.Frontend.MainPanel;
             var cats = (mode == UIMainPanelMode.BUILD) ? panel.BuildCategories : panel.BuyCategories;
 
@@ -102,7 +110,7 @@ namespace Simitone.Client.UI.DualScreen
             AdLabel.CaptionStyle.Color = UIStyle.Current.SecondaryText;
             AdLabel.Alignment = TextAlignment.Left | TextAlignment.Top;
             AdLabel.Position = new Vector2(15, RowsBottom + 28);
-            AdLabel.Size = new Vector2(W - 30, 16);
+            AdLabel.Size = new Vector2(W - 160, 16);
             Add(AdLabel);
 
             BackButton = new UIBigButton(false);
@@ -113,8 +121,26 @@ namespace Simitone.Client.UI.DualScreen
             BackButton.OnButtonClick += (b) => Browse?.Reset(); //items -> the category's subcategories
             Add(BackButton);
 
+            // what's in hand: put it back (as B does), or sell an object picked up off the lot (as Y does)
+            PutBackButton = SmallButton("Put back", new Vector2(W - 125, RowsBottom + 2));
+            PutBackButton.OnButtonClick += (b) => Game.LotControl?.ObjectHolder?.Cancel();
+            SellButton = SmallButton("Sell", new Vector2(W - 125, RowsBottom + 56));
+            SellButton.OnButtonClick += (b) => Game.LotControl?.ObjectHolder?.SellBack(null);
+
             if (cats.Count > 0) SelectCategory(cats[0].ID);
             Current = this;
+        }
+
+        private UIBigButton SmallButton(string caption, Vector2 position)
+        {
+            var button = new UIBigButton(false);
+            button.Caption = caption;
+            button.Width = 220;
+            button.ScaleX = button.ScaleY = 0.5f; //(110 x 50)
+            button.Position = position;
+            button.Visible = false;
+            Add(button);
+            return button;
         }
 
         /// <summary>Opens the category after the open one (the pad's RT), wrapping round.</summary>
@@ -163,9 +189,26 @@ namespace Simitone.Client.UI.DualScreen
                 if (item != null) text = item.ToString() + ((item.CalcPrice > 0) ? "   §" + item.CalcPrice.ToString("##,#0") : "");
             }
             else if (browse != null && browse.ChoosingSub) text = "Choose a kind of item";
+            var holding = Game.LotControl?.ObjectHolder?.Holding;
+            string desc = null, ads = null;
+            if (holding != null && holding.IsBought)
+            {
+                // an object picked up off the lot: its name (as the main screen's pickup panel has it) and its value
+                var name = Game.LotControl.PickupPanel?.TitleLabel?.Caption;
+                text = string.IsNullOrEmpty(name) ? (holding.RealEnt?.ToString() ?? "") : name;
+                var value = holding.RealEnt?.MultitileGroup?.Price ?? holding.Group?.Price ?? 0;
+                if (!holding.CanDelete) desc = "It can't be sold. Place it somewhere else, or put it back.";
+                else if (value > 0) desc = "Sell it for §" + value.ToString("##,#0") + ", place it somewhere else, or put it back.";
+                else desc = "Throw it away, place it somewhere else, or put it back.";
+                ads = "";
+            }
             if (ItemLabel.Caption != text) ItemLabel.Caption = text;
-            BackButton.Visible = browse != null && !browse.ChoosingSub;
-            UpdateDescription(browse != null && !browse.ChoosingSub && index >= 0 && index == browse.ItemID);
+            BackButton.Visible = holding == null && browse != null && !browse.ChoosingSub;
+            PutBackButton.Visible = holding != null;
+            SellButton.Visible = holding != null && holding.IsBought;
+            SellButton.Disabled = !(holding?.CanDelete ?? false);
+            if (desc != null) ShowDescription(desc, ads);
+            else UpdateDescription(browse != null && !browse.ChoosingSub && index >= 0 && index == browse.ItemID);
         }
 
         /// <summary>
@@ -176,17 +219,28 @@ namespace Simitone.Client.UI.DualScreen
         {
             var query = Game.LotControl?.QueryPanel;
             var show = showingPicked && query != null && query.Active && query.Mode == 1;
-            var desc = show ? (query.Body.Caption ?? "") : "";
-            var ads = show ? (query.Ad.Caption ?? "") : "";
-            if (desc != DescFor)
-            {
-                DescFor = desc;
-                DescLabel.Caption = desc;
-            }
-            if (AdLabel.Caption != ads) AdLabel.Caption = ads;
-            //the needs go straight under however many lines the description took
-            var lines = (desc.Length > 0) ? System.Math.Min(DescLines, System.Math.Max(1, DescLabel.NumLines)) : 0;
-            AdLabel.Y = RowsBottom + 28 + lines * DescLabel.CaptionStyle.LineHeight + 2;
+            ShowDescription(show ? (query.Body.Caption ?? "") : "", show ? (query.Ad.Caption ?? "") : "");
+        }
+
+        /// <summary>
+        /// The description, with as many lines as fit above the mode buttons (the rest cut short), and the needs line
+        /// straight under it.
+        /// </summary>
+        private void ShowDescription(string desc, string ads)
+        {
+            var key = desc + "\u0001" + ads;
+            if (key == DescFor) return;
+            DescFor = key;
+            var lineHeight = System.Math.Max(1, DescLabel.CaptionStyle.LineHeight);
+            var descTop = RowsBottom + 28;
+            var room = Bottom - descTop - ((ads.Length > 0) ? lineHeight + 2 : 0);
+            DescLabel.MaxLines = System.Math.Max(1, System.Math.Min(DescLines, (int)(room / lineHeight)));
+            DescLabel.Size = new Vector2(W - 160, DescLabel.MaxLines * lineHeight);
+            DescLabel.Caption = "";
+            DescLabel.Caption = desc; //(wrapped again for the new line limit)
+            AdLabel.Caption = ads;
+            var lines = (desc.Length > 0) ? System.Math.Min(DescLabel.MaxLines, System.Math.Max(1, DescLabel.NumLines)) : 0;
+            AdLabel.Y = descTop + lines * lineHeight + 2;
         }
 
         public override void Draw(UISpriteBatch batch)

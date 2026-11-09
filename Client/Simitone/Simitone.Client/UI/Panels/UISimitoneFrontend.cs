@@ -362,38 +362,28 @@ namespace Simitone.Client.UI.Panels
         /// With a second screen (the AYN Thor's bottom screen), the clock, money, cutaway and mode buttons are there
         /// (UIDualDeck), so the main screen leaves them out and only shows the lot (and the panels opened from there).
         /// </summary>
-        private UIMainPanelMode LastDualMode = UIMainPanelMode.LIVE;
-        /// <summary>
-        /// With two screens, holds the picked-up object panel (normally the main panel's), where the main panel would
-        /// put it: it shows while the main panel is closed. The catalog's info panel stays in the closed main panel,
-        /// unseen: it would sit over the middle of the lot, where the item in hand goes, and the second screen shows
-        /// what it says.
-        /// </summary>
-        private UIContainer InfoHost;
 
         private void HideForSecondScreen()
         {
             var dual = DualScreen.SecondScreen.Active;
-            // back in live mode from buy, build or options (by any route: the pad's Select, the bottom screen), the
-            // panel left open here would show the needs the second screen already shows: close it. (LT, or Live on
-            // the second screen, still opens it for the Sim's other panels.)
-            if (MainPanel.Mode != LastDualMode)
-            {
-                if (dual && MainPanel.Mode == UIMainPanelMode.LIVE && MainPanel.PanelActive) MainPanel.Close();
-                LastDualMode = MainPanel.Mode;
-            }
             // the action queue is on the second screen too; here only while the controller is using it (Y)
             var queue = Game.LotControl?.Queue;
             if (queue != null) queue.Visible = !dual || queue.HasPadFocus;
             Clock.Visible = !dual;
             CutBtn.Visible = !dual;
             ModeSwitcher.Visible = !dual || MainPanel.ShowingSelect; //(the pad's mode menu, held Select, is its fan)
-            MoveInfoPanels(dual);
-            if (!dual) return;
-            // buy and build mode's catalog is the second screen's: this screen's stays closed, whatever opened it
-            // (the mode menu's fan opens the panel while it shows, so that's left be)
-            var catalogMode = MainPanel.Mode == UIMainPanelMode.BUY || MainPanel.Mode == UIMainPanelMode.BUILD;
-            if (catalogMode && MainPanel.PanelActive && !MainPanel.ShowingSelect) MainPanel.Close();
+            if (!dual)
+            {
+                //the second screen was turned off: a panel that was opened empty (see UIMainPanel) gets its contents
+                if (MainPanel.PanelActive && MainPanel.SubPanel == null && !MainPanel.ShowingSelect)
+                    MainPanel.Switcher_OnCategorySelect(MainPanel.Switcher.ActiveCategory);
+                return;
+            }
+            // the second screen has the Sim's panels (live mode) and the catalog (buy and build): this screen's panel
+            // stays closed, whatever opened it, so only the lot shows here. Options keeps it (its buttons are only
+            // here), and the mode menu's fan opens it while it shows. Closed, it draws nothing, the catalog's info and
+            // picked-up object panels in it included: the second screen shows what they say.
+            if (MainPanel.PanelActive && MainPanel.Mode != UIMainPanelMode.OPTIONS && !MainPanel.ShowingSelect) MainPanel.Close();
             Money.Visible = false;
             ExtendPanelBtn.Visible = false;
             if (CutPanel != null)
@@ -402,50 +392,6 @@ namespace Simitone.Client.UI.Panels
                 CutPanel.Kill();
                 CutPanel = null;
             }
-        }
-
-        /// <summary>
-        /// Moves the picked-up object panel out of the main panel (to <see cref="InfoHost"/>, in the same place) while
-        /// there are two screens, and back when there's one.
-        /// </summary>
-        private void MoveInfoPanels(bool dual)
-        {
-            var lot = Game.LotControl;
-            if (lot?.QueryPanel == null || lot.PickupPanel == null) return;
-            if (dual)
-            {
-                if (InfoHost == null)
-                {
-                    InfoHost = new UIContainer();
-                    var children = GetChildren();
-                    var index = children.IndexOf(MainPanel);
-                    var next = (index >= 0 && index + 1 < children.Count) ? children[index + 1] : null;
-                    if (next != null) AddBefore(InfoHost, next);
-                    else Add(InfoHost);
-                }
-                MoveTo(lot.PickupPanel, InfoHost);
-                InfoHost.Position = MainPanel.Position;
-                lot.PickupPanel.Visible = lot.PickupPanel.Opacity > 0;
-            }
-            else if (InfoHost != null)
-            {
-                if (lot.QueryPanel.Parent == InfoHost) MoveTo(lot.QueryPanel, MainPanel);
-                if (lot.PickupPanel.Parent == InfoHost) MoveTo(lot.PickupPanel, MainPanel);
-                Remove(InfoHost);
-                InfoHost = null;
-            }
-        }
-
-        /// <summary>
-        /// Moves an element to another container. Not with Remove: that tells the element it's gone, and these panels
-        /// then dispose the thumbnail they're showing.
-        /// </summary>
-        private static void MoveTo(UIElement element, UIContainer to)
-        {
-            if (element.Parent == to) return;
-            var from = element.Parent?.GetChildren();
-            if (from != null) lock (from) from.Remove(element);
-            to.Add(element);
         }
 
         public override void Draw(UISpriteBatch batch)

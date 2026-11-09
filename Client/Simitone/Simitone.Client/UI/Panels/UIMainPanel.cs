@@ -250,6 +250,13 @@ namespace Simitone.Client.UI.Panels
 
         public void Switcher_OnCategorySelect(int obj)
         {
+            //with two screens, a closed panel stays empty: the second screen has the Sim's panels and the catalog. (A
+            //catalog made here would also act on what's in hand alongside the second screen's.)
+            if (!PanelActive && DualScreen.SecondScreen.Active)
+            {
+                SetSubpanel(null);
+                return;
+            }
             UISubpanel panel = null;
             switch (Mode)
             {
@@ -390,6 +397,8 @@ namespace Simitone.Client.UI.Panels
 
         public override void Draw(UISpriteBatch batch)
         {
+            //(hidden while closed: the search box's backing below was drawn even then, a dark bar over the lot)
+            if (!Visible) return;
             if (CatalogSearchField != null && CatalogSearchField.Visible)
             {
                 // Draw a solid background behind the search field so it's readable against any backdrop
