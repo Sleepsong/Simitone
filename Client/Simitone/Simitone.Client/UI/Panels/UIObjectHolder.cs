@@ -426,8 +426,9 @@ namespace Simitone.Client.UI.Panels
                 }
                 else
                 {
-                    // on touch screens the held object sits at the screen centre (mpos is in UI units there)
-                    var holdPos = FSOEnvironment.SoftwareKeyboard ? new Vector2(mpos.X, mpos.Y) * FSOEnvironment.DPIScaleFactor : new Vector2(mpos.X, mpos.Y);
+                    // on touch screens the held object sits at the screen centre (mpos is in UI units there); the
+                    // pad's pointer is already in screen pixels
+                    var holdPos = (FSOEnvironment.SoftwareKeyboard && ParentControl.PadCursor == null) ? new Vector2(mpos.X, mpos.Y) * FSOEnvironment.DPIScaleFactor : new Vector2(mpos.X, mpos.Y);
                     var tilePos = World.EstTileAtPosWithScroll(World.ScreenToWorldPx(holdPos)) + Holding.TilePosOffset;
                     MoveSelected(tilePos, 1);
                 }

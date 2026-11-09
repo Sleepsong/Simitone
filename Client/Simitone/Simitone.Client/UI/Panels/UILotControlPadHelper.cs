@@ -18,6 +18,7 @@ using FSO.LotView.Utils.Camera;
 using Microsoft.Xna.Framework;
 using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.DualScreen;
 using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Screens;
 
@@ -141,6 +142,11 @@ namespace Simitone.Client.UI.Panels
         private Vector2? BuildCursor; //UI coordinates of the centre cursor, set in Update for Draw
         private float CatalogEmptyTime; //how long the catalog has had nothing to focus while it has the pad
         private const float CatalogEmptyGrace = 1f; //it fades between subcategories and items; don't drop out mid-fade
+        /// <summary>
+        /// The second screen's catalog while it shows one (buy/build mode with two screens): LT and RT, and the
+        /// catalog's focus, work there instead of on the main screen's catalog panel. Set each update.
+        /// </summary>
+        private UIDualCatalog DualCatalog;
 
         /// <summary>
         /// X: the player chose direct control (it applies only in live mode with the 3D camera). Kept for the session,
@@ -157,6 +163,7 @@ namespace Simitone.Client.UI.Panels
         private short DirectFacing; //last direction the Sim was walked in, in VMDirectControlInput units
         private bool DirectRunning;
         private Vector2? DirectCamera; //smoothed camera centre while in direct control
+        private sbyte DirectSimLevel; //the directly controlled Sim's floor when the camera last went to it (0: not yet)
 
         private int SpeedBeforePause = 1;
 
@@ -215,7 +222,7 @@ namespace Simitone.Client.UI.Panels
                 SelectDownAt = -1;
                 Chords.Reset();
                 EndQueueFocus();
-                frontend.PanelNavigator.Clear();
+                ClearNavigators(frontend);
                 UpdateModeMenu(state, frontend);
                 return;
             }
@@ -231,16 +238,18 @@ namespace Simitone.Client.UI.Panels
                 SelectDownAt = -1;
                 Chords.Reset();
                 EndQueueFocus();
-                frontend.PanelNavigator.Clear();
+                ClearNavigators(frontend);
                 return;
             }
 
             var panel = frontend.MainPanel;
             var buildMode = !Master.LiveMode && (panel.Mode == UIMainPanelMode.BUY || panel.Mode == UIMainPanelMode.BUILD);
-            if (!(Master.LiveMode || buildMode) || !panel.PanelActive) PanelFocus = false;
+            var dual = UIDualCatalog.Current;
+            DualCatalog = (buildMode && SecondScreen.Active && dual != null && dual.Parent != null && dual.Browse != null) ? dual : null;
+            if (!(Master.LiveMode || buildMode) || (DualCatalog == null && !panel.PanelActive)) PanelFocus = false;
             var optionsNav = !Master.LiveMode && panel.Mode == UIMainPanelMode.OPTIONS && panel.PanelActive;
             var panelNav = optionsNav || PanelFocus;
-            if (!panelNav) frontend.PanelNavigator.Clear();
+            if (!panelNav) ClearNavigators(frontend);
 
             var pad = state.Pad;
             var dt = (float)Math.Min(state.Time.ElapsedGameTime.TotalSeconds, 0.1);
@@ -281,7 +290,11 @@ namespace Simitone.Client.UI.Panels
             var catalogFocusBefore = PanelFocus;
             if (!PanelFocus) CatalogEmptyTime = 0;
             var selectionBefore = BuildSelection();
-            if (panelNav) UpdatePanelNavigation(state, frontend, optionsNav);
+            if (panelNav)
+            {
+                if (DualCatalog != null) UpdateDualCatalogNavigation(state, frontend);
+                else UpdatePanelNavigation(state, frontend, optionsNav);
+            }
             if (optionsNav) PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Select"),
                 PadPrompt.Of(PadAction.Cancel, "Back to live"));
 
@@ -487,7 +500,7 @@ namespace Simitone.Client.UI.Panels
             if (PanelFocus && selection != null && selection != selectionBefore)
             {
                 PanelFocus = false;
-                frontend.PanelNavigator.Clear();
+                ClearNavigators(frontend);
                 ConfirmNeedsRelease = true;
             }
             if (holder.Holding != LastHolding)
@@ -496,7 +509,8 @@ namespace Simitone.Client.UI.Panels
                 HeldFromCatalog = holder.Holding != null && !holder.Holding.IsBought;
             }
 
-            HandlePanelTriggers(pad, frontend, canClose: false);
+            if (DualCatalog != null) HandleDualCatalogTriggers();
+            else HandlePanelTriggers(pad, frontend, canClose: false);
 
             if (!PadActive || PanelFocus || catalogFocusBefore)
             {
@@ -626,13 +640,13 @@ namespace Simitone.Client.UI.Panels
         /// <summary>Prompts while the catalog has the pad.</summary>
         private void SetCatalogPrompts(UISimitoneFrontend frontend)
         {
-            var browse = frontend.MainPanel.SubPanel as UIBuyBrowsePanel;
+            var browse = (DualCatalog != null) ? DualCatalog.Browse : frontend.MainPanel.SubPanel as UIBuyBrowsePanel;
             var items = new System.Collections.Generic.List<PadPrompt> { PadPrompt.For(PadStick.DPad, "Browse") };
             if (browse != null && !browse.ChoosingSub)
                 items.Add(PadPrompt.Of(PadAction.Confirm, (browse.Mode == UICatalogMode.Build) ? "Choose" : "Buy"));
             else items.Add(PadPrompt.Of(PadAction.Confirm, "Open"));
             items.Add(PadPrompt.Of(PadAction.Cancel, "Back"));
-            if (frontend.MainPanel.VisibleSearchField != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
+            if (DualCatalog == null && frontend.MainPanel.VisibleSearchField != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
             items.Add(PadPrompt.Of(PadAction.TriggerRight, "Category"));
             items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Lot"));
             PadPrompts.Set(items.ToArray());
@@ -657,8 +671,67 @@ namespace Simitone.Client.UI.Panels
         /// <summary>Gives the catalog the pad, if the panel is open and has anything to select.</summary>
         private void FocusCatalog(UISimitoneFrontend frontend)
         {
+            if (DualCatalog != null)
+            {
+                if (UIFocusNavigator.HasFocusable(DualCatalog.Browse)) PanelFocus = true;
+                return;
+            }
             var panel = frontend.MainPanel;
             if (panel.PanelActive && UIFocusNavigator.HasFocusable(panel.SubPanel)) PanelFocus = true;
+        }
+
+        private void ClearNavigators(UISimitoneFrontend frontend)
+        {
+            frontend.PanelNavigator.Clear();
+            UIDualCatalog.Navigator.Clear();
+        }
+
+        /// <summary>
+        /// The second screen's catalog has the pad: the d-pad moves over its subcategories or items, A opens or picks,
+        /// B goes back to the subcategories, then to the lot. Its focus is drawn on that screen.
+        /// </summary>
+        private void UpdateDualCatalogNavigation(UpdateState state, UISimitoneFrontend frontend)
+        {
+            frontend.PanelNavigator.Clear();
+            var browse = DualCatalog.Browse;
+            if (!UIDualCatalog.Navigator.Update(state, browse))
+            {
+                UIDualCatalog.Navigator.Clear();
+                CatalogEmptyTime += (float)state.Time.ElapsedGameTime.TotalSeconds;
+                if (CatalogEmptyTime >= CatalogEmptyGrace || state.Pad.Pressed(PadAction.Cancel)) PanelFocus = false;
+                else state.PadCaptured = true;
+                return;
+            }
+            CatalogEmptyTime = 0;
+            state.PadCaptured = true;
+            UIDualCatalog.PadShown = state.LastInputDevice == InputDevice.GamePad;
+            if (state.Pad.Pressed(PadAction.Cancel))
+            {
+                if (!browse.ChoosingSub) browse.Reset(); //items -> subcategories
+                else PanelFocus = false;
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
+        }
+
+        /// <summary>
+        /// LT and RT with the catalog on the second screen: LT moves the pad between the lot and the catalog (the
+        /// main screen's catalog panel stays closed), RT opens the next category.
+        /// </summary>
+        private void HandleDualCatalogTriggers()
+        {
+            if (Chords.Tap[PadChords.LT])
+            {
+                if (!PanelFocus && UIFocusNavigator.HasFocusable(DualCatalog.Browse)) PanelFocus = true;
+                else PanelFocus = false;
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
+            if (Chords.Tap[PadChords.RT])
+            {
+                DualCatalog.NextCategory();
+                UIDualCatalog.Navigator.Clear(); //a new catalog panel: focus starts on its first subcategory
+                CatalogEmptyTime = 0;
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+            }
         }
 
         /// <summary>Scrolls the lot under the centre cursor, screen-relative, keeping the cursor over the lot.</summary>
@@ -690,6 +763,7 @@ namespace Simitone.Client.UI.Panels
                 PlaceSelectorOn(Master.ActiveEntity, true);
             DirectAvatar = wanted;
             DirectCamera = null;
+            DirectSimLevel = 0;
             DirectRunning = false;
             if (wanted != null)
             {
@@ -745,7 +819,13 @@ namespace Simitone.Client.UI.Panels
                 ? target
                 : PadMath.Follow(current, target, DirectCameraRate, dt);
             World.State.CenterTile = DirectCamera.Value;
-            if (World.State.Level != sim.Position.Level) World.State.Level = sim.Position.Level; //up and down stairs
+            //up and down stairs: the view goes to the Sim's floor when they change floors, and otherwise stays
+            //on whichever floor the player chose
+            if (sim.Position.Level != DirectSimLevel)
+            {
+                DirectSimLevel = sim.Position.Level;
+                World.State.Level = sim.Position.Level;
+            }
             Selector = target;
         }
 
@@ -901,7 +981,7 @@ namespace Simitone.Client.UI.Panels
             var subpanel = frontend.MainPanel.SubPanel;
             if (subpanel == null || !frontend.PanelNavigator.Update(state, subpanel))
             {
-                frontend.PanelNavigator.Clear();
+                ClearNavigators(frontend);
                 //the catalog cross-fades between subcategories and items, and may briefly have nothing to focus
                 CatalogEmptyTime += (float)state.Time.ElapsedGameTime.TotalSeconds;
                 var fading = subpanel is UIBuyBrowsePanel && CatalogEmptyTime < CatalogEmptyGrace;
@@ -1630,17 +1710,22 @@ namespace Simitone.Client.UI.Panels
         private float ScreenWidth => GameFacade.Screens.CurrentUIScreen.ScreenWidth;
         private float ScreenHeight => GameFacade.Screens.CurrentUIScreen.ScreenHeight;
 
-        /// <summary>World screen space (what EstTileAtPosWithScroll takes) to UI space, undoing the 2D smooth-zoom scale.</summary>
+        /// <summary>
+        /// World screen space (what EstTileAtPosWithScroll takes: screen pixels, in the world's image) to UI space,
+        /// undoing the 2D smooth-zoom scale and the UI scale (DPIScaleFactor: 1 on desktops, about 2 on phones).
+        /// </summary>
         private Vector2 ToUI(Vector2 worldScreen)
         {
-            var middle = new Vector2(ScreenWidth, ScreenHeight) / 2;
-            return (worldScreen - middle) * World.BackbufferScale + middle;
+            var dpi = FSOEnvironment.DPIScaleFactor;
+            var middle = new Vector2(ScreenWidth, ScreenHeight) * (dpi / 2);
+            return ((worldScreen - middle) * World.BackbufferScale + middle) / dpi;
         }
 
         private Vector2 FromUI(Vector2 ui)
         {
-            var middle = new Vector2(ScreenWidth, ScreenHeight) / 2;
-            return (ui - middle) / World.BackbufferScale + middle;
+            var dpi = FSOEnvironment.DPIScaleFactor;
+            var middle = new Vector2(ScreenWidth, ScreenHeight) * (dpi / 2);
+            return (ui * dpi - middle) / World.BackbufferScale + middle;
         }
 
         #endregion

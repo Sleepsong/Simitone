@@ -22,7 +22,8 @@ namespace Simitone.Client.UI.DualScreen
     ///   then its items, here in two rows. Picking an item works as from the main screen's catalog: the object (or the
     ///   build tool) is in hand, to place on the lot on the main screen, whose info panel shows what it is;
     /// - the picked item's name and price, and a button back to the subcategories.
-    /// The controller keeps using the main screen's catalog (LT), where its focus can be shown.
+    /// The controller uses it too: LT moves the pad between the lot and this catalog (its focus is outlined here), RT
+    /// opens the next category, and the highlighted item's name and price show under the items.
     /// </summary>
     public class UIDualCatalog : UIContainer
     {
@@ -32,7 +33,14 @@ namespace Simitone.Client.UI.DualScreen
         private readonly float Top;
         private readonly List<(int id, UICatButton button)> Categories = new List<(int, UICatButton)>();
         private int Category = -1;
-        private UIBuyBrowsePanel Browse;
+        public UIBuyBrowsePanel Browse { get; private set; }
+        /// <summary>The catalog on the second screen, while there is one.</summary>
+        public static UIDualCatalog Current { get; private set; }
+        /// <summary>The controller's focus in this catalog (run by the lot's pad helper, drawn here).</summary>
+        public static readonly UIFocusNavigator Navigator = new UIFocusNavigator();
+        /// <summary>Whether the pad is the device in use (set with the navigator), so its focus shows.</summary>
+        public static bool PadShown;
+        private float Time;
         private UILabel ItemLabel;
         private UIBigButton BackButton;
         private const int Rows = 2;
@@ -79,7 +87,19 @@ namespace Simitone.Client.UI.DualScreen
             Add(BackButton);
 
             if (cats.Count > 0) SelectCategory(cats[0].ID);
+            Current = this;
         }
+
+        /// <summary>Opens the category after the open one (the pad's RT), wrapping round.</summary>
+        public void NextCategory()
+        {
+            if (Categories.Count == 0) return;
+            var index = Categories.FindIndex(x => x.id == Category);
+            SelectCategory(Categories[(index + 1) % Categories.Count].id);
+        }
+
+        /// <summary>Whether the pad is moving over this catalog, and its focus is to be shown.</summary>
+        private bool PadFocusShown => PadShown && Browse != null && Navigator.Scope == Browse && Navigator.Focused != null;
 
         private float BrowseTop => Top + 85;
 
@@ -101,11 +121,16 @@ namespace Simitone.Client.UI.DualScreen
         {
             base.Update(state);
             // the picked item: name and price
+            Time += (float)state.Time.ElapsedGameTime.TotalSeconds;
             string text = "";
             var browse = Browse;
-            if (browse != null && browse.ItemID >= 0 && browse.FilterCategory != null)
+            //the pad's highlight (it browses without picking), else the picked item
+            var index = (browse != null && PadFocusShown && Navigator.Focused == browse.CatContainer)
+                ? browse.CatContainer.PadHighlightIndex : -1;
+            if (index < 0 && browse != null) index = browse.ItemID;
+            if (browse != null && !browse.ChoosingSub && index >= 0 && browse.FilterCategory != null)
             {
-                var item = browse.FilterCategory.ElementAtOrDefault(browse.ItemID);
+                var item = browse.FilterCategory.ElementAtOrDefault(index);
                 if (item != null) text = item.ToString() + ((item.CalcPrice > 0) ? "   §" + item.CalcPrice.ToString("##,#0") : "");
             }
             else if (browse != null && browse.ChoosingSub) text = "Choose a kind of item";
@@ -113,11 +138,31 @@ namespace Simitone.Client.UI.DualScreen
             BackButton.Visible = browse != null && !browse.ChoosingSub;
         }
 
+        public override void Draw(UISpriteBatch batch)
+        {
+            base.Draw(batch);
+            if (!Visible || !PadFocusShown || !Navigator.Focused.WillDraw()) return;
+            //the pad's focus: Simitone's mint frame, as on the main screen (its scale is this screen's)
+            var rect = UIFocusNavigator.GlobalRect(Navigator.Focused);
+            var scale = (SecondScreen.Panel?.UIScale ?? 1f);
+            var gd = GameFacade.GraphicsDevice;
+            var pad = (int)((PadGraphics.GlowInset + 3) * scale);
+            var frame = rect;
+            frame.Inflate(pad, pad);
+            var pulse = 0.82f + 0.18f * (float)System.Math.Sin(Time * 4f);
+            var shadow = frame;
+            shadow.Inflate((int)(2 * scale), (int)(2 * scale));
+            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, shadow, PadDraw.Ink * 0.45f, scale);
+            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, frame, PadDraw.Accent * pulse, scale);
+        }
+
         /// <summary>Lets go of the catalog (and whatever it had picked), as leaving buy or build mode does.</summary>
         public void Destroy()
         {
             Browse?.Kill();
             Browse = null;
+            if (Current == this) Current = null;
+            Navigator.Clear();
             Parent?.Remove(this);
         }
     }

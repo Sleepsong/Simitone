@@ -26,7 +26,8 @@ screens and the bottom screen's window and drawing.
 2. On a lot, the bottom screen shows:
    - along the top: the money, the floor (down, its name, up), the cutaway button and the clock. Tap the clock for
      the speed buttons. Each tap of the cutaway button goes to the next wall view: cut away, walls up, roof, walls
-     down.
+     down. Choosing a floor (here, or with the D-pad) stops the camera following the Sim, so it stays on that floor;
+     R3 follows them again. In direct control the view still moves to the Sim's floor when they take the stairs.
    - in live mode: the family (tap a Sim to control them; the one you control is outlined), the controlled Sim's
      needs in two columns as in the original game, and their actions under the needs: the running one large, then
      the queued ones. Tap one to cancel it. The top screen only shows its own action queue while the controller is
@@ -35,7 +36,8 @@ screens and the bottom screen's window and drawing.
      so on; build: walls, floors and roofs; outdoors; doors, windows and more), the open one lit. Under them, the
      category's kinds of item, then its items, in two rows: drag them sideways to scroll. Tap an item to buy it
      (or take the build tool), then place it on the lot on the top screen, where the info panel shows what it is.
-     The picked item's name and price show under the items, with **Back** to go back to the kinds of item.
+     The picked item's name and price show under the items, with **Back** to go back to the kinds of item. The top
+     screen's own catalog stays closed in buy and build mode; the info panel for the item in hand still shows there.
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy and Build show their catalog here; Options
      opens its panel on the top screen, as the mode button does on a phone. Tap the lit one again to go back to
      Live. In live mode, Live opens or closes the Sim's panels (needs, relationships, job, personality,
@@ -48,8 +50,12 @@ screens and the bottom screen's window and drawing.
    `claude/intelligent-cray-f9z43d`, is merged in; its controls are listed in `UILotControlPadHelper`). What they
    change shows on the bottom screen too: the mode (Select), the speed (D-pad left/right), the walls (L3) and the
    Sim (LB/RB). Holding Select opens the mode menu on the top screen. In buy and build mode the controller uses the
-   top screen's catalog (LT), as on one screen, since that's where its focus shows. Touching the bottom screen
-   doesn't take the controls away from the game: its window can't take the focus.
+   bottom screen's catalog: LT moves the controller between the lot and the catalog, where its focus is outlined;
+   the D-pad moves over the kinds of item, then over the items (left/right along the rows, up/down between them);
+   A opens a kind or picks an item, which puts it in hand on the lot; B goes back to the kinds of item, then to the
+   lot; RT opens the next category. The highlighted item's name and price show under the items. In live mode LT
+   still opens the Sim's panels on the top screen. Touching the bottom screen doesn't take the controls away from
+   the game: its window can't take the focus.
 5. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
 
 **Options > Second Screen** (Graphics tab, only on devices with a second screen) turns it off and back on without
@@ -111,7 +117,9 @@ image's top lands at the top, and that the first context is current again afterw
 
 ## Not yet
 
-- The catalog's search box is only on the top screen's catalog.
+- The catalog has no search box on the bottom screen yet (with the second screen off, the top screen's catalog has
+  one).
 - Create-a-Sim and the neighbourhood don't use the bottom screen yet.
-- The controller doesn't reach the bottom screen's buttons yet (everything there can also be done with the pad).
+- Apart from the catalog, the controller doesn't reach the bottom screen's buttons yet (everything there can also be
+  done with the pad).
 - Swapping the screens, and a phone with a bigger external screen (lot on the TV, controls on the phone).

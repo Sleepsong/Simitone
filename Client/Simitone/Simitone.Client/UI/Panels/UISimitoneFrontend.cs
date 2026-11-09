@@ -237,7 +237,12 @@ namespace Simitone.Client.UI.Panels
         {
             if (!ModeAvailable(mode)) return false;
             MainPanel.SwitchAvatar?.Kill();
-            if (mode != UIMainPanelMode.LIVE && !MainPanel.PanelActive) MainPanel.Open();
+            //with two screens, buy and build mode's catalog is on the second screen: this one's stays closed
+            if (DualScreen.SecondScreen.Active && (mode == UIMainPanelMode.BUY || mode == UIMainPanelMode.BUILD))
+            {
+                if (MainPanel.PanelActive) MainPanel.Close();
+            }
+            else if (mode != UIMainPanelMode.LIVE && !MainPanel.PanelActive) MainPanel.Open();
             MainPanel.SetMode(mode);
             ModeSwitcher?.EndSwitch(mode);
             return true;
@@ -358,6 +363,11 @@ namespace Simitone.Client.UI.Panels
         /// (UIDualDeck), so the main screen leaves them out and only shows the lot (and the panels opened from there).
         /// </summary>
         private UIMainPanelMode LastDualMode = UIMainPanelMode.LIVE;
+        /// <summary>
+        /// With two screens, holds the object info and picked-up object panels (normally the main panel's), where the
+        /// main panel would put them: they show for the second screen's catalog while the main panel is closed.
+        /// </summary>
+        private UIContainer InfoHost;
 
         private void HideForSecondScreen()
         {
@@ -376,10 +386,12 @@ namespace Simitone.Client.UI.Panels
             Clock.Visible = !dual;
             CutBtn.Visible = !dual;
             ModeSwitcher.Visible = !dual || MainPanel.ShowingSelect; //(the pad's mode menu, held Select, is its fan)
+            MoveInfoPanels(dual);
             if (!dual) return;
-            // shown even while closed: the object info and picked-up object panels it holds show for the second
-            // screen's catalog too (a closed panel draws nothing else)
-            MainPanel.Visible = true;
+            // buy and build mode's catalog is the second screen's: this screen's stays closed, whatever opened it
+            // (the mode menu's fan opens the panel while it shows, so that's left be)
+            var catalogMode = MainPanel.Mode == UIMainPanelMode.BUY || MainPanel.Mode == UIMainPanelMode.BUILD;
+            if (catalogMode && MainPanel.PanelActive && !MainPanel.ShowingSelect) MainPanel.Close();
             Money.Visible = false;
             ExtendPanelBtn.Visible = false;
             if (CutPanel != null)
@@ -388,6 +400,51 @@ namespace Simitone.Client.UI.Panels
                 CutPanel.Kill();
                 CutPanel = null;
             }
+        }
+
+        /// <summary>
+        /// Moves the object info and picked-up object panels out of the main panel (to <see cref="InfoHost"/>, in the
+        /// same place) while there are two screens, and back when there's one.
+        /// </summary>
+        private void MoveInfoPanels(bool dual)
+        {
+            var lot = Game.LotControl;
+            if (lot?.QueryPanel == null || lot.PickupPanel == null) return;
+            if (dual)
+            {
+                if (InfoHost == null)
+                {
+                    InfoHost = new UIContainer();
+                    var children = GetChildren();
+                    var index = children.IndexOf(MainPanel);
+                    var next = (index >= 0 && index + 1 < children.Count) ? children[index + 1] : null;
+                    if (next != null) AddBefore(InfoHost, next);
+                    else Add(InfoHost);
+                }
+                MoveTo(lot.QueryPanel, InfoHost);
+                MoveTo(lot.PickupPanel, InfoHost);
+                InfoHost.Position = MainPanel.Position;
+                lot.PickupPanel.Visible = lot.PickupPanel.Opacity > 0;
+            }
+            else if (InfoHost != null)
+            {
+                if (lot.QueryPanel.Parent == InfoHost) MoveTo(lot.QueryPanel, MainPanel);
+                if (lot.PickupPanel.Parent == InfoHost) MoveTo(lot.PickupPanel, MainPanel);
+                Remove(InfoHost);
+                InfoHost = null;
+            }
+        }
+
+        /// <summary>
+        /// Moves an element to another container. Not with Remove: that tells the element it's gone, and these panels
+        /// then dispose the thumbnail they're showing.
+        /// </summary>
+        private static void MoveTo(UIElement element, UIContainer to)
+        {
+            if (element.Parent == to) return;
+            var from = element.Parent?.GetChildren();
+            if (from != null) lock (from) from.Remove(element);
+            to.Add(element);
         }
 
         public override void Draw(UISpriteBatch batch)

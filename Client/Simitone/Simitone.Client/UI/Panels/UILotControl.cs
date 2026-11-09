@@ -447,6 +447,12 @@ namespace Simitone.Client.UI.Panels
             OnCustomControlReleased?.Invoke();
         }
 
+        /// <summary>A point in UI units to the matching point in the world's image (what picking and the build tools take).</summary>
+        private Point UIToWorldPx(Vector2 ui)
+        {
+            return World.ScreenToWorldPx(ui * FSOEnvironment.DPIScaleFactor).ToPoint();
+        }
+
         public void SimulateMD(UpdateState state)
         {
             if (CustomControl != null) CustomControl.MouseDown(state);
@@ -1110,12 +1116,14 @@ namespace Simitone.Client.UI.Panels
                     }
                     else
                     {
+                        //the build tools take a position in the world's image (screen pixels, before the 2D zoom);
+                        //the pad cursor and the touch centre are in UI units
                         if (PadCursor != null)
                         {
-                            CustomControl.MousePosition = PadCursor.Value;
+                            CustomControl.MousePosition = UIToWorldPx(PadCursor.Value.ToVector2());
                             CustomControl.Modifiers = PadModifiers;
                         }
-                        else if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = new Point(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2);
+                        else if (FSOEnvironment.SoftwareKeyboard) CustomControl.MousePosition = UIToWorldPx(new Vector2(UIScreen.Current.ScreenWidth / 2, UIScreen.Current.ScreenHeight / 2));
                         else
                         {
                             CustomControl.Modifiers = 0;

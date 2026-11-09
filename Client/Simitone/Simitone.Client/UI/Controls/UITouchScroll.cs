@@ -294,6 +294,9 @@ namespace Simitone.Client.UI.Controls
                 (int)((HighlightedIndex() % RowsUsed) * RowHeight), ItemWidth, (int)RowHeight), new Rectangle(0, 0, (int)Size.X, (int)Size.Y))
             : PadMath.ListItemBounds(HighlightedIndex(), ItemWidth, Scroll, (int)Size.X, (int)Size.Y, VerticalMode);
 
+        /// <summary>The item the pad has highlighted, or -1 if the pad hasn't moved over this list.</summary>
+        public int PadHighlightIndex => (PadIndex >= 0 && LengthProvider() > 0) ? HighlightedIndex() : -1;
+
         /// <summary>The item the highlight is on: where the pad left it, else the selected item, else the first.</summary>
         private int HighlightedIndex()
         {
@@ -306,6 +309,7 @@ namespace Simitone.Client.UI.Controls
         /// </summary>
         public bool PadMove(PadDirection direction)
         {
+            if (RowsUsed > 1) return PadMoveGrid(direction);
             int step;
             if (VerticalMode) step = (direction == PadDirection.Up) ? -1 : ((direction == PadDirection.Down) ? 1 : 0);
             else step = (direction == PadDirection.Left) ? -1 : ((direction == PadDirection.Right) ? 1 : 0);
@@ -326,6 +330,41 @@ namespace Simitone.Client.UI.Controls
             if (next < 0 || next >= LengthProvider()) return false;
             SelectItem(next);
             ScrollToItem(next);
+            HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="PadMove"/> with several rows (filled column by column): left and right go to the next column,
+        /// on the same row (or the last item, from a full column into a shorter last one); up and down move within
+        /// the column. Off the grid, focus moves on.
+        /// </summary>
+        private bool PadMoveGrid(PadDirection direction)
+        {
+            var length = LengthProvider();
+            if (length == 0) return false;
+            var rows = RowsUsed;
+            var from = PadHighlightOnly ? HighlightedIndex() : (LastSelected?.ItemID ?? -1);
+            int to;
+            if (from < 0) to = 0;
+            else
+            {
+                var row = from % rows;
+                switch (direction)
+                {
+                    case PadDirection.Left: to = from - rows; break;
+                    case PadDirection.Right:
+                        to = from + rows;
+                        if (to >= length && from / rows < Columns(length) - 1) to = length - 1;
+                        break;
+                    case PadDirection.Up: to = (row > 0) ? from - 1 : -1; break;
+                    default: to = (row < rows - 1) ? from + 1 : -1; break;
+                }
+                if (to < 0 || to >= length) return false;
+            }
+            if (PadHighlightOnly) PadIndex = to;
+            else SelectItem(to);
+            ScrollToItem(to);
             HITVM.Get()?.PlaySoundEvent(UISounds.Click);
             return true;
         }

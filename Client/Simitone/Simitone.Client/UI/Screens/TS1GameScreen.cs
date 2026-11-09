@@ -187,6 +187,9 @@ namespace Simitone.Client.UI.Screens
             {
                 if (World != null)
                 {
+                    //a camera following a Sim (the pad's follow, a portrait's) puts the floor back to theirs every
+                    //frame: choosing a floor lets go of the Sim
+                    if (World.State.Level != value) World.State.ScrollAnchor = null;
                     World.State.Level = value;
                 }
             }
