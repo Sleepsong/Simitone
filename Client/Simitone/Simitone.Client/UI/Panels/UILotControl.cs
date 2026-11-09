@@ -564,6 +564,7 @@ namespace Simitone.Client.UI.Panels
                 {
                     var flags = ((VMGameObject)obj).Disabled;
                     Console.WriteLine($"[tap] {tooltipPos.X:0},{tooltipPos.Y:0}: {obj} (id {obj.ObjectID}) is disabled ({flags})");
+                    FSO.SimAntics.Engine.VMTravelLog.Write($"clicked {obj}: it's disabled ({flags}), so no pie menu");
 
                     if ((flags & VMGameObjectDisableFlags.ForSale) > 0)
                     {
@@ -584,6 +585,8 @@ namespace Simitone.Client.UI.Panels
                 else
                 {
                     var menu = obj.GetPieMenu(vm, ActiveEntity, false, true);
+                    //the travel log says which interactions were left out, and why (-travellog)
+                    FSO.SimAntics.Engine.VMTravelLog.PieMenu(vm, obj, ActiveEntity, menu.Count);
                     Console.WriteLine($"[tap] {tooltipPos.X:0},{tooltipPos.Y:0}: {(target != null ? obj.ToString() + " (id " + obj.ObjectID + ")" : "the ground")}, {menu.Count} actions" +
                         (menu.Count > 0 ? ": " + string.Join(", ", menu.Select(x => x.Name)) : ""));
                     if (menu.Count == 0)
