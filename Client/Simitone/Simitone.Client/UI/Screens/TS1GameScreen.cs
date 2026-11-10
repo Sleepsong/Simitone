@@ -695,6 +695,24 @@ namespace Simitone.Client.UI.Screens
 
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
+            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm);
+        }
+
+        /// <summary>
+        /// Warn that this lot was last saved with packs that are not in use now, while the user can still leave without saving.
+        /// </summary>
+        private void ShowMissingPacks(List<string> packs)
+        {
+            UIMobileAlert alert = null;
+            alert = new UIMobileAlert(new FSO.Client.UI.Controls.UIAlertOptions
+            {
+                Title = "Missing Packs",
+                Message = "This lot was last saved with packs that are not switched on now:\n\n" + string.Join("\n", packs)
+                    + "\n\nAnything they added to the lot may be missing or not work. If you save, it is removed from the lot for good. "
+                    + "To keep it, leave without saving, switch the packs back on in Options > Packs and restart.",
+                Buttons = UIAlertButton.Ok((b) => { alert.Close(); })
+            });
+            UIScreen.GlobalShowDialog(alert, true);
         }
 
         public void ShowLoadErrors(List<VMLoadError> errors, bool verbose)
@@ -761,6 +779,8 @@ namespace Simitone.Client.UI.Screens
                 PendingWeatherData = pendingWeather;
 
                 if (vm.LoadErrors.Count > 0) GameThread.NextUpdate((state) => ShowLoadErrors(vm.LoadErrors, true));
+                var missingPacks = Simitone.Client.Packs.LotPackRecord.Missing(lotName);
+                if (missingPacks.Count > 0) GameThread.NextUpdate((state) => ShowMissingPacks(missingPacks));
 
                 vm.MyUID = 65537;
                 var settings = GlobalSettings.Default;
@@ -811,6 +831,7 @@ namespace Simitone.Client.UI.Screens
 
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
+            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm);
         }
 
         public void LoadSurrounding(short houseID)
@@ -1057,6 +1078,7 @@ namespace Simitone.Client.UI.Screens
 
             Content.Get().Neighborhood.SaveHouse(vm.GetGlobalValue(10), iff);
             Content.Get().Neighborhood.SaveNeighbourhood(true);
+            Simitone.Client.Packs.LotPackRecord.Saved(Content.Get().Neighborhood.GetHousePath(vm.GetGlobalValue(10)));
 
             // Write weather sidecar alongside the save
             SaveWeather();

@@ -97,6 +97,7 @@ namespace Simitone.Client.UI.Screens
             (new Thread(() => {
                 VMContext.InitVMConfig(true);
                 FSO.Content.Content.Init(GlobalSettings.Default.StartupPath, GameFacade.GraphicsDevice);
+                Simitone.Client.Packs.PackManager.NotifyContentReady();
                 lock (this)
                 {
                     LoadingComplete = true;

@@ -3,16 +3,16 @@
 Packs are optional add-ons for Simitone, in the spirit of expansion packs: each one is a folder you
 install yourself, and nothing in it is used unless you turn it on.
 
-**Status: stage 3 of 4.** Enabled packs can add content (objects, skins, animations, sounds) and patch
-the game's objects, and optional features built into Simitone are switched on and off from the same
-list. Program code in packs comes at the last stage.
+**Status: all four stages built.** Enabled packs can add content (objects, skins, animations, sounds),
+patch the game's objects and run their own program code, and optional features built into Simitone
+are switched on and off from the same list.
 
 | Stage | What it adds | State |
 |---|---|---|
 | 1 | Pack folders, `pack.json`, checks, the Packs screen | Done |
 | 2 | Content and patch layers (objects, skins, `.piff` patches) | Done |
 | 3 | Built-in engine features as switchable packs (weather first) | Done |
-| 4 | Code layer (`.dll`), save-game compatibility checks | Planned |
+| 4 | Code layer (`.dll`), save-game compatibility checks | Done |
 
 ## For players
 
@@ -22,8 +22,17 @@ list. Program code in packs comes at the last stage.
 3. Restart Simitone. Changes only ever apply on the next start.
 
 A pack that cannot be used shows the reason in the list (a pack it needs is missing or off, it clashes
-with another enabled pack, it needs a newer Simitone, or its `pack.json` is broken). Enabling a pack
-that contains program code asks for confirmation first.
+with another enabled pack, it needs a newer Simitone, or its `pack.json` is broken).
+
+**Packs with code.** A pack marked **Code** contains a program that can do anything on your computer
+that Simitone can. Enabling one asks you to confirm, and only packs you confirmed run their code. If
+an update adds code to a pack you already had switched on, the code stays off until you switch the
+pack off and on again. Only confirm packs from sources you trust.
+
+**Packs and saved lots.** Simitone remembers which packs each lot was last saved with. If you open a
+lot without one of them, it warns you before you play: things the pack added may be missing, and
+saving would remove them for good. To keep them, leave without saving, switch the pack back on and
+restart.
 
 Your choices are stored in `packs.json` in the user directory.
 
@@ -62,7 +71,7 @@ digits, `.`, `_` and `-`. If two folders share an id, the first one (by folder n
 | `requires` | Ids of packs that must be enabled before this one can be |
 | `conflicts` | Ids of packs that cannot be enabled alongside this one (applies in both directions) |
 | `minSimitoneVersion` | Lowest Simitone version the pack runs on |
-| `assembly` | A `.dll` inside the pack folder (code layer, not loaded yet) |
+| `assembly` | A `.dll` inside the pack folder (the code layer, below) |
 
 Layers are recognised by what the folder contains:
 
@@ -93,6 +102,37 @@ ships in an archive, patch it instead.
 `patch/` holds `.piff` patches and `.otf` rewrites, in the same format as Simitone's built-in
 `Content/TS1Patch/` folder. They are applied after the built-in patches.
 
+### Code layer
+
+Build a .NET 9 class library that references `Simitone.Client`, and name it in `assembly`. Simitone
+creates one instance of every public class in it that implements `ISimitonePack` and has a public
+constructor without parameters:
+
+```csharp
+using FSO.SimAntics;
+using Simitone.Client.Packs;
+
+public class SeasonsPack : ISimitonePack
+{
+    public void OnLoad(Pack pack) { }      // at startup, before game content is loaded
+    public void OnContentReady() { }       // content and primitives are loaded: register yours here
+    public void OnLotLoaded(VM vm) { }     // each time a lot has loaded
+}
+```
+
+Implement only the calls you need.
+
+- **Failures are contained.** If the assembly cannot be loaded, or any call throws, that pack's code
+  gets no more calls for the rest of the run and the reason is shown in the Packs screen. Its content
+  and patches stay in use.
+- **Dependencies.** Put any other `.dll` your code needs beside it in the pack folder. Each pack loads
+  separately, so two packs can ship different versions of the same library. Do not ship Simitone's
+  own assemblies; copies in the pack folder are ignored.
+- **Primitives.** Add SimAntics primitives with `PackManager.RegisterPrimitive` from
+  `OnContentReady`. It refuses an opcode that the game or another pack already uses.
+- **Threads.** `OnContentReady` runs on the loading thread; the other calls run on the game thread.
+- **Saves.** Do not change the lot save format. Keep your pack's data in its own file, as weather does.
+
 ## For Simitone developers
 
 The code is in `Client/Simitone/Simitone.Client/Packs/`. `PackManager.Init()` runs once from
@@ -107,3 +147,6 @@ added by an update starts in its default state.
 
 The content and patch layers go through two lists in FreeSO's `Content` class, `TS1ExtraRoots` and
 `ExtraPatchPaths`, which `PackManager` fills from the active packs before content loads.
+
+Which packs a lot was saved with is recorded by `LotPackRecord`, in `LocalHouse/lotpacks.json` in the
+user directory. Built-in packs are not recorded, since a lot loads the same without them.

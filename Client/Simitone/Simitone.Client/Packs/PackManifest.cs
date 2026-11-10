@@ -33,7 +33,7 @@ namespace Simitone.Client.Packs
         /// <summary>Ids of packs that cannot be enabled at the same time as this one.</summary>
         [JsonPropertyName("conflicts")] public List<string> Conflicts { get; set; } = new List<string>();
 
-        /// <summary>Optional code layer: a .dll inside the pack folder. Reported, but not loaded yet.</summary>
+        /// <summary>Optional code layer: a .dll inside the pack folder, holding classes that implement ISimitonePack.</summary>
         [JsonPropertyName("assembly")] public string Assembly { get; set; }
     }
 
@@ -66,6 +66,12 @@ namespace Simitone.Client.Packs
 
         /// <summary>Why this pack can never be enabled as it is on disk (bad manifest, duplicate id), or null.</summary>
         public string LoadError;
+
+        /// <summary>Why this pack's code is not running (not approved, failed to load, threw an exception), or null.</summary>
+        public string CodeError;
+
+        /// <summary>The pack's running code. Empty unless the pack is active and its code loaded.</summary>
+        public List<ISimitonePack> Code = new List<ISimitonePack>();
 
         public bool HasContent;
         public bool HasPatches;

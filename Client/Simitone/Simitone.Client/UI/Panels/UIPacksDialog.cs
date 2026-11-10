@@ -107,7 +107,7 @@ namespace Simitone.Client.UI.Panels
                 AddLabel(title, 19, style.DialogText, new Vector2(Margin, y), textWidth, 1);
 
                 //an enabled pack that isn't running this session is the one case the user can't see for themselves
-                var problem = PackManager.GetProblem(pack);
+                var problem = PackManager.GetProblem(pack) ?? (enabled ? pack.CodeError : null);
                 if (problem == null && enabled && !PackManager.IsActive(pack.Id) && !PackManager.RestartRequired)
                     problem = "Not loaded";
                 var detail = problem ?? ("[" + pack.LayerSummary + "]  " + manifest.Description);
@@ -165,7 +165,7 @@ namespace Simitone.Client.UI.Panels
 
         private void Apply(Pack pack, bool enable)
         {
-            Message = PackManager.SetEnabled(pack, enable);
+            Message = PackManager.SetEnabled(pack, enable, true); //Toggle has already asked about code
             if (Message != null) Message = pack.DisplayName + ": " + Message + ".";
             Refresh();
         }
