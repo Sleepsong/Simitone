@@ -1,0 +1,8 @@
+{
+  "id": "sample.testcube",
+  "name": "Test Cube",
+  "version": "1.0",
+  "author": "Simitone",
+  "description": "One object, a plain grey cube, in Buy mode under Decorative > Other. For checking that content packs load.",
+  "minSimitoneVersion": "0.8.22"
+}

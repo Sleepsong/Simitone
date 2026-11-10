@@ -154,6 +154,21 @@ Either way you get a `buildcheats` folder holding `pack.json` and `BuildCheats.d
 into Simitone's `Packs/` folder, switch **Build Cheats** on in Options > Packs, confirm, and restart.
 Use a pack built from the same version of Simitone you are running.
 
+### Sample pack: Test Cube
+
+`SamplePacks/TestCube/pack/testcube/` is a complete content pack, ready to copy into `Packs/`: a
+`pack.json` and one object, `content/Downloads/TestCube.iff`. The object is a plain grey cube with no
+behaviour, in Buy mode under Decorative > Other for 10 Simoleons. It needs no approval, since it has
+no code.
+
+The object file is not hand-made. `SamplePacks/TestCube/generator/` writes it with FreeSO's own file
+code and draws the sprites by tracing a cube through the engine's camera maths, then reads the file
+back and checks it. To regenerate it:
+
+```bash
+dotnet run --project SamplePacks/TestCube/generator -- SamplePacks/TestCube/pack/testcube/content/Downloads
+```
+
 ## For Simitone developers
 
 The code is in `Client/Simitone/Simitone.Client/Packs/`. `PackManager.Init()` runs once from
