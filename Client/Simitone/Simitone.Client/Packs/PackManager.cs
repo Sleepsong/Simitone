@@ -19,9 +19,9 @@ namespace Simitone.Client.Packs
     /// Nothing in a pack is used unless the user enables it, and a change only applies on the next start,
     /// so the set of packs in use (Active) is fixed for the whole run.
     ///
-    /// This is the first stage: finding packs, checking them and remembering which are enabled.
-    /// Packs do not change the game yet - the content, patch and code layers hook in at later stages,
-    /// and should read Active (which is in dependency order) to decide what to load.
+    /// A pack's content/ folder is laid out like the game's own folder and is read alongside it, and the .piff
+    /// files in its patch/ folder are applied to the game's objects. The code layer is not loaded yet.
+    /// Anything else that packs add later should read Active (which is in dependency order) to decide what to load.
     /// </summary>
     public static class PackManager
     {
@@ -52,12 +52,28 @@ namespace Simitone.Client.Packs
             Enabled = LoadEnabled();
             EnabledAtStartup = new HashSet<string>(Enabled);
             Active = ResolveActive();
+            RegisterContent();
 
             foreach (var pack in All)
             {
                 var problem = pack.LoadError ?? (IsEnabled(pack) ? GetProblem(pack) : null);
                 var state = Active.Contains(pack) ? "active" : (IsEnabled(pack) ? "enabled but NOT loaded" : "disabled");
                 Console.WriteLine("Pack " + pack.Id + " (" + pack.LayerSummary + "): " + state + (problem == null ? "" : " - " + problem));
+            }
+        }
+
+        /// <summary>
+        /// Tell the content system about the active packs' files. It reads these lists when it loads, after this.
+        /// Later packs win: a loose file replaces a same named one from the game or an earlier pack.
+        /// </summary>
+        private static void RegisterContent()
+        {
+            FSO.Content.Content.TS1ExtraRoots.Clear();
+            FSO.Content.Content.ExtraPatchPaths.Clear();
+            foreach (var pack in Active)
+            {
+                if (pack.HasContent) FSO.Content.Content.TS1ExtraRoots.Add(Path.GetFullPath(Path.Combine(pack.Folder, "content")));
+                if (pack.HasPatches) FSO.Content.Content.ExtraPatchPaths.Add(Path.GetFullPath(Path.Combine(pack.Folder, "patch")) + Path.DirectorySeparatorChar);
             }
         }
 
