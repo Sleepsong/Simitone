@@ -53,7 +53,15 @@ namespace Simitone.Client.Packs
 
         /// <summary>Unique id. Falls back to the folder name when the manifest cannot be read.</summary>
         public string Id;
+
+        /// <summary>Where the pack is on disk. Null for a built in pack.</summary>
         public string Folder;
+
+        /// <summary>A feature that ships inside Simitone (see BuiltInPacks), rather than a folder the user installed.</summary>
+        public bool BuiltIn;
+
+        /// <summary>Whether the pack is on until the user says otherwise. Only built in packs can be.</summary>
+        public bool DefaultEnabled;
         public PackManifest Manifest = new PackManifest();
 
         /// <summary>Why this pack can never be enabled as it is on disk (bad manifest, duplicate id), or null.</summary>
@@ -104,6 +112,7 @@ namespace Simitone.Client.Packs
         {
             get
             {
+                if (BuiltIn) return "Built in";
                 var layers = new List<string>();
                 if (HasContent) layers.Add("Content");
                 if (HasPatches) layers.Add("Patches");

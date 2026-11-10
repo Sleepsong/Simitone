@@ -3,14 +3,15 @@
 Packs are optional add-ons for Simitone, in the spirit of expansion packs: each one is a folder you
 install yourself, and nothing in it is used unless you turn it on.
 
-**Status: stage 2 of 4.** Enabled packs can add content (objects, skins, animations, sounds) and patch
-the game's objects. Engine features and program code in packs come at later stages.
+**Status: stage 3 of 4.** Enabled packs can add content (objects, skins, animations, sounds) and patch
+the game's objects, and optional features built into Simitone are switched on and off from the same
+list. Program code in packs comes at the last stage.
 
 | Stage | What it adds | State |
 |---|---|---|
 | 1 | Pack folders, `pack.json`, checks, the Packs screen | Done |
 | 2 | Content and patch layers (objects, skins, `.piff` patches) | Done |
-| 3 | Built-in engine features as switchable packs (weather first) | Planned |
+| 3 | Built-in engine features as switchable packs (weather first) | Done |
 | 4 | Code layer (`.dll`), save-game compatibility checks | Planned |
 
 ## For players
@@ -25,6 +26,15 @@ with another enabled pack, it needs a newer Simitone, or its `pack.json` is brok
 that contains program code asks for confirmation first.
 
 Your choices are stored in `packs.json` in the user directory.
+
+### Built-in packs
+
+Some features ship inside Simitone but are optional. They appear in the same list, marked
+**Built in**, and need no installing.
+
+| Pack | Default | What switching it off does |
+|---|---|---|
+| Weather | On | No rain, snow, hail or storms on any lot, and the `weather` console command is refused. The weather saved with your game is kept, and comes back if you switch the pack on again. |
 
 ## For pack authors
 
@@ -89,6 +99,11 @@ The code is in `Client/Simitone/Simitone.Client/Packs/`. `PackManager.Init()` ru
 `SimitoneGame.Initialize()`, before any content is loaded. Later stages should read
 `PackManager.Active`, the enabled packs that passed their checks, fixed for the whole run and ordered
 so that each pack comes after the ones it requires.
+
+To make a feature built into Simitone optional, add it to `BuiltInPacks.cs` and have its code check
+`PackManager.IsActive(BuiltInPacks.YourFeature)`. The answer cannot change during a run. A built-in
+pack can be on by default; the ones the user turns off are remembered in `packs.json`, so a feature
+added by an update starts in its default state.
 
 The content and patch layers go through two lists in FreeSO's `Content` class, `TS1ExtraRoots` and
 `ExtraPatchPaths`, which `PackManager` fills from the active packs before content loads.

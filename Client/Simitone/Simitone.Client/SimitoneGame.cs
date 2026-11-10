@@ -151,6 +151,8 @@ namespace Simitone.Client
 
             // Find the optional add-on packs and which of them the user has enabled
             Simitone.Client.Packs.PackManager.Init();
+            // The engine draws no weather particles without this
+            FSO.LotView.WorldConfig.Current.Weather = Simitone.Client.Packs.PackManager.IsActive(Simitone.Client.Packs.BuiltInPacks.Weather);
             
             base.Initialize();
 
@@ -347,7 +349,7 @@ namespace Simitone.Client
 
             FSO.Vitaboy.Avatar.setVitaboyEffect(vitaboyEffect);
 
-            WeatherSounds.Load("Content");
+            if (Simitone.Client.Packs.PackManager.IsActive(Simitone.Client.Packs.BuiltInPacks.Weather)) WeatherSounds.Load("Content");
         }
 
         /// <summary>

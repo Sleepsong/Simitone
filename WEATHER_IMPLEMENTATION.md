@@ -6,6 +6,9 @@ Available weather is rain, snow, and hail.
 It can only be enabled via console commands. Hopefully future updates will have a more natural system.
 For now, this is just to get it available for others to play with and use for storyboarding, atmospheric effects, etc.
 
+Weather is an optional built-in pack, on by default. To play without it, switch **Weather** off in
+Options > Packs and restart (see [PACKS.md](PACKS.md)).
+
 ## How to Use
 ### Commands (via Ctrl+Shift+C)
 

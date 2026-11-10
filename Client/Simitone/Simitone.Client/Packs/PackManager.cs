@@ -15,7 +15,8 @@ using System.Text.RegularExpressions;
 namespace Simitone.Client.Packs
 {
     /// <summary>
-    /// Optional add-on packs: folders in (user directory)/Packs/ that each hold a pack.json.
+    /// Optional add-on packs: folders in (user directory)/Packs/ that each hold a pack.json,
+    /// plus the optional features that ship inside Simitone (see BuiltInPacks).
     /// Nothing in a pack is used unless the user enables it, and a change only applies on the next start,
     /// so the set of packs in use (Active) is fixed for the whole run.
     ///
@@ -25,12 +26,13 @@ namespace Simitone.Client.Packs
     /// </summary>
     public static class PackManager
     {
-        /// <summary>Every pack folder found, sorted by name. Includes broken ones so they can be shown.</summary>
+        /// <summary>Every built in pack and pack folder found, sorted by name. Includes broken ones so they can be shown.</summary>
         public static List<Pack> All { get; private set; } = new List<Pack>();
 
         /// <summary>The packs in use for this run, ordered so that each pack comes after the ones it requires.</summary>
         public static List<Pack> Active { get; private set; } = new List<Pack>();
 
+        private static HashSet<string> ActiveIds = new HashSet<string>();
         private static HashSet<string> Enabled = new HashSet<string>();
         private static HashSet<string> EnabledAtStartup = new HashSet<string>();
 
@@ -41,7 +43,9 @@ namespace Simitone.Client.Packs
         public static bool RestartRequired => !Enabled.SetEquals(EnabledAtStartup);
 
         public static bool IsEnabled(Pack pack) => Enabled.Contains(pack.Id);
-        public static bool IsActive(string id) => Active.Any(x => x.Id == id);
+
+        /// <summary>Whether a pack is in use for this run. Cheap enough to ask every frame.</summary>
+        public static bool IsActive(string id) => ActiveIds.Contains(id);
 
         /// <summary>
         /// Find the installed packs and work out which are in use. Call once, before content is loaded.
@@ -52,6 +56,7 @@ namespace Simitone.Client.Packs
             Enabled = LoadEnabled();
             EnabledAtStartup = new HashSet<string>(Enabled);
             Active = ResolveActive();
+            ActiveIds = new HashSet<string>(Active.Select(x => x.Id));
             RegisterContent();
 
             foreach (var pack in All)
@@ -72,6 +77,7 @@ namespace Simitone.Client.Packs
             FSO.Content.Content.ExtraPatchPaths.Clear();
             foreach (var pack in Active)
             {
+                if (pack.Folder == null) continue;
                 if (pack.HasContent) FSO.Content.Content.TS1ExtraRoots.Add(Path.GetFullPath(Path.Combine(pack.Folder, "content")));
                 if (pack.HasPatches) FSO.Content.Content.ExtraPatchPaths.Add(Path.GetFullPath(Path.Combine(pack.Folder, "patch")) + Path.DirectorySeparatorChar);
             }
@@ -79,11 +85,12 @@ namespace Simitone.Client.Packs
 
         private static List<Pack> Discover(string dir)
         {
-            var result = new List<Pack>();
+            //built in packs come first, so a folder cannot take over one of their ids
+            var result = BuiltInPacks.Create();
+            var seen = result.ToDictionary(x => x.Id);
             try
             {
                 Directory.CreateDirectory(dir);
-                var seen = new Dictionary<string, Pack>();
                 foreach (var folder in Directory.GetDirectories(dir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                 {
                     if (!File.Exists(Path.Combine(folder, Pack.ManifestName))) continue;
@@ -93,7 +100,8 @@ namespace Simitone.Client.Packs
                         if (seen.TryGetValue(pack.Id, out var first))
                         {
                             //the first folder keeps the id. this one cannot be told apart from it, so it can't be enabled.
-                            pack.LoadError = "Same id as the pack in \"" + Path.GetFileName(first.Folder) + "\"";
+                            pack.LoadError = first.BuiltIn ? "Same id as the built in pack \"" + first.DisplayName + "\""
+                                : "Same id as the pack in \"" + Path.GetFileName(first.Folder) + "\"";
                             pack.Id = pack.Id + " (" + Path.GetFileName(folder) + ")";
                         }
                         else seen[pack.Id] = pack;
@@ -110,26 +118,34 @@ namespace Simitone.Client.Packs
 
         private static HashSet<string> LoadEnabled()
         {
+            var state = new PackState();
             try
             {
-                if (File.Exists(StatePath))
-                {
-                    var state = JsonSerializer.Deserialize<PackState>(File.ReadAllText(StatePath));
-                    if (state?.Enabled != null) return new HashSet<string>(state.Enabled);
-                }
+                if (File.Exists(StatePath)) state = JsonSerializer.Deserialize<PackState>(File.ReadAllText(StatePath)) ?? new PackState();
             }
             catch (Exception e)
             {
-                Console.WriteLine("Could not read packs.json, starting with all packs disabled: " + e.Message);
+                Console.WriteLine("Could not read packs.json, starting with the default packs: " + e.Message);
             }
-            return new HashSet<string>();
+
+            var enabled = new HashSet<string>(state.Enabled ?? new List<string>());
+            //a default-on pack stays on unless the user turned it off - including one added by a Simitone update
+            foreach (var pack in All)
+            {
+                if (pack.DefaultEnabled && state.Disabled?.Contains(pack.Id) != true) enabled.Add(pack.Id);
+            }
+            return enabled;
         }
 
         private static void SaveEnabled()
         {
             try
             {
-                var state = new PackState() { Enabled = Enabled.OrderBy(x => x).ToList() };
+                var state = new PackState()
+                {
+                    Enabled = Enabled.OrderBy(x => x).ToList(),
+                    Disabled = All.Where(x => x.DefaultEnabled && !Enabled.Contains(x.Id)).Select(x => x.Id).OrderBy(x => x).ToList()
+                };
                 File.WriteAllText(StatePath, JsonSerializer.Serialize(state, new JsonSerializerOptions() { WriteIndented = true }));
             }
             catch (Exception e)
@@ -141,6 +157,9 @@ namespace Simitone.Client.Packs
         private class PackState
         {
             public List<string> Enabled { get; set; }
+
+            /// <summary>Default-on packs the user has turned off. Everything else is off unless it is in Enabled.</summary>
+            public List<string> Disabled { get; set; }
         }
 
         private static Pack Find(string id)

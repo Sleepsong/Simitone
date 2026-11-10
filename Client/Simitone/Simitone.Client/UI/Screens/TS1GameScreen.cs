@@ -483,8 +483,19 @@ namespace Simitone.Client.UI.Screens
             //SaveHouseButton_OnButtonClick(null);
         }
 
+        private const short ClearWeather = 1 << 8; //"manual" with no intensity. 0 would mean automatic weather.
+
         private void UpdateWeatherEffects()
         {
+            if (!Simitone.Client.Packs.PackManager.IsActive(Simitone.Client.Packs.BuiltInPacks.Weather))
+            {
+                //the Weather pack is switched off: hold every lot clear, whatever was saved with it
+                PendingWeatherData = null;
+                var bpWeather = vm?.Context?.Blueprint?.Weather;
+                if (bpWeather != null && bpWeather.WeatherData != ClearWeather) bpWeather.SetWeather(ClearWeather);
+                return;
+            }
+
             // Apply deferred weather state once Blueprint is available
             if (PendingWeatherData.HasValue && vm?.Context?.Blueprint?.Weather != null)
             {
@@ -939,7 +950,18 @@ namespace Simitone.Client.UI.Screens
             {
                 marshal.SerializeInto(new BinaryWriter(output));
             }
-            var weatherData = vm.Context.Blueprint?.Weather?.WeatherData ?? (short)(1 << 8);
+            SaveWeather();
+        }
+
+        /// <summary>
+        /// Weather is kept in its own file beside the save. With the Weather pack switched off the file is left alone,
+        /// so the weather the user last had comes back if they switch the pack on again.
+        /// </summary>
+        private void SaveWeather()
+        {
+            if (!Simitone.Client.Packs.PackManager.IsActive(Simitone.Client.Packs.BuiltInPacks.Weather)) return;
+            var weatherData = vm.Context.Blueprint?.Weather?.WeatherData ?? ClearWeather;
+            Directory.CreateDirectory(Path.Combine(FSOEnvironment.UserDir, "LocalHouse/"));
             File.WriteAllBytes(Path.Combine(FSOEnvironment.UserDir, "LocalHouse/cas.weather"), BitConverter.GetBytes(weatherData));
         }
 
@@ -1037,9 +1059,7 @@ namespace Simitone.Client.UI.Screens
             Content.Get().Neighborhood.SaveNeighbourhood(true);
 
             // Write weather sidecar alongside the save
-            var weatherData = vm.Context.Blueprint?.Weather?.WeatherData ?? (short)(1 << 8);
-            Directory.CreateDirectory(Path.Combine(FSOEnvironment.UserDir, "LocalHouse/"));
-            File.WriteAllBytes(Path.Combine(FSOEnvironment.UserDir, "LocalHouse/cas.weather"), BitConverter.GetBytes(weatherData));
+            SaveWeather();
         }
 
         public PNG GeneratePNG(Texture2D data)

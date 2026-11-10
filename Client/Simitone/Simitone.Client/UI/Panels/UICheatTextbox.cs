@@ -219,6 +219,13 @@ namespace Simitone.Client.UI.Panels
 
         private void HandleWeatherCommand(string command)
         {
+            if (!Simitone.Client.Packs.PackManager.IsActive(Simitone.Client.Packs.BuiltInPacks.Weather))
+            {
+                //the Weather pack is switched off
+                FSO.HIT.HITVM.Get().PlaySoundEvent(UISounds.Error);
+                return;
+            }
+
             var parts = command.ToLower().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
 
             if (parts.Length < 2)
