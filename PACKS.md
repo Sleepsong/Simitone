@@ -150,3 +150,10 @@ The content and patch layers go through two lists in FreeSO's `Content` class, `
 
 Which packs a lot was saved with is recorded by `LotPackRecord`, in `LocalHouse/lotpacks.json` in the
 user directory. Built-in packs are not recorded, since a lot loads the same without them.
+
+### FreeSO change not yet published
+
+The content and patch layers need FreeSO commit `d9cc6df` ("Read TS1 content and patches from extra
+folders"), which this branch's `FreeSO` submodule points at. That commit has not been pushed to the
+submodule's repository yet, so a fresh clone cannot fetch it. Until it is, check the submodule out at
+`d8a3c17` and apply `patches/freeso-addon-pack-content.patch` inside `FreeSO/` with `git am`.

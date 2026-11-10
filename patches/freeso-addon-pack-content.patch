@@ -1,0 +1,163 @@
+From d9cc6df4a65a8247afb2637388938e483ecbae58 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 10 Nov 2026 21:40:22 +0000
+Subject: [PATCH] Read TS1 content and patches from extra folders
+
+Content.TS1ExtraRoots lists folders laid out like a TS1 install that are read in
+addition to it, and Content.ExtraPatchPaths lists extra .piff/.otf patch folders.
+Both are empty unless a front end fills them before Init. Simitone uses them for
+its optional add-on packs.
+
+PIFFRegistry now only treats a patch as a user patch when the User/ folder is
+inside the patch folder, not somewhere above it.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0119ixT11cQKFHhy5XtDWbv9
+---
+ TSOClient/tso.content/Content.cs              | 51 ++++++++++++++++---
+ .../tso.content/Framework/FAR1Provider.cs     |  2 +-
+ .../tso.content/Framework/FileProvider.cs     |  2 +-
+ TSOClient/tso.content/TS1/TS1Audio.cs         |  2 +-
+ .../tso.files/Formats/IFF/PIFFRegistry.cs     |  3 +-
+ 5 files changed, 50 insertions(+), 10 deletions(-)
+
+diff --git a/TSOClient/tso.content/Content.cs b/TSOClient/tso.content/Content.cs
+index 7f4e7d2..c446173 100644
+--- a/TSOClient/tso.content/Content.cs
++++ b/TSOClient/tso.content/Content.cs
+@@ -73,6 +73,34 @@ namespace FSO.Content
+         public static string TS1HybridBasePath = "D:/Games/The Sims/";
+         public static bool TS1SteamInstall = false;
+ 
++        /// <summary>
++        /// Full paths of extra folders laid out like a TS1 install (eg. Downloads/, GameData/Skins/), read in addition to it.
++        /// Their files are listed after the install's, and in this order, so a loose file replaces an earlier one with the same name.
++        /// Set before Init.
++        /// </summary>
++        public static List<string> TS1ExtraRoots = new List<string>();
++
++        /// <summary>
++        /// Extra folders of .piff patches and .otf rewrites, applied after the built in patch folder. Set before Init.
++        /// </summary>
++        public static List<string> ExtraPatchPaths = new List<string>();
++
++        /// <summary>
++        /// The path to match a TS1AllFiles entry against. Files from the install are already relative to it.
++        /// Files from an extra root are listed by full path, so this gives their path within that root instead -
++        /// otherwise a folder above the root (eg. a user directory inside "Downloads/") could match by accident.
++        /// </summary>
++        public static string TS1MatchPath(string file)
++        {
++            var path = file.Replace('\\', '/');
++            foreach (var root in TS1ExtraRoots)
++            {
++                var prefix = root.Replace('\\', '/').TrimEnd('/') + "/";
++                if (path.StartsWith(prefix)) return path.Substring(prefix.Length);
++            }
++            return path;
++        }
++
+         /**
+          * Content Manager
+          */
+@@ -265,13 +293,8 @@ namespace FSO.Content
+                 }
+             }
+ 
+-            var ts1AllFiles = new List<string>();
+             var oldBase = BasePath;
+-            if (TS1)
+-            {
+-                _ScanFiles(TS1BasePath, ts1AllFiles, TS1BasePath);
+-                TS1AllFiles = ts1AllFiles.ToArray();
+-            }
++            if (TS1) ScanTS1Files();
+ 
+             LoadProgress = ContentLoadingProgress.InitGlobal;
+             TS1Global?.Init();
+@@ -286,6 +309,7 @@ namespace FSO.Content
+ 
+             if (!TS1) PIFFRegistry.Init(Path.Combine(FSOEnvironment.ContentDir, "Patch/"));
+             else PIFFRegistry.Init(Path.Combine(FSOEnvironment.ContentDir, "TS1Patch/"));
++            foreach (var patchPath in ExtraPatchPaths) PIFFRegistry.Init(patchPath);
+ 
+             LoadProgress = ContentLoadingProgress.InitAvatars;
+             Archives = new Dictionary<string, FAR3Archive>();
+@@ -324,6 +348,21 @@ namespace FSO.Content
+             InitWorld();
+         }
+ 
++        /// <summary>
++        /// Lists the files of the TS1 install, then of each extra root.
++        /// </summary>
++        private void ScanTS1Files()
++        {
++            var ts1AllFiles = new List<string>();
++            _ScanFiles(TS1BasePath, ts1AllFiles, TS1BasePath);
++            foreach (var root in TS1ExtraRoots)
++            {
++                //listed by full path: everything that opens these does Path.Combine(TS1BasePath, file), which keeps a full path as it is
++                if (Directory.Exists(root)) _ScanFiles(root, ts1AllFiles, "");
++            }
++            TS1AllFiles = ts1AllFiles.ToArray();
++        }
++
+         /// <summary>
+         /// Scans a directory for a list of files.
+         /// </summary>
+diff --git a/TSOClient/tso.content/Framework/FAR1Provider.cs b/TSOClient/tso.content/Framework/FAR1Provider.cs
+index 43c3848..0b8b17d 100644
+--- a/TSOClient/tso.content/Framework/FAR1Provider.cs
++++ b/TSOClient/tso.content/Framework/FAR1Provider.cs
+@@ -173,7 +173,7 @@ namespace FSO.Content.Framework
+                 string[] allFiles = (TS1) ? ContentManager.TS1AllFiles : ContentManager.AllFiles;
+                 foreach (var file in allFiles)
+                 {
+-                    if (FarFilePattern.IsMatch(file.Replace('\\', '/')))
++                    if (FarFilePattern.IsMatch(TS1 ? Content.TS1MatchPath(file) : file.Replace('\\', '/')))
+                     {
+                         farFiles.Add(file);
+                     }
+diff --git a/TSOClient/tso.content/Framework/FileProvider.cs b/TSOClient/tso.content/Framework/FileProvider.cs
+index 130261c..b602ee1 100644
+--- a/TSOClient/tso.content/Framework/FileProvider.cs
++++ b/TSOClient/tso.content/Framework/FileProvider.cs
+@@ -55,7 +55,7 @@ namespace FSO.Content.Framework
+                 var basePath = UseTS1 ? ContentManager.TS1BasePath : ContentManager.BasePath;
+                 foreach (var file in files)
+                 {
+-                    if (FilePattern.IsMatch(file.Replace('\\', '/')))
++                    if (FilePattern.IsMatch(UseTS1 ? Content.TS1MatchPath(file) : file.Replace('\\', '/')))
+                     {
+                         matchedFiles.Add(file);
+                     }
+diff --git a/TSOClient/tso.content/TS1/TS1Audio.cs b/TSOClient/tso.content/TS1/TS1Audio.cs
+index de17208..0b35b3a 100644
+--- a/TSOClient/tso.content/TS1/TS1Audio.cs
++++ b/TSOClient/tso.content/TS1/TS1Audio.cs
+@@ -150,7 +150,7 @@ namespace FSO.Content.TS1
+             List<string> matchedFiles = new List<string>();
+             foreach (var file in ContentManager.TS1AllFiles)
+             {
+-                if (FilePattern.IsMatch(file.Replace('\\', '/')))
++                if (FilePattern.IsMatch(Content.TS1MatchPath(file)))
+                 {
+                     matchedFiles.Add(file);
+                 }
+diff --git a/TSOClient/tso.files/Formats/IFF/PIFFRegistry.cs b/TSOClient/tso.files/Formats/IFF/PIFFRegistry.cs
+index c6d6da7..94ab20b 100644
+--- a/TSOClient/tso.files/Formats/IFF/PIFFRegistry.cs
++++ b/TSOClient/tso.files/Formats/IFF/PIFFRegistry.cs
+@@ -20,7 +20,8 @@ namespace FSO.Files.Formats.IFF
+             for (int i = 0; i < paths.Length; i++)
+             {
+                 string entry = paths[i].Replace('\\', '/');
+-                bool user = entry.Contains("User/");
++                //only folders inside the patch folder count, not a "User/" somewhere above it
++                bool user = entry.Substring(Math.Min(entry.Length, basePath.Length)).Contains("User/");
+                 string filename = Path.GetFileName(entry);
+ 
+                 PIFF piff;
+-- 
+2.43.0
+
