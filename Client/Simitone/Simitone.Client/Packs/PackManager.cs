@@ -59,6 +59,7 @@ namespace Simitone.Client.Packs
         /// </summary>
         public static void Init()
         {
+            Commands.Clear();
             All = Discover(PacksDir);
             Enabled = LoadEnabled();
             EnabledAtStartup = new HashSet<string>(Enabled);
@@ -195,6 +196,40 @@ namespace Simitone.Client.Packs
             var existing = VMContext.Primitives[primitive.Opcode];
             if (existing != null) throw new InvalidOperationException("Primitive opcode " + primitive.Opcode + " is already used by \"" + existing.Name + "\"");
             VMContext.AddPrimitive(primitive);
+        }
+
+        private static Dictionary<string, Func<string[], bool>> Commands = new Dictionary<string, Func<string[], bool>>();
+
+        /// <summary>
+        /// Add a command to the cheat console (Ctrl+Shift+C) from pack code. The handler gets the words typed after the
+        /// command's name, and returns whether it understood them. A name that is already taken is refused.
+        /// </summary>
+        public static void RegisterCommand(string name, Func<string[], bool> handler)
+        {
+            name = name.Trim().ToLowerInvariant();
+            if (name == "" || name.Contains(' ')) throw new ArgumentException("A command name must be one word");
+            if (Commands.ContainsKey(name)) throw new InvalidOperationException("The console command \"" + name + "\" is already taken");
+            Commands[name] = handler;
+        }
+
+        /// <summary>
+        /// Run a console command if a pack added it. Returns false if the command is not a pack's;
+        /// done says whether the pack understood it.
+        /// </summary>
+        public static bool TryRunCommand(string command, out bool done)
+        {
+            done = false;
+            var parts = command.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0 || !Commands.TryGetValue(parts[0].ToLowerInvariant(), out var handler)) return false;
+            try
+            {
+                done = handler(parts.Skip(1).ToArray());
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Pack console command \"" + parts[0] + "\" failed: " + Unwrap(e));
+            }
+            return true;
         }
 
         private static List<Pack> Discover(string dir)

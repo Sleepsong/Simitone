@@ -99,12 +99,12 @@ namespace Simitone.Client.UI.Panels
             shouldHide = true;
             if (string.IsNullOrWhiteSpace(commandString)) return; // a blank textbox should close after hitting enter -- even if a command was never run.
 
-            //build cheats in the spirit of The Sims 2's, for full 3D: offgrid and rotate45 (Utils.BuildCheats)
-            if (Simitone.Client.Utils.BuildCheats.TryCommand(trimRepetitions(commandString), out var buildDone))
+            //commands added by add-on packs
+            if (Simitone.Client.Packs.PackManager.TryRunCommand(trimRepetitions(commandString), out var packDone))
             {
-                FSO.HIT.HITVM.Get().PlaySoundEvent(buildDone ? UISounds.Click : UISounds.Error);
+                FSO.HIT.HITVM.Get().PlaySoundEvent(packDone ? UISounds.Click : UISounds.Error);
                 baseTextbox.CurrentText = "";
-                shouldHide = buildDone;
+                shouldHide = packDone;
                 return;
             }
 

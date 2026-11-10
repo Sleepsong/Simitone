@@ -34,7 +34,7 @@ On modern operating systems, The Sims has a few nagging issues that make it less
 - *Volcanic*, a program which allows you to examine, modify and create new game objects. (from FreeSO, Windows-only)
 - **Cosmetic weather system** - Rain, snow, hail, and storms, toggled via the cheat console (Ctrl+Shift+C). See [WEATHER_IMPLEMENTATION.md](WEATHER_IMPLEMENTATION.md) for details.
 - **Add-on packs** - Optional add-ons you install and switch on yourself, from Options > Packs. Packs can add objects, skins and other content, patch the game's objects and run their own code. Built-in features such as weather can be switched off from the same list. See [PACKS.md](PACKS.md).
-- **Build cheats from The Sims 2** (an optional built-in pack, off by default: switch on **Build Cheats** in Options > Packs and restart; full 3D only, in the cheat console): `offgrid on` places objects right under
+- **Build cheats from The Sims 2** (an optional add-on pack, not installed by default: see the sample pack in [PACKS.md](PACKS.md); full 3D only, in the cheat console): `offgrid on` places objects right under
   the cursor instead of snapping them to the middle of a tile, and `rotate45 on` turns them 45 degrees at a time
   instead of 90 (`off` turns either back off; they last until the game closes). Objects placed with them stay put.
   Use them like `moveobjects`: TS1's objects were made for tile centres and four directions, so Sims may take odd

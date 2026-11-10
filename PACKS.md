@@ -44,7 +44,6 @@ Some features ship inside Simitone but are optional. They appear in the same lis
 | Pack | Default | What the switch does |
 |---|---|---|
 | Weather | On | Switching it off means no rain, snow, hail or storms on any lot, and the `weather` console command is refused. The weather saved with your game is kept, and comes back if you switch the pack on again. |
-| Build Cheats | Off | Switching it on adds the `offgrid` and `rotate45` console cheats (full 3D only) for placing objects off the grid and on diagonals. With it off the commands are refused; objects already placed that way stay where they are. |
 
 ## For pack authors
 
@@ -129,10 +128,31 @@ Implement only the calls you need.
 - **Dependencies.** Put any other `.dll` your code needs beside it in the pack folder. Each pack loads
   separately, so two packs can ship different versions of the same library. Do not ship Simitone's
   own assemblies; copies in the pack folder are ignored.
+- **Console commands.** Add commands to the cheat console (Ctrl+Shift+C) with
+  `PackManager.RegisterCommand` from `OnLoad`. A name that is already taken is refused.
 - **Primitives.** Add SimAntics primitives with `PackManager.RegisterPrimitive` from
   `OnContentReady`. It refuses an opcode that the game or another pack already uses.
 - **Threads.** `OnContentReady` runs on the loading thread; the other calls run on the game thread.
 - **Saves.** Do not change the lot save format. Keep your pack's data in its own file, as weather does.
+
+### Sample pack: Build Cheats
+
+`SamplePacks/BuildCheats/` is a complete code pack you can install and copy from. It adds two console
+cheats in the spirit of The Sims 2's, for full 3D only:
+
+- `offgrid on` / `offgrid off`: objects follow the cursor instead of snapping to the middle of a tile.
+- `rotate45 on` / `rotate45 off`: objects turn 45 degrees at a time instead of 90.
+
+To get it, either download the `SamplePack-BuildCheats` artifact from a "Build Simitone" run, or build
+it yourself:
+
+```bash
+dotnet build SamplePacks/BuildCheats/BuildCheats.csproj -c Release
+```
+
+Either way you get a `buildcheats` folder holding `pack.json` and `BuildCheats.dll`. Copy that folder
+into Simitone's `Packs/` folder, switch **Build Cheats** on in Options > Packs, confirm, and restart.
+Use a pack built from the same version of Simitone you are running.
 
 ## For Simitone developers
 

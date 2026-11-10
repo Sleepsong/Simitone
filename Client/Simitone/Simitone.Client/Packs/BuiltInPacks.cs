@@ -16,7 +16,6 @@ namespace Simitone.Client.Packs
     public static class BuiltInPacks
     {
         public const string Weather = "simitone.weather";
-        public const string BuildCheats = "simitone.buildcheats";
 
         public static List<Pack> Create()
         {
@@ -24,7 +23,6 @@ namespace Simitone.Client.Packs
             {
                 //on by default: weather was always available before it became optional
                 BuiltIn(Weather, "Weather", true, "Cosmetic rain, snow, hail and storms, set from the cheat console with the \"weather\" command."),
-                BuiltIn(BuildCheats, "Build Cheats", false, "The Sims 2 style \"offgrid\" and \"rotate45\" cheats for placing objects off the grid and on diagonals, in full 3D."),
             };
         }
 

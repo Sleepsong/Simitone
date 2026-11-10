@@ -17,6 +17,7 @@ namespace Simitone.Client.Packs
     {
         /// <summary>
         /// Once at startup, on the game thread, before any game content is loaded.
+        /// Console commands (PackManager.RegisterCommand) can be added here.
         /// </summary>
         void OnLoad(Pack pack) { }
 

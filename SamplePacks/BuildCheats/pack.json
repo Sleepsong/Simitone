@@ -1,0 +1,9 @@
+{
+  "id": "sample.buildcheats",
+  "name": "Build Cheats",
+  "version": "1.0",
+  "author": "Simitone",
+  "description": "Adds the \"offgrid\" and \"rotate45\" console cheats (full 3D only) for placing objects off the grid and on diagonals.",
+  "minSimitoneVersion": "0.8.22",
+  "assembly": "BuildCheats.dll"
+}
