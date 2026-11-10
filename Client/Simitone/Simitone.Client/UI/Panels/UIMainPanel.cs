@@ -275,6 +275,7 @@ namespace Simitone.Client.UI.Panels
                         new UICatFunc(GameFacade.Strings.GetString("145", "5"), "opt_quit.png", () => { Game.CloseAttempt(); }),
                     });
                     AddFreeWillToggle(panel);
+                    AddPacksButton(panel);
                     break;
             }
             SetSubpanel(panel);
@@ -576,6 +577,34 @@ namespace Simitone.Client.UI.Panels
             parent.Add(label);
             parent.Add(toggleButton);
             updateLabel();
+        }
+
+        private void AddPacksButton(UISubpanel parent)
+        {
+            // Index 4 (5th button), after the Free Will toggle
+            int index = 4;
+            float buttonX = 50 + index * 120f;
+            float labelX = buttonX - 27;
+
+            var label = new UILabel();
+            label.Caption = "Packs";
+            label.Alignment = TextAlignment.Middle | TextAlignment.Center;
+            label.Wrapped = true;
+            label.Position = new Vector2(labelX - 77, 106);
+            label.Size = new Vector2(120, 1);
+            label.CaptionStyle = label.CaptionStyle.Clone();
+            label.CaptionStyle.Size = 12;
+            label.CaptionStyle.Color = UIStyle.Current.Text;
+
+            var button = new UICatButton(Content.Get().CustomUI.Get("opt_packs.png").Get(GameFacade.GraphicsDevice));
+            button.Position = new Vector2(buttonX - 50, 16);
+            button.OnButtonClick += (btn) => { UIScreen.GlobalShowDialog(new UIPacksDialog(), true); };
+
+            GameFacade.Screens.Tween.To(label, 0.5f, new Dictionary<string, float>() { { "X", labelX } }, TweenQuad.EaseOut);
+            GameFacade.Screens.Tween.To(button, 0.5f, new Dictionary<string, float>() { { "X", buttonX } }, TweenQuad.EaseOut);
+
+            parent.Add(label);
+            parent.Add(button);
         }
 
         public override void GameResized()

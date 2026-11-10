@@ -148,6 +148,9 @@ namespace Simitone.Client
             
             // Initialize Free Will setting from config
             VM.FreeWillEnabled = GlobalSettings.Default.TS1FreeWill;
+
+            // Find the optional add-on packs and which of them the user has enabled
+            Simitone.Client.Packs.PackManager.Init();
             
             base.Initialize();
 

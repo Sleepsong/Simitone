@@ -33,6 +33,7 @@ On modern operating systems, The Sims has a few nagging issues that make it less
   -  Catalog search for build and buy mode. (Help wanted for the UI) 
 - *Volcanic*, a program which allows you to examine, modify and create new game objects. (from FreeSO, Windows-only)
 - **Cosmetic weather system** - Rain, snow, hail, and storms, toggled via the cheat console (Ctrl+Shift+C). See [WEATHER_IMPLEMENTATION.md](WEATHER_IMPLEMENTATION.md) for details.
+- **Add-on packs (early)** - Optional add-ons you install and switch on yourself, from Options > Packs. Packs can be listed and enabled, but do not change the game yet. See [PACKS.md](PACKS.md).
 
 # How to Install
 
