@@ -41,9 +41,10 @@ Your choices are stored in `packs.json` in the user directory.
 Some features ship inside Simitone but are optional. They appear in the same list, marked
 **Built in**, and need no installing.
 
-| Pack | Default | What switching it off does |
+| Pack | Default | What the switch does |
 |---|---|---|
-| Weather | On | No rain, snow, hail or storms on any lot, and the `weather` console command is refused. The weather saved with your game is kept, and comes back if you switch the pack on again. |
+| Weather | On | Switching it off means no rain, snow, hail or storms on any lot, and the `weather` console command is refused. The weather saved with your game is kept, and comes back if you switch the pack on again. |
+| Build Cheats | Off | Switching it on adds the `offgrid` and `rotate45` console cheats (full 3D only) for placing objects off the grid and on diagonals. With it off the commands are refused; objects already placed that way stay where they are. |
 
 ## For pack authors
 
