@@ -789,6 +789,14 @@ namespace Simitone.Client.UI.Panels
                 if (!FoundMe && ActiveEntity == null && vm.Context.ObjectQueries.Avatars.Count > 0)
                 {
                     var fallbackAvatar = vm.Context.ObjectQueries.Avatars.FirstOrDefault();
+                    if ((Parent as TS1GameScreen)?.IsCoopGuest == true)
+                    {
+                        //a guest starts on a family member nobody controls yet, or just watches if there is none
+                        var family = vm.TS1State.CurrentFamily;
+                        fallbackAvatar = vm.Context.ObjectQueries.Avatars.FirstOrDefault(x =>
+                            x.PersistID == 0 && !((VMAvatar)x).IsPet && family != null && family.RuntimeSubset.Contains(x.Object.OBJ.GUID));
+                        FoundMe = true;
+                    }
                     if (fallbackAvatar != null)
                     {
                         // Send change control command to properly select this sim

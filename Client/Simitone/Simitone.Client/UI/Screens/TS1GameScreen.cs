@@ -26,6 +26,7 @@ using FSO.SimAntics.Utils;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using Simitone.Client.Network.Coop;
 using Simitone.Client.UI.Controls;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.WorldUI;
@@ -52,6 +53,12 @@ namespace Simitone.Client.UI.Screens
         public FSO.SimAntics.VM vm { get; set; }
         public VMNetDriver Driver;
         public UISimitoneBg Bg;
+
+        //co-op play (experimental, see CoopOptions). At most one of these is set.
+        public CoopHost CoopSession; //we are hosting
+        public CoopClient CoopGuest; //we are playing on someone else's lot
+        public bool IsCoopGuest { get { return CoopGuest != null; } }
+        private bool GuestLotShown; //the guest's lot UI is added once the first lot state has arrived
         public uint VisualBudget { get; set; }
 
         //for TS1 hybrid mode
@@ -257,6 +264,88 @@ namespace Simitone.Client.UI.Screens
             Add(TS1NeighPanel);
             Add(switcher);
             if (TestMode.TakeLot(out var testLot)) PlayHouse(testLot, switcher);
+            else if (CoopOptions.TakeJoin(out var coopAddress)) JoinCoop(coopAddress, switcher);
+        }
+
+        /// <summary>
+        /// Joins another player's game as a guest. The lot arrives from the host instead of being loaded here.
+        /// </summary>
+        public void JoinCoop(string address, UIElement switcher)
+        {
+            var guest = new CoopClient();
+            CoopGuest = guest;
+            guest.OnWelcome += () =>
+            {
+                Console.WriteLine("COOP joined as player " + guest.PlayerID);
+                Remove(TS1NeighPanel);
+                if (switcher != null) Remove(switcher);
+                ActiveFamily = null;
+                GuestLotShown = false;
+                InitializeLot();
+                vm.MyUID = guest.PlayerID;
+            };
+            guest.OnDirect += (data) =>
+            {
+                if (vm != null) guest.Driver.HandleDirect(vm, data);
+            };
+            guest.OnClosed += (reason) =>
+            {
+                Console.WriteLine("COOP session ended: " + reason);
+                var inLot = vm != null;
+                CoopGuest = null;
+                if (inLot) ExitLot();
+                UIMobileAlert alert = null;
+                alert = new UIMobileAlert(new UIAlertOptions()
+                {
+                    Title = "Co-op",
+                    Message = reason,
+                    Buttons = UIAlertButton.Ok((b) => alert.Close())
+                });
+                UIScreen.GlobalShowDialog(alert, true);
+            };
+            Console.WriteLine("COOP joining " + address);
+            guest.Connect(address, GlobalSettings.Default.LastUser ?? "");
+        }
+
+        /// <summary>
+        /// Opens this game to guests (once), and makes the given lot driver the one they play on.
+        /// </summary>
+        private void HostCoop(CoopServerDriver driver)
+        {
+            if (CoopSession == null)
+            {
+                var session = new CoopHost();
+                try
+                {
+                    session.Start(CoopOptions.HostPort);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("COOP could not host on port " + CoopOptions.HostPort + ": " + e.Message);
+                    return;
+                }
+                session.OnSpeedRequest += (speed) =>
+                {
+                    if (CoopOptions.GuestsControlSpeed) ChangeSpeedTo(speed);
+                };
+                session.OnGuestChange += (name, joined) =>
+                {
+                    Console.WriteLine("COOP " + (name == "" ? "a guest" : name) + (joined ? " joined" : " left") + " (" + session.GuestCount + " connected)");
+                };
+                CoopSession = session;
+                Console.WriteLine("COOP hosting on port " + CoopOptions.HostPort);
+            }
+            CoopSession.Attach(driver);
+        }
+
+        /// <summary>
+        /// Whether the local player may take control of this Sim. In co-op, a Sim another player controls is off limits.
+        /// </summary>
+        public bool CanControl(VMEntity sim)
+        {
+            if (sim.PersistID == 0 || sim.PersistID == vm.MyUID) return true;
+            if (IsCoopGuest) return false;
+            return !((Driver as CoopServerDriver)?.IsConnectedPlayer(sim.PersistID) ?? false);
         }
 
         public void PlayHouse(short house, UIElement switcher)
@@ -345,6 +434,12 @@ namespace Simitone.Client.UI.Screens
             //3 speed is 10x
 
             if (vm == null) return;
+            if (IsCoopGuest)
+            {
+                //the host owns the clock. Every tick it sends carries the speed to run it at.
+                CoopGuest.RequestSpeed(speed);
+                return;
+            }
             if (vm.SpeedMultiplier == -1) return;
 
             switch (vm.SpeedMultiplier)
@@ -407,6 +502,9 @@ namespace Simitone.Client.UI.Screens
 
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
+            CoopSession?.Update();
+            CoopGuest?.Update();
+
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             
             Visible = World?.Visible != false && World?.State.Cameras.HideUI != true;
@@ -425,7 +523,7 @@ namespace Simitone.Client.UI.Screens
                 GameThread.NextUpdate((FSO.Common.Rendering.Framework.Model.UpdateState ustate) => ChangeSpeedTo(0));
             }
             base.Update(state);
-            UpdateAutoFastForward();
+            if (!IsCoopGuest) UpdateAutoFastForward();
 
             // Update weather effects (sounds and terrain)
             UpdateWeatherEffects();
@@ -572,6 +670,7 @@ namespace Simitone.Client.UI.Screens
         public void CleanupLastWorld()
         {
             if (vm == null) return;
+            CoopSession?.Attach(null); //guests wait for the next lot
 
             //clear our cache too, if the setting lets us do that
             TimedReferenceController.Clear();
@@ -616,7 +715,14 @@ namespace Simitone.Client.UI.Screens
             GameFacade.Scenes.Add(World);
 
             var globalLink = new VMTS1GlobalLinkStub();
-            Driver = new VMServerDriver(globalLink);
+            if (IsCoopGuest) Driver = CoopGuest.Driver;
+            else if (CoopOptions.HostPort > 0)
+            {
+                var coopDriver = new CoopServerDriver(globalLink);
+                Driver = coopDriver;
+                HostCoop(coopDriver);
+            }
+            else Driver = new VMServerDriver(globalLink);
 
             vm = new VM(new VMContext(World), Driver, new UIHeadlineRendererProvider());
             vm.ListenBHAVChanges();
@@ -630,7 +736,7 @@ namespace Simitone.Client.UI.Screens
             PendingWeatherData = null;
 
             LotControl = new UILotControl(vm, World);
-            this.AddAt(0, LotControl);
+            if (!IsCoopGuest) this.AddAt(0, LotControl); //a guest has no lot to show yet. see VMRefreshed
 
             if (m_ZoomLevel > 3)
             {
@@ -911,6 +1017,7 @@ namespace Simitone.Client.UI.Screens
 
         private void VMLotSwitch(uint lotId)
         {
+            if (IsCoopGuest) return; //the host switches, then sends us the new lot
             vm.SpeedMultiplier = 0;
             if ((short)lotId == -1)
             {
@@ -922,6 +1029,21 @@ namespace Simitone.Client.UI.Screens
         private void VMRefreshed()
         {
             if (vm == null) return;
+            if (IsCoopGuest)
+            {
+                //a lot state arrived from the host: on joining, when the host changes lot, or to fix a desync
+                ActiveFamily = vm.TS1State.CurrentFamily;
+                ActiveFamily?.SelectWholeFamily(); //the active members are not part of the lot state
+                if (!GuestLotShown)
+                {
+                    GuestLotShown = true;
+                    this.AddAt(0, LotControl);
+                    GameFacade.Cursor.SetCursor(CursorType.Normal);
+                    ZoomLevel = 1;
+                    Frontend = new UISimitoneFrontend(this);
+                    this.Add(Frontend);
+                }
+            }
             LotControl.ActiveEntity = null;
             LotControl.RefreshCut();
         }
@@ -952,7 +1074,7 @@ namespace Simitone.Client.UI.Screens
             {
                 if (CloseAlert == null)
                 {
-                    var canSave = vm != null;
+                    var canSave = vm != null && !IsCoopGuest;
                     CloseAlert = new UIMobileAlert(new FSO.Client.UI.Controls.UIAlertOptions
                     {
                         Title = GameFacade.Strings.GetString("153", "1"), //quit?
@@ -978,6 +1100,11 @@ namespace Simitone.Client.UI.Screens
 
         public void ReturnToNeighbourhood()
         {
+            if (IsCoopGuest)
+            {
+                ExitLot(); //the lot is the host's to save
+                return;
+            }
             if (CloseAlert == null)
             {
                 CloseAlert = new UIMobileAlert(new FSO.Client.UI.Controls.UIAlertOptions
@@ -997,6 +1124,7 @@ namespace Simitone.Client.UI.Screens
 
         public void Save()
         {
+            if (IsCoopGuest) return; //the lot and neighbourhood belong to the host
             //save the house first
             var iff = new IffFile();
             vm.TS1State.UpdateSIMI(vm);
@@ -1061,6 +1189,11 @@ namespace Simitone.Client.UI.Screens
 
         public void ExitLot()
         {
+            if (CoopGuest != null)
+            {
+                CoopGuest.Disconnect();
+                CoopGuest = null;
+            }
             CleanupLastWorld();
             NeighSelection(CurrentNeighborhoodMode);
             Downtown = false;

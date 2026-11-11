@@ -487,6 +487,11 @@ namespace Simitone.Client.UI.Panels.Desktop
         public void SwitchSpeed(int speed)
         {
             var vm = Game.vm;
+            if (Game.IsCoopGuest)
+            {
+                Game.ChangeSpeedTo(speed == 4 ? 0 : speed); //ask the host
+                return;
+            }
             if (vm.SpeedMultiplier == -1) return;
             switch (vm.SpeedMultiplier)
             {

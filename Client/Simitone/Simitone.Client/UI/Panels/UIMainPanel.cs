@@ -426,7 +426,11 @@ namespace Simitone.Client.UI.Panels
 
             Game.LotControl.PickupPanel.Visible = Game.LotControl.PickupPanel.Opacity > 0;
 
-            if (Mode != UIMainPanelMode.LIVE)
+            if (Game.IsCoopGuest)
+            {
+                //the host owns the game speed; a guest builds and buys while the game runs
+            }
+            else if (Mode != UIMainPanelMode.LIVE)
             {
                 Game.vm.SpeedMultiplier = -1;
             } else if (Game.vm.SpeedMultiplier == -1)

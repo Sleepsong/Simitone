@@ -154,6 +154,12 @@ namespace Simitone.Client.UI.Panels
 
         public void SwitchSpeed(int speed)
         {
+            var game = FSO.Client.UI.Framework.UIScreen.Current as Simitone.Client.UI.Screens.TS1GameScreen;
+            if (game != null && game.IsCoopGuest)
+            {
+                game.ChangeSpeedTo(speed == 4 ? 0 : speed); //ask the host
+                return;
+            }
             if (VM.SpeedMultiplier == -1) return;
             switch (VM.SpeedMultiplier)
             {
