@@ -1032,8 +1032,7 @@ namespace Simitone.Client.UI.Screens
             if (IsCoopGuest)
             {
                 //a lot state arrived from the host: on joining, when the host changes lot, or to fix a desync
-                ActiveFamily = vm.TS1State.CurrentFamily;
-                ActiveFamily?.SelectWholeFamily(); //the active members are not part of the lot state
+                ActiveFamily = CoopWorld.BindFamily(vm);
                 if (!GuestLotShown)
                 {
                     GuestLotShown = true;
@@ -1195,6 +1194,7 @@ namespace Simitone.Client.UI.Screens
                 CoopGuest = null;
             }
             CleanupLastWorld();
+            CoopWorld.Restore(); //a guest that had the host's neighbourhood loaded gets its own back
             NeighSelection(CurrentNeighborhoodMode);
             Downtown = false;
             SavedLot = null;

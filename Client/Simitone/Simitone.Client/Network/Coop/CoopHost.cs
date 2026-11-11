@@ -186,6 +186,11 @@ namespace Simitone.Client.Network.Coop
             if (conn == null) return; //the host's own local client
 
             var speeds = Driver?.GetSpeeds(packet);
+            if (speeds == null && Driver?.SyncWorld != null)
+            {
+                //not a packet of ticks, so it is a lot state. The neighbourhood it belongs to goes first.
+                conn.Send(CoopFrameKind.World, Driver.SyncWorld);
+            }
             var count = (speeds == null || speeds.Length > 255) ? 0 : speeds.Length;
             var header = new byte[1 + count * 2];
             header[0] = (byte)count;

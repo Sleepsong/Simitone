@@ -28,6 +28,7 @@ namespace Simitone.Client.Network.Coop
         private readonly ConcurrentQueue<CoopFrame> Incoming = new ConcurrentQueue<CoopFrame>();
         private volatile CoopConnection Connection;
         private bool Ended;
+        private byte[] PendingWorld; //the neighbourhood for the lot state in the next Tick frame
         private string PendingEnd; //set by the driver mid-tick; the session ends on the next Update
 
         public CoopClient()
@@ -139,7 +140,11 @@ namespace Simitone.Client.Network.Coop
                         for (int i = 0; i < count; i++) speeds[i] = BitConverter.ToInt16(frame.Data, 1 + i * 2);
                         var ticks = new byte[frame.Data.Length - headerSize];
                         Buffer.BlockCopy(frame.Data, headerSize, ticks, 0, ticks.Length);
-                        Driver.EnqueueTicks(ticks, speeds);
+                        Driver.EnqueueTicks(ticks, speeds, PendingWorld);
+                        PendingWorld = null;
+                        break;
+                    case CoopFrameKind.World:
+                        if (PlayerID != 0) PendingWorld = frame.Data;
                         break;
                     case CoopFrameKind.Direct:
                         if (PlayerID != 0) OnDirect?.Invoke(frame.Data);

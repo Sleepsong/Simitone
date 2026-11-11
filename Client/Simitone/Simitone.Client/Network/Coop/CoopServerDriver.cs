@@ -5,6 +5,7 @@ using FSO.SimAntics.NetPlay.Model;
 using FSO.SimAntics.NetPlay.Model.Commands;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace Simitone.Client.Network.Coop
@@ -20,6 +21,16 @@ namespace Simitone.Client.Network.Coop
     {
         /// <summary>IDs of the guests that are connected right now. Maintained by <see cref="CoopHost"/>.</summary>
         public readonly HashSet<uint> GuestIDs = new HashSet<uint>();
+
+        /// <summary>
+        /// The host's neighbourhood (a packed <see cref="CoopWorld"/>) as it was when the lot state that
+        /// joining and resyncing guests are sent was taken. Null if it could not be captured.
+        /// </summary>
+        public byte[] SyncWorld { get; private set; }
+
+        //the base driver starts a new tick history whenever it takes a lot state, and gives no other sign of it
+        private static readonly FieldInfo SyncHistoryField = typeof(VMServerDriver).GetField("TicksSinceSync", BindingFlags.NonPublic | BindingFlags.Instance);
+        private object LastSyncHistory;
 
         private VM VM;
         private readonly List<short> PendingSpeeds = new List<short>();
@@ -52,7 +63,33 @@ namespace Simitone.Client.Network.Coop
             PendingSpeeds.Add((short)System.Math.Max(short.MinValue, System.Math.Min(short.MaxValue, vm.SpeedMultiplier)));
             var result = base.Tick(vm);
             PendingClaims.Clear(); //everything queued before this tick has now run
+
+            var history = SyncHistoryField?.GetValue(this);
+            if (history != null && !ReferenceEquals(history, LastSyncHistory))
+            {
+                //a lot state was just taken. Guests replay every tick since it, so the neighbourhood
+                //they get must be from this same moment.
+                LastSyncHistory = history;
+                CaptureWorld(vm);
+            }
+            else if (SyncHistoryField == null && SyncWorld == null && GuestIDs.Count > 0)
+            {
+                CaptureWorld(vm); //a different FreeSO: the best we can do is the neighbourhood as the first guest joins
+            }
             return result;
+        }
+
+        private void CaptureWorld(VM vm)
+        {
+            try
+            {
+                SyncWorld = CoopWorld.Capture(vm).Pack();
+            }
+            catch (System.Exception e)
+            {
+                SyncWorld = null;
+                System.Console.WriteLine("COOP could not capture the neighbourhood for guests: " + e.Message);
+            }
         }
 
         public override void SendCommand(VMNetCommandBodyAbstract cmd)

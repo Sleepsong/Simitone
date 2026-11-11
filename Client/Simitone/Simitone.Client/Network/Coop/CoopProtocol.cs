@@ -22,6 +22,7 @@ namespace Simitone.Client.Network.Coop
         Reject = 17,      //string reason
         Tick = 18,        //byte n, int16[n] game speed for each tick (n is 0 when unknown), then a serialized VMNetTickList
         Direct = 19,      //a serialized VMNetCommand, run immediately by this guest only
+        World = 20,       //a packed CoopWorld: the host's neighbourhood as of the lot state in the Tick frame that follows
 
         //never sent: queued locally when a connection ends. payload is a UTF8 reason, possibly empty
         Closed = 255
@@ -36,7 +37,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 1;
+        public const int Version = 2;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 

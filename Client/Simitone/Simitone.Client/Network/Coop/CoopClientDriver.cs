@@ -19,6 +19,7 @@ namespace Simitone.Client.Network.Coop
         {
             public VMNetTick Tick;
             public short? Speed;
+            public byte[] World; //the host's neighbourhood, to load before this tick (which loads a lot state)
         }
 
         private const int CATCH_UP_TICKS = 12;   //more than this buffered: run two ticks at a time
@@ -52,8 +53,9 @@ namespace Simitone.Client.Network.Coop
 
         /// <summary>
         /// Queues a packet of ticks from the host. speeds has one entry per tick, or is empty when unknown.
+        /// world is the packed neighbourhood to load before the first of them, if any.
         /// </summary>
-        public void EnqueueTicks(byte[] data, short[] speeds)
+        public void EnqueueTicks(byte[] data, short[] speeds, byte[] world = null)
         {
             var list = new VMNetTickList();
             try
@@ -78,7 +80,8 @@ namespace Simitone.Client.Network.Coop
                 TickBuffer.Enqueue(new BufferedTick
                 {
                     Tick = list.Ticks[i],
-                    Speed = hasSpeeds ? speeds[i] : (short?)null
+                    Speed = hasSpeeds ? speeds[i] : (short?)null,
+                    World = (i == 0) ? world : null
                 });
             }
         }
@@ -114,6 +117,20 @@ namespace Simitone.Client.Network.Coop
             for (int i = 0; i < toRun && TickBuffer.Count > 0; i++)
             {
                 var next = TickBuffer.Dequeue();
+                if (next.World != null)
+                {
+                    try
+                    {
+                        CoopWorld.Unpack(next.World).Apply();
+                    }
+                    catch (Exception e)
+                    {
+                        CloseReason = VMCloseNetReason.NetException;
+                        CloseString = "The host's neighbourhood could not be loaded: \n\n" + e.Message;
+                        Shutdown();
+                        return false;
+                    }
+                }
                 if (next.Speed.HasValue) vm.SpeedMultiplier = next.Speed.Value;
                 ExecutedAnything = true;
                 InternalTick(vm, next.Tick);
