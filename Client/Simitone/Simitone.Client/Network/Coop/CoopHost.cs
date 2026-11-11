@@ -20,6 +20,10 @@ namespace Simitone.Client.Network.Coop
         public int Port { get; private set; }
         public int GuestCount { get { return Guests.Count; } }
 
+        /// <summary>This game's version and objects, which each guest compares with its own. See <see cref="CoopCompat"/>.</summary>
+        public string GameVersion = SimitoneVersion.Current;
+        public uint[] GameObjects = new uint[0];
+
         /// <summary>A guest asked for a game speed (0 pause, 1-3 as on the clock).</summary>
         public event Action<int> OnSpeedRequest;
         /// <summary>A guest joined (true) or left (false). The string is their name.</summary>
@@ -164,7 +168,7 @@ namespace Simitone.Client.Network.Coop
             conn.Tag = guest;
             Guests.Add(guest);
 
-            conn.Send(CoopFrameKind.Welcome, BitConverter.GetBytes(id));
+            conn.Send(CoopFrameKind.Welcome, CoopCompat.PackWelcome(id, GameVersion, GameObjects));
             if (Driver != null) AddToDriver(guest);
             OnGuestChange?.Invoke(name, true);
         }

@@ -273,6 +273,7 @@ namespace Simitone.Client.UI.Screens
         public void JoinCoop(string address, UIElement switcher)
         {
             var guest = new CoopClient();
+            guest.GameObjects = CoopCompat.LocalObjects;
             CoopGuest = guest;
             guest.OnWelcome += () =>
             {
@@ -315,6 +316,7 @@ namespace Simitone.Client.UI.Screens
             if (CoopSession == null)
             {
                 var session = new CoopHost();
+                session.GameObjects = CoopCompat.LocalObjects();
                 try
                 {
                     session.Start(CoopOptions.HostPort);

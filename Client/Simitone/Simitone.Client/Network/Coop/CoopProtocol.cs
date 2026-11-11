@@ -18,7 +18,7 @@ namespace Simitone.Client.Network.Coop
         SpeedRequest = 3, //byte speed (0 pause, 1-3 as on the clock)
 
         //host -> guest
-        Welcome = 16,     //uint32 the guest's player ID in the VM
+        Welcome = 16,     //uint32 the guest's player ID in the VM, string host game version, int32 n, uint32[n] the host's object GUIDs
         Reject = 17,      //string reason
         Tick = 18,        //byte n, int16[n] game speed for each tick (n is 0 when unknown), then a serialized VMNetTickList
         Direct = 19,      //a serialized VMNetCommand, run immediately by this guest only
@@ -37,7 +37,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 2;
+        public const int Version = 3;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 

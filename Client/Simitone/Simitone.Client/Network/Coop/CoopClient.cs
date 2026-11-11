@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -28,6 +29,10 @@ namespace Simitone.Client.Network.Coop
         private readonly ConcurrentQueue<CoopFrame> Incoming = new ConcurrentQueue<CoopFrame>();
         private volatile CoopConnection Connection;
         private bool Ended;
+
+        /// <summary>This game's version and objects, compared with the host's on joining. See <see cref="CoopCompat"/>.</summary>
+        public string GameVersion = SimitoneVersion.Current;
+        public Func<IEnumerable<uint>> GameObjects = () => new uint[0];
         private byte[] PendingWorld; //the neighbourhood for the lot state in the next Tick frame
         private string PendingEnd; //set by the driver mid-tick; the session ends on the next Update
 
@@ -116,11 +121,26 @@ namespace Simitone.Client.Network.Coop
                 switch (frame.Kind)
                 {
                     case CoopFrameKind.Welcome:
-                        if (frame.Data.Length == 4)
+                        if (PlayerID != 0) break;
+                        uint id;
+                        string problem;
+                        try
                         {
-                            PlayerID = BitConverter.ToUInt32(frame.Data, 0);
-                            OnWelcome?.Invoke();
+                            CoopCompat.ParseWelcome(frame.Data, out id, out var hostVersion, out var hostObjects);
+                            problem = CoopCompat.FindProblem(hostVersion, hostObjects, GameVersion, GameObjects());
                         }
+                        catch (Exception)
+                        {
+                            End("The host sent a reply this game could not read.");
+                            break;
+                        }
+                        if (problem != null)
+                        {
+                            End(problem);
+                            break;
+                        }
+                        PlayerID = id;
+                        OnWelcome?.Invoke();
                         break;
                     case CoopFrameKind.Reject:
                         string reason;
