@@ -234,12 +234,12 @@ namespace Simitone.Client.Network.Coop
         }
 
         /// <summary>
-        /// After a lot state has loaded on a guest: makes the lot use the family object from the host's
-        /// neighbourhood (as it does on the host) instead of the copy that came with the lot, and returns it.
+        /// The family object a guest's lot should use, given the copy that came with a lot state: the one from
+        /// the host's neighbourhood when we have it (as on the host), with the host's active members.
+        /// Loading a lot state keeps whichever family the VM already has, so this is set before loading.
         /// </summary>
-        public static FAMI BindFamily(VM vm)
+        public static FAMI ResolveFamily(FAMI lotFamily)
         {
-            var lotFamily = vm.TS1State.CurrentFamily;
             if (lotFamily == null) return null;
 
             if (Applied && Current != null && Current.LotFamily == lotFamily.ChunkID)
@@ -248,7 +248,6 @@ namespace Simitone.Client.Network.Coop
                 if (family != null)
                 {
                     family.RuntimeSubset = Current.LotFamilyMembers;
-                    vm.TS1State.CurrentFamily = family;
                     return family;
                 }
             }

@@ -142,6 +142,12 @@ namespace Simitone.Client.Network.Coop
                     CurrentTick = next.Tick.TickID;
                     if (CurrentTick > GreatestTick) GreatestTick = CurrentTick;
                     DesyncTick = 0;
+                    if (vm.TS1State != null)
+                    {
+                        //loading keeps the family the VM already has, not the one in the state
+                        var family = (sync.State.PlatformState as FSO.SimAntics.Model.TS1Platform.VMTS1LotState)?.CurrentFamily;
+                        vm.TS1State.CurrentFamily = CoopWorld.ResolveFamily(family);
+                    }
                     vm.Load(sync.State);
                     LastTick = next.Tick.TickID;
                 }

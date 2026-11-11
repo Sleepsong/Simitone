@@ -1034,7 +1034,7 @@ namespace Simitone.Client.UI.Screens
             if (IsCoopGuest)
             {
                 //a lot state arrived from the host: on joining, when the host changes lot, or to fix a desync
-                ActiveFamily = CoopWorld.BindFamily(vm);
+                ActiveFamily = vm.TS1State.CurrentFamily;
                 if (!GuestLotShown)
                 {
                     GuestLotShown = true;
