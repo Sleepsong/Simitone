@@ -31,5 +31,18 @@ namespace Simitone.Client.Packs
         /// Each time a lot has been loaded and is about to be played, on the game thread.
         /// </summary>
         void OnLotLoaded(VM vm) { }
+
+        /// <summary>
+        /// The same moment, with the lot's file when it was loaded from one (null when it was not, eg. a lot handed
+        /// back after a visit). A pack that keeps its own data for a lot (LotPackData) reads it here. The lot's contents
+        /// may not be in place yet when this is called: if so, keep the data and apply it once they are.
+        /// </summary>
+        void OnLotLoaded(VM vm, string lotPath) { }
+
+        /// <summary>
+        /// Each time a lot has been saved to its file, on the game thread. A pack that keeps its own data for a lot
+        /// writes it here.
+        /// </summary>
+        void OnLotSaved(VM vm, string lotPath) { }
     }
 }

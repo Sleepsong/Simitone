@@ -181,9 +181,16 @@ namespace Simitone.Client.Packs
         }
 
         /// <summary>Tell pack code that a lot has been loaded.</summary>
-        public static void NotifyLotLoaded(VM vm)
+        /// <param name="lotPath">The lot's file, or null if it was not loaded from one.</param>
+        public static void NotifyLotLoaded(VM vm, string lotPath)
         {
-            Notify(x => x.Code.ToList().ForEach(code => code.OnLotLoaded(vm)));
+            Notify(x => x.Code.ToList().ForEach(code => { code.OnLotLoaded(vm); code.OnLotLoaded(vm, lotPath); }));
+        }
+
+        /// <summary>Tell pack code that a lot has been saved to its file.</summary>
+        public static void NotifyLotSaved(VM vm, string lotPath)
+        {
+            Notify(x => x.Code.ToList().ForEach(code => code.OnLotSaved(vm, lotPath)));
         }
 
         /// <summary>

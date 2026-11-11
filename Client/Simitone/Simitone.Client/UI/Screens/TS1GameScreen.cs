@@ -695,7 +695,7 @@ namespace Simitone.Client.UI.Screens
 
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
-            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm);
+            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm, null);
         }
 
         /// <summary>
@@ -831,7 +831,7 @@ namespace Simitone.Client.UI.Screens
 
             Frontend = new UISimitoneFrontend(this);
             this.Add(Frontend);
-            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm);
+            Simitone.Client.Packs.PackManager.NotifyLotLoaded(vm, external ? null : lotName);
         }
 
         public void LoadSurrounding(short houseID)
@@ -1078,7 +1078,9 @@ namespace Simitone.Client.UI.Screens
 
             Content.Get().Neighborhood.SaveHouse(vm.GetGlobalValue(10), iff);
             Content.Get().Neighborhood.SaveNeighbourhood(true);
-            Simitone.Client.Packs.LotPackRecord.Saved(Content.Get().Neighborhood.GetHousePath(vm.GetGlobalValue(10)));
+            var savedPath = Content.Get().Neighborhood.GetHousePath(vm.GetGlobalValue(10));
+            Simitone.Client.Packs.LotPackRecord.Saved(savedPath);
+            Simitone.Client.Packs.PackManager.NotifyLotSaved(vm, savedPath);
 
             // Write weather sidecar alongside the save
             SaveWeather();

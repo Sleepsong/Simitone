@@ -117,6 +117,8 @@ public class SeasonsPack : ISimitonePack
     public void OnLoad(Pack pack) { }      // at startup, before game content is loaded
     public void OnContentReady() { }       // content and primitives are loaded: register yours here
     public void OnLotLoaded(VM vm) { }     // each time a lot has loaded
+    public void OnLotLoaded(VM vm, string lotPath) { }  // the same, with the lot's file (null if not from one)
+    public void OnLotSaved(VM vm, string lotPath) { }   // each time a lot has been saved to its file
 }
 ```
 
@@ -137,11 +139,15 @@ Implement only the calls you need.
 - **Primitives.** Add SimAntics primitives with `PackManager.RegisterPrimitive` from
   `OnContentReady`. It refuses an opcode that the game or another pack already uses.
 - **Threads.** `OnContentReady` runs on the loading thread; the other calls run on the game thread.
-- **Saves.** Do not change the lot save format. Keep your pack's data in its own file, as weather does.
+- **Saves.** Do not change the lot save format. To keep data of your own for a lot, write it with
+  `LotPackData.Write(pack.Id, lotPath, bytes)` in `OnLotSaved` and read it back with `LotPackData.Read`
+  in `OnLotLoaded`. It is stored beside the saves, one file for each pack and lot. The lot's contents
+  may not be in place yet when `OnLotLoaded` runs, so keep what you read and apply it once they are.
+  See the Terrain Paint sample pack.
 
 ### Sample packs
 
-Three packs, with their source, are in the
+Four packs, with their source, are in the
 [Simitone-Packs](https://github.com/Sleepsong/Simitone-Packs) repository. They are meant to be
 installed, read and copied from:
 
@@ -150,6 +156,7 @@ installed, read and copied from:
 | Test Cube | A content pack: one object, a plain grey cube with no behaviour |
 | Build Cheats | A code pack that uses Simitone's own hooks: it adds the `offgrid` and `rotate45` console cheats |
 | Half Walls | A code pack that patches the engine with Harmony: The Sims 2's half wall, with no engine change. Its source goes through what translated cleanly from an engine change and what needed workarounds |
+| Terrain Paint | A larger code pack: a build tool with its own data, saved for each lot, and its own drawing. The Sims 2's terrain paint, with no engine change |
 
 ## For Simitone developers
 
