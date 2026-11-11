@@ -1,6 +1,7 @@
 using FSO.SimAntics;
 using FSO.SimAntics.NetPlay;
 using FSO.SimAntics.NetPlay.Model;
+using FSO.SimAntics.NetPlay.Model.Commands;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -133,7 +134,18 @@ namespace Simitone.Client.Network.Coop
                 }
                 if (next.Speed.HasValue) vm.SpeedMultiplier = next.Speed.Value;
                 ExecutedAnything = true;
-                InternalTick(vm, next.Tick);
+                var sync = (next.Tick.Commands.Count > 0) ? next.Tick.Commands[0].Command as VMStateSyncCmd : null;
+                if (sync != null && sync.Run)
+                {
+                    //a lot state. Load it here rather than through the command: after loading, the command goes
+                    //on to rebuild the surrounding lots from TSO city data, which a TS1 lot does not have.
+                    CurrentTick = next.Tick.TickID;
+                    if (CurrentTick > GreatestTick) GreatestTick = CurrentTick;
+                    DesyncTick = 0;
+                    vm.Load(sync.State);
+                    LastTick = next.Tick.TickID;
+                }
+                else InternalTick(vm, next.Tick);
                 if (vm.FSOVAsyncLoading) return false; //a lot state is still loading
                 if (timer.ElapsedMilliseconds > MAX_TICK_MS) break;
             }
