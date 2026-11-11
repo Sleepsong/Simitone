@@ -226,6 +226,7 @@ namespace Simitone.Client.UI.Screens
         public void NeighSelection(ushort neighborhoodMode, bool moveInMode = false)
         {
             Content.Get().Neighborhood.PreparePersonDataFromObject = PersonGeneratorHelper.PreparePersonDataFromObject;
+            NeighborhoodManager.ApplyStartupSlot(); //return to the neighbourhood the player last used
             Content.Get().Neighborhood.AddMissingNeighbors();
             TS1NeighPanel = new UINeighborhoodSelectionPanel(neighborhoodMode);
             var switcher = new UINeighbourhoodSwitcher(TS1NeighPanel, neighborhoodMode, moveInMode);

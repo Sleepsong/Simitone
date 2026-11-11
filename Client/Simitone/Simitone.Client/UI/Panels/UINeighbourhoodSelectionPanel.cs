@@ -148,11 +148,14 @@ namespace Simitone.Client.UI.Panels
 
         private Texture2D texture;
         private int Mode;
+        private NeighborhoodViewConfig Config;
 
         public void PopulateScreen(ushort mode)
         {
             var childClone = new List<UIElement>(Children);
-            var config = Neighborhoods[mode - 1];
+            //the active neighbourhood can replace the stock map screens with its own. (see NeighborhoodManager)
+            var config = NeighborhoodManager.GetViewConfig(mode, Neighborhoods[mode - 1]) ?? Neighborhoods[mode - 1];
+            Config = config;
             foreach (var child in childClone) Remove(child);
 
             var shad = new UIImage(Content.Get().CustomUI.Get("ngbh_outline.png").Get(GameFacade.GraphicsDevice))
@@ -161,7 +164,8 @@ namespace Simitone.Client.UI.Panels
             shad.Position = new Vector2(-24);
             Add(shad);
 
-            var bg = new UIImage(((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice));
+            var bg = new UIImage(NeighborhoodManager.GetTexture(config.Graphic, GameFacade.GraphicsDevice)
+                ?? TextureGenerator.GetPxWhite(GameFacade.GraphicsDevice));
             Add(bg);
             bg.ListenForMouse((evt, state) =>
             {
@@ -232,8 +236,8 @@ namespace Simitone.Client.UI.Panels
                 LastHS = new UIHouseSelectPanel(house);
                 GameFacade.Screens.CurrentUIScreen.Add(LastHS);
                 GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
-                    { "Zoom", (Mode==4)?3f:1.5f },
-                    { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
+                    { "Zoom", (Config.Scale >= 2f)?3f:1.5f },
+                    { "CenterPositionX", HousePositions[house].X - ((Config.Scale >= 2f)?90f:180f) },
                     { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
 
                 LastHS.OnSelected += (h) =>
@@ -275,7 +279,7 @@ namespace Simitone.Client.UI.Panels
         public UINeighborhoodAnimationLayer(NeighborhoodImageAnim anim, bool pulsate, int frameTime)
         {
             var provider = Content.Get().TS1Global;
-            Frames = anim.Frames.Select(x => ((ITextureRef)provider.Get(x)).Get(GameFacade.GraphicsDevice)).ToArray();
+            Frames = anim.Frames.Select(x => NeighborhoodManager.GetTexture(x, GameFacade.GraphicsDevice)).Where(x => x != null).ToArray();
             SubFrame = frameTime;
             FrameTime = frameTime;
             FrameTime *= GlobalSettings.Default.TargetRefreshRate;
@@ -296,6 +300,7 @@ namespace Simitone.Client.UI.Panels
 
         public override void Draw(UISpriteBatch batch)
         {
+            if (Frames.Length == 0) return;
             var realFrame = (FrameNum >= Frames.Length) ? ((Frames.Length - 2) - (FrameNum - Frames.Length)) : FrameNum;
             var fm2 = (TotalFrames != 0) ? ((FrameNum + 1) % TotalFrames) : 0;
             var realFrame2 = (fm2 >= Frames.Length) ? ((Frames.Length - 2) - (fm2 - Frames.Length)) : fm2;

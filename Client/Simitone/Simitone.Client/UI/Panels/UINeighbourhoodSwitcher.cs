@@ -40,6 +40,8 @@ namespace Simitone.Client.UI.Panels
                 });
             });
             if (mode != 4) AddBtn(LeftBtns, "ngbh_back.png", (btn) => PopMode(4));
+            //switching neighbourhood unloads the family that is waiting to move in, so it isn't offered then.
+            if (!moveIn) AddBtn(LeftBtns, "ngbh_opt.png", (btn) => ShowNeighborhoodPicker());
 
             if (mode != 2 && !moveIn) AddBtn(RightBtns, "ngbh_downt.png", (btn) => PopMode(2));
             if (mode != 3 && !moveIn) AddBtn(RightBtns, "ngbh_vacat.png", (btn) => PopMode(3));
@@ -48,6 +50,22 @@ namespace Simitone.Client.UI.Panels
             Mode = mode;
 
             LayBtns();
+        }
+
+        private void ShowNeighborhoodPicker()
+        {
+            var picker = new UINeighborhoodPickerAlert();
+            picker.OnSwitched += () =>
+            {
+                //the house the player was looking at belongs to the last neighbourhood.
+                Panel.LastHS?.Kill();
+                Panel.LastHS = null;
+                Panel.Zoom = 1f;
+                Panel.CenterPositionX = 400;
+                Panel.CenterPositionY = 300;
+                PopMode(4);
+            };
+            UIScreen.GlobalShowDialog(picker, true);
         }
 
         public void PopMode(ushort mode)
