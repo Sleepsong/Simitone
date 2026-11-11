@@ -8,8 +8,8 @@ namespace Simitone.Client.Utils
     /// four directions and tile centres):
     ///  - OffGrid: objects follow the cursor instead of snapping to the middle of a tile (to a sixteenth of a tile).
     ///  - Rotate45: objects turn 45 degrees at a time instead of 90.
-    /// Both are off unless something turns them on - Simitone itself has no command for them. The sample pack in
-    /// SamplePacks/BuildCheats adds the "offgrid" and "rotate45" console commands that do.
+    /// Both are off unless something turns them on - Simitone itself has no command for them. The Build Cheats pack
+    /// (in the Simitone-Packs repository) adds the "offgrid" and "rotate45" console commands that do.
     /// Use with care, like moveobjects: TS1's objects were made for tile centres and four directions, so Sims can take odd
     /// routes to, or fail to use, an object that's off the grid or diagonal. They last for this session only; objects
     /// placed with them stay where they are (in 2D a diagonal object shows its nearest straight sprite).

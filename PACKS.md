@@ -133,66 +133,23 @@ Implement only the calls you need.
 - **Patching the engine.** Simitone ships [Harmony](https://github.com/pardeike/Harmony), so pack code
   can wrap, replace or rewrite any method in Simitone or FreeSO without the engine knowing about it.
   Reference it through `Simitone.Client` and do not put `0Harmony.dll` in your pack. Apply patches in
-  `OnLoad`, before the game runs the methods you patch. See the Half Walls sample below.
+  `OnLoad`, before the game runs the methods you patch. See the Half Walls sample pack.
 - **Primitives.** Add SimAntics primitives with `PackManager.RegisterPrimitive` from
   `OnContentReady`. It refuses an opcode that the game or another pack already uses.
 - **Threads.** `OnContentReady` runs on the loading thread; the other calls run on the game thread.
 - **Saves.** Do not change the lot save format. Keep your pack's data in its own file, as weather does.
 
-### Sample pack: Build Cheats
+### Sample packs
 
-`SamplePacks/BuildCheats/` is a complete code pack you can install and copy from. It adds two console
-cheats in the spirit of The Sims 2's, for full 3D only:
+Three packs, with their source, are in the
+[Simitone-Packs](https://github.com/Sleepsong/Simitone-Packs) repository. They are meant to be
+installed, read and copied from:
 
-- `offgrid on` / `offgrid off`: objects follow the cursor instead of snapping to the middle of a tile.
-- `rotate45 on` / `rotate45 off`: objects turn 45 degrees at a time instead of 90.
-
-To get it, either download the `SamplePack-BuildCheats` artifact from a "Build Simitone" run, or build
-it yourself:
-
-```bash
-dotnet build SamplePacks/BuildCheats/BuildCheats.csproj -c Release
-```
-
-Either way you get a `buildcheats` folder holding `pack.json` and `BuildCheats.dll`. Copy that folder
-into Simitone's `Packs/` folder, switch **Build Cheats** on in Options > Packs, confirm, and restart.
-Use a pack built from the same version of Simitone you are running.
-
-### Sample pack: Half Walls (experimental)
-
-`SamplePacks/HalfWalls/` adds The Sims 2's half wall to build mode, next to the wall: a low wall you
-can wallpaper, which Sims cannot cross but which does not divide a room. Download the
-`SamplePack-HalfWalls` artifact, or build it with
-`dotnet build SamplePacks/HalfWalls/HalfWalls.csproj -c Release`, and install the `halfwalls` folder.
-
-It is an experiment in changing the engine from a pack. The same feature exists as an engine change
-of about 80 lines in 6 FreeSO files; this pack gets the same effect with Harmony patches and no
-engine change at all. `HalfWallsPack.cs` goes through it part by part. What it shows:
-
-- Small, self-contained engine edits translate directly (a new wall style, an icon, two properties).
-- Edits in the middle of long methods do not. Each needed a workaround from outside: a flag set
-  around a call, compiled code rewritten in place, or the compiler's hidden local functions patched.
-- The pack depends on the exact shape of the methods it patches. It checks what it can and refuses
-  to load, with the reason in the Packs screen, if Simitone's code is not what it was written for.
-- One known difference from the engine version: where a full wall runs straight into a half wall, the
-  full wall's end above the half wall is left open in 3D.
-- Lots saved with half walls need the pack to show them as half walls. Without it they load as walls
-  of an unknown style.
-
-### Sample pack: Test Cube
-
-`SamplePacks/TestCube/pack/testcube/` is a complete content pack, ready to copy into `Packs/`: a
-`pack.json` and one object, `content/Downloads/TestCube.iff`. The object is a plain grey cube with no
-behaviour, in Buy mode under Decorative > Other for 10 Simoleons. It needs no approval, since it has
-no code.
-
-The object file is not hand-made. `SamplePacks/TestCube/generator/` writes it with FreeSO's own file
-code and draws the sprites by tracing a cube through the engine's camera maths, then reads the file
-back and checks it. To regenerate it:
-
-```bash
-dotnet run --project SamplePacks/TestCube/generator -- SamplePacks/TestCube/pack/testcube/content/Downloads
-```
+| Pack | Shows |
+|---|---|
+| Test Cube | A content pack: one object, a plain grey cube with no behaviour |
+| Build Cheats | A code pack that uses Simitone's own hooks: it adds the `offgrid` and `rotate45` console cheats |
+| Half Walls | A code pack that patches the engine with Harmony: The Sims 2's half wall, with no engine change. Its source goes through what translated cleanly from an engine change and what needed workarounds |
 
 ## For Simitone developers
 
