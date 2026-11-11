@@ -1,0 +1,9 @@
+{
+  "id": "sample.halfwalls",
+  "name": "Half Walls",
+  "version": "0.1",
+  "author": "Simitone",
+  "description": "The Sims 2's half wall, in build mode next to the wall: a low wall you can wallpaper. Sims can't cross it, but it doesn't divide a room. An experiment in changing the engine from a pack.",
+  "minSimitoneVersion": "0.8.22",
+  "assembly": "HalfWalls.dll"
+}

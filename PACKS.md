@@ -130,6 +130,10 @@ Implement only the calls you need.
   own assemblies; copies in the pack folder are ignored.
 - **Console commands.** Add commands to the cheat console (Ctrl+Shift+C) with
   `PackManager.RegisterCommand` from `OnLoad`. A name that is already taken is refused.
+- **Patching the engine.** Simitone ships [Harmony](https://github.com/pardeike/Harmony), so pack code
+  can wrap, replace or rewrite any method in Simitone or FreeSO without the engine knowing about it.
+  Reference it through `Simitone.Client` and do not put `0Harmony.dll` in your pack. Apply patches in
+  `OnLoad`, before the game runs the methods you patch. See the Half Walls sample below.
 - **Primitives.** Add SimAntics primitives with `PackManager.RegisterPrimitive` from
   `OnContentReady`. It refuses an opcode that the game or another pack already uses.
 - **Threads.** `OnContentReady` runs on the loading thread; the other calls run on the game thread.
@@ -153,6 +157,27 @@ dotnet build SamplePacks/BuildCheats/BuildCheats.csproj -c Release
 Either way you get a `buildcheats` folder holding `pack.json` and `BuildCheats.dll`. Copy that folder
 into Simitone's `Packs/` folder, switch **Build Cheats** on in Options > Packs, confirm, and restart.
 Use a pack built from the same version of Simitone you are running.
+
+### Sample pack: Half Walls (experimental)
+
+`SamplePacks/HalfWalls/` adds The Sims 2's half wall to build mode, next to the wall: a low wall you
+can wallpaper, which Sims cannot cross but which does not divide a room. Download the
+`SamplePack-HalfWalls` artifact, or build it with
+`dotnet build SamplePacks/HalfWalls/HalfWalls.csproj -c Release`, and install the `halfwalls` folder.
+
+It is an experiment in changing the engine from a pack. The same feature exists as an engine change
+of about 80 lines in 6 FreeSO files; this pack gets the same effect with Harmony patches and no
+engine change at all. `HalfWallsPack.cs` goes through it part by part. What it shows:
+
+- Small, self-contained engine edits translate directly (a new wall style, an icon, two properties).
+- Edits in the middle of long methods do not. Each needed a workaround from outside: a flag set
+  around a call, compiled code rewritten in place, or the compiler's hidden local functions patched.
+- The pack depends on the exact shape of the methods it patches. It checks what it can and refuses
+  to load, with the reason in the Packs screen, if Simitone's code is not what it was written for.
+- One known difference from the engine version: where a full wall runs straight into a half wall, the
+  full wall's end above the half wall is left open in 3D.
+- Lots saved with half walls need the pack to show them as half walls. Without it they load as walls
+  of an unknown style.
 
 ### Sample pack: Test Cube
 

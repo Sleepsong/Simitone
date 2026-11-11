@@ -701,6 +701,8 @@
 
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <!-- lets add-on packs patch methods at runtime (see PACKS.md) -->
+    <PackageReference Include="Lib.Harmony" Version="2.4.3" />
   </ItemGroup>
 
 </Project>

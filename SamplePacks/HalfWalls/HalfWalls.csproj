@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>HalfWalls</AssemblyName>
+    <RootNamespace>HalfWalls</RootNamespace>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- compile against Simitone. the pack must not ship Simitone's files: the game shares its own with it -->
+    <ProjectReference Include="..\..\Client\Simitone\Simitone.Client\Simitone.Client.csproj" Private="false" />
+  </ItemGroup>
+
+  <!-- after building, put just the pack's own files in pack/halfwalls/, ready to copy into Simitone's Packs folder -->
+  <Target Name="MakePackFolder" AfterTargets="Build">
+    <Copy SourceFiles="$(TargetPath);pack.json" DestinationFolder="$(MSBuildProjectDirectory)\pack\halfwalls" />
+  </Target>
+
+</Project>

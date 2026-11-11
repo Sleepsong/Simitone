@@ -199,6 +199,16 @@ jobs:
         path: SamplePacks/BuildCheats/pack/
         if-no-files-found: error
 
+    - name: Build sample pack (Half Walls)
+      run: dotnet build SamplePacks/HalfWalls/HalfWalls.csproj -c Release
+
+    - name: Upload sample pack (Half Walls)
+      uses: actions/upload-artifact@v4
+      with:
+        name: SamplePack-HalfWalls
+        path: SamplePacks/HalfWalls/pack/
+        if-no-files-found: error
+
   build-macos:
     if: ${{ inputs.build_macos }}
     runs-on: macos-latest
