@@ -26,8 +26,8 @@ namespace Simitone.Client.Network.Coop
         public ushort GameStateFamily = NoFamily; //TS1GameState.ActiveFamily
         public uint DowntownSimGUID;
         public short LotTransitInfo;
-        public ushort LotFamily = NoFamily;       //the family being played on the lot
-        public uint[] LotFamilyMembers = new uint[0]; //those of them that are active (FAMI.RuntimeSubset)
+        /// <summary>The active members (FAMI.RuntimeSubset) of each family that has any. Not part of the neighbourhood file.</summary>
+        public Dictionary<ushort, uint[]> ActiveMembers = new Dictionary<ushort, uint[]>();
 
         public const ushort NoFamily = 65535;
         private const int MaxFiles = 4096;
@@ -61,9 +61,13 @@ namespace Simitone.Client.Network.Coop
                     writer.Write(GameStateFamily);
                     writer.Write(DowntownSimGUID);
                     writer.Write(LotTransitInfo);
-                    writer.Write(LotFamily);
-                    writer.Write(LotFamilyMembers.Length);
-                    foreach (var guid in LotFamilyMembers) writer.Write(guid);
+                    writer.Write(ActiveMembers.Count);
+                    foreach (var family in ActiveMembers)
+                    {
+                        writer.Write(family.Key);
+                        writer.Write(family.Value.Length);
+                        foreach (var guid in family.Value) writer.Write(guid);
+                    }
                 }
                 return output.ToArray();
             }
@@ -92,11 +96,17 @@ namespace Simitone.Client.Network.Coop
                 world.GameStateFamily = reader.ReadUInt16();
                 world.DowntownSimGUID = reader.ReadUInt32();
                 world.LotTransitInfo = reader.ReadInt16();
-                world.LotFamily = reader.ReadUInt16();
-                var members = reader.ReadInt32();
-                if (members < 0 || members > 64) throw new InvalidDataException("Bad family size " + members);
-                world.LotFamilyMembers = new uint[members];
-                for (int i = 0; i < members; i++) world.LotFamilyMembers[i] = reader.ReadUInt32();
+                var families = reader.ReadInt32();
+                if (families < 0 || families > 1024) throw new InvalidDataException("Bad family count " + families);
+                for (int f = 0; f < families; f++)
+                {
+                    var id = reader.ReadUInt16();
+                    var members = reader.ReadInt32();
+                    if (members < 0 || members > 64) throw new InvalidDataException("Bad family size " + members);
+                    var guids = new uint[members];
+                    for (int i = 0; i < members; i++) guids[i] = reader.ReadUInt32();
+                    world.ActiveMembers[id] = guids;
+                }
             }
             if (!world.Files.ContainsKey("Neighborhood.iff") || StaticFiles.Any(x => !world.Files.ContainsKey(x)))
                 throw new InvalidDataException("The neighbourhood is incomplete");
@@ -179,11 +189,10 @@ namespace Simitone.Client.Network.Coop
             world.DowntownSimGUID = neigh.GameState.DowntownSimGUID;
             world.LotTransitInfo = neigh.GameState.LotTransitInfo;
 
-            var family = vm.TS1State?.CurrentFamily;
-            if (family != null)
+            foreach (var family in neigh.MainResource.List<FAMI>() ?? new List<FAMI>())
             {
-                world.LotFamily = family.ChunkID;
-                world.LotFamilyMembers = family.RuntimeSubset ?? new uint[0];
+                if (family.RuntimeSubset != null && family.RuntimeSubset.Length > 0)
+                    world.ActiveMembers[family.ChunkID] = family.RuntimeSubset;
             }
             return world;
         }
@@ -242,6 +251,11 @@ namespace Simitone.Client.Network.Coop
             neigh.GameState.ActiveFamily = (GameStateFamily == NoFamily) ? null : neigh.GetFamily(GameStateFamily);
             neigh.GameState.DowntownSimGUID = DowntownSimGUID;
             neigh.GameState.LotTransitInfo = LotTransitInfo;
+            foreach (var active in ActiveMembers)
+            {
+                var family = neigh.GetFamily(active.Key);
+                if (family != null) family.RuntimeSubset = active.Value;
+            }
             Current = this;
         }
 
@@ -254,12 +268,13 @@ namespace Simitone.Client.Network.Coop
         {
             if (lotFamily == null) return null;
 
-            if (Applied && Current != null && Current.LotFamily == lotFamily.ChunkID)
+            if (Applied && Current != null)
             {
                 var family = Content.Get().Neighborhood.GetFamily(lotFamily.ChunkID);
                 if (family != null)
                 {
-                    family.RuntimeSubset = Current.LotFamilyMembers;
+                    //its active members were set from the host's when the neighbourhood was loaded
+                    if (family.RuntimeSubset == null || family.RuntimeSubset.Length == 0) family.SelectWholeFamily();
                     return family;
                 }
             }

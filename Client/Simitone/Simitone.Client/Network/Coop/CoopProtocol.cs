@@ -38,7 +38,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 4;
+        public const int Version = 5;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 

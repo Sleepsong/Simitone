@@ -31,6 +31,11 @@ namespace Simitone.Client.Network.Coop
         //the base driver starts a new tick history whenever it takes a lot state, and gives no other sign of it
         private static readonly FieldInfo SyncHistoryField = typeof(VMServerDriver).GetField("TicksSinceSync", BindingFlags.NonPublic | BindingFlags.Instance);
         private object LastSyncHistory;
+        private static readonly FieldInfo LastSyncField = typeof(VMServerDriver).GetField("LastSync", BindingFlags.NonPublic | BindingFlags.Instance);
+        private static readonly FieldInfo SyncSerializingField = typeof(VMServerDriver).GetField("SyncSerializing", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private const int FRESH_SYNC_COOLDOWN = 10 * 30; //ticks between host reloads forced by guests losing sync
+        private int TicksSinceFreshSync = FRESH_SYNC_COOLDOWN;
 
         private VM VM;
         private readonly List<short> PendingSpeeds = new List<short>();
@@ -61,6 +66,7 @@ namespace Simitone.Client.Network.Coop
         {
             VM = vm;
             FixSimulationInfo(vm);
+            if (TicksSinceFreshSync < FRESH_SYNC_COOLDOWN) TicksSinceFreshSync++;
             PendingSpeeds.Add((short)System.Math.Max(short.MinValue, System.Math.Min(short.MaxValue, vm.SpeedMultiplier)));
             var result = base.Tick(vm);
             //again, now: a lot is loaded by a command inside the tick, and the state for guests is taken at the
@@ -94,6 +100,24 @@ namespace Simitone.Client.Network.Coop
             if (simi != null && simi.Version > 0x3E) simi.Version = 0x3E;
         }
 
+        private void RequestFreshSync()
+        {
+            if (TicksSinceFreshSync < FRESH_SYNC_COOLDOWN) return;
+            TicksSinceFreshSync = 0;
+            SelfResync = true;
+            try
+            {
+                //drop the state kept for joiners, unless one is being written right now, so a new one is taken
+                if (LastSyncField != null && SyncHistoryField != null && SyncSerializingField != null
+                    && !(bool)SyncSerializingField.GetValue(this))
+                {
+                    LastSyncField.SetValue(this, null);
+                    SyncHistoryField.SetValue(this, null);
+                }
+            }
+            catch (System.Exception) { } //a different FreeSO: guests wait for the base driver instead
+        }
+
         private void CaptureWorld(VM vm)
         {
             try
@@ -114,6 +138,18 @@ namespace Simitone.Client.Network.Coop
                 //in TS1 mode a join grabs the first family member (often the host's Sim) and a leave walks
                 //the Sim off the lot. Guests pick a free Sim themselves and just let go of it when they leave.
                 return;
+            }
+
+            if (GuestIDs.Count > 0)
+            {
+                //A lot that was just built from a house file is not quite the same as that lot saved and loaded
+                //again, and saved and loaded is what guests get. So with guests around, the host reloads its own
+                //lot from a save as well (FreeSO's "self resync") in the tick the house is built - which is before
+                //the state for guests is taken - so both sides start from exactly the same thing.
+                if (cmd is VMBlueprintRestoreCmd) SelfResync = true;
+                //and if a guest still loses sync, do the same again and send everyone a state taken right after,
+                //rather than leave them out of step until the base driver next gets round to it (up to 30 seconds)
+                else if (cmd is VMRequestResyncCmd && CoopProtocol.IsGuestID(cmd.ActorUID)) RequestFreshSync();
             }
 
             if (cmd is VMNetChangeControlCmd control)
