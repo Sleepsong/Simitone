@@ -21,6 +21,9 @@ using Simitone.Client.Utils;
 using FSO.Common;
 using System.IO;
 using FSO.Files.RC;
+using FSO.LotView;
+using FSO.LotView.Model;
+using Simitone.Client.UI.Panels.Neigh3D;
 
 namespace Simitone.Client.UI.Panels
 {
@@ -149,20 +152,38 @@ namespace Simitone.Client.UI.Panels
         private Texture2D texture;
         private int Mode;
 
+        // 3D prototype: the same screen drawn as terrain, shown instead of the 2D elements when the game is in 3D mode.
+        private UINeighborhood3DView View3D;
+        private bool View3DFailed;
+        private Texture2D BgTexture;
+        private STR Locations;
+        private float HouseScale = 1f;
+        private List<UIElement> Elements2D = new List<UIElement>();
+        private List<UINeighborhoodHouseButton> HouseButtons = new List<UINeighborhoodHouseButton>();
+
         public void PopulateScreen(ushort mode)
         {
             var childClone = new List<UIElement>(Children);
             var config = Neighborhoods[mode - 1];
             foreach (var child in childClone) Remove(child);
+            View3D = null;
+            View3DFailed = false;
+            Elements2D.Clear();
+            HouseButtons.Clear();
 
             var shad = new UIImage(Content.Get().CustomUI.Get("ngbh_outline.png").Get(GameFacade.GraphicsDevice))
                 .With9Slice(24, 24, 24, 24);
             shad.SetSize(800 + 48, 600 + 48);
             shad.Position = new Vector2(-24);
             Add(shad);
+            Elements2D.Add(shad);
 
-            var bg = new UIImage(((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice));
+            BgTexture = ((ITextureRef)Provider.Get(config.Graphic)).Get(GameFacade.GraphicsDevice);
+            var bg = new UIImage(BgTexture);
             Add(bg);
+            Elements2D.Add(bg);
+            HouseScale = config.Scale;
+            Mode = mode;
             bg.ListenForMouse((evt, state) =>
             {
                 if (evt == UIMouseEventType.MouseDown) ResetZoom();
@@ -171,6 +192,7 @@ namespace Simitone.Client.UI.Panels
             HousePositions = new Dictionary<int, Vector2>();
             var locationIff = Content.Get().Neighborhood.LotLocations;
             var locations = locationIff.Get<STR>(mode);
+            Locations = locations;
             if (locations == null) return;
 
             var buttons = new List<UINeighborhoodHouseButton>();
@@ -188,12 +210,15 @@ namespace Simitone.Client.UI.Panels
 
             var ordered = buttons.OrderBy(x => x.Y);
             foreach (var btn in ordered) Add(btn);
+            HouseButtons.AddRange(buttons);
+            Elements2D.AddRange(buttons);
 
             foreach (var layer in config.FullImageAnimations)
             {
                 var lelem = new UINeighborhoodAnimationLayer(layer, config.Pulsate, config.FrameDuration);
                 lelem.Position = layer.Position;
                 Add(lelem);
+                Elements2D.Add(lelem);
             }
 
             BgSound?.RemoveOwner(-25);
@@ -258,7 +283,38 @@ namespace Simitone.Client.UI.Panels
 
         public override void Update(UpdateState state)
         {
+            Update3DMode();
             base.Update(state);
+        }
+
+        /// <summary>
+        /// Swaps between the flat TS1 screen and the 3D prototype to match the game's graphics mode (F12).
+        /// </summary>
+        private void Update3DMode()
+        {
+            var want3D = GraphicsModeControl.Mode == GlobalGraphicsMode.Full3D && !View3DFailed && Locations != null && BgTexture != null;
+            if (want3D && View3D == null)
+            {
+                try
+                {
+                    View3D = new UINeighborhood3DView(this, Mode, HouseScale, BgTexture, Locations, HouseButtons);
+                    View3D.Visible = false;
+                    //directly above the painting, below everything else.
+                    AddAt(Math.Min(2, Children.Count), View3D);
+                }
+                catch (Exception e)
+                {
+                    //prototype: if anything about this neighbourhood surprises us, stay in 2D.
+                    Console.WriteLine("3D neighbourhood view failed: " + e);
+                    View3D = null;
+                    View3DFailed = true;
+                    want3D = false;
+                }
+            }
+            if (View3D == null || View3D.Visible == want3D) return;
+            View3D.Visible = want3D;
+            if (!want3D) View3D.ResetCamera();
+            foreach (var elem in Elements2D) elem.Visible = !want3D;
         }
     }
 
@@ -339,10 +395,24 @@ namespace Simitone.Client.UI.Panels
         private bool Hovered;
         private THMB Offsets;
         public float AlphaTime { get; set; }
+        public int HouseNumber { get; private set; }
+
+        /// <summary> Size of the thumbnail on the neighbourhood painting. </summary>
+        public Vector2 ThumbSize => new Vector2(HouseTex.Width, HouseTex.Height) / HouseScale;
+        public Texture2D GetThumb(bool open) => open ? HouseOpenTex : HouseTex;
+
+        /// <summary> Where the top left of the thumbnail is drawn, relative to the house's position on the painting. </summary>
+        public Vector2 ThumbOffset(bool open)
+        {
+            var off = new Vector2(Offsets.XOff, -Offsets.BaseYOff) / HouseScale;
+            if (open) off.Y -= Offsets.AddYOff / HouseScale;
+            return new Vector2(-Offsets.Width, -Offsets.Height) / HouseScale + off;
+        }
 
         public UINeighborhoodHouseButton(int houseNumber, Action<int> selectionCallback, float scale)
         {
             if (houseNumber == 71) { }
+            HouseNumber = houseNumber;
             AlphaTime = 0;
             var house = Content.Get().Neighborhood.GetHouse(houseNumber);
             HouseTex = house.Get<BMP>(513)?.GetTexture(GameFacade.GraphicsDevice);
