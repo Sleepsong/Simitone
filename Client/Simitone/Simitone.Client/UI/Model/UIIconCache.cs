@@ -56,6 +56,31 @@ namespace Simitone.Client.UI.Model
             return null;
         }
 
+        //neighbours are usually off-lot, so render the head in a throwaway VM like UIHouseFamilyList does
+        public static Texture2D GetNeighbor(uint guid)
+        {
+            var world = new FSO.LotView.World(GameFacade.GraphicsDevice);
+            world.Initialize(GameFacade.Scenes);
+            var context = new VMContext(world);
+            var vm = new VM(context, new VMServerDriver(new VMTS1GlobalLinkStub()), new VMNullHeadlineProvider());
+            vm.Init();
+            var blueprint = new Blueprint(1, 1);
+            context.Blueprint = blueprint;
+            context.Architecture = new VMArchitecture(1, 1, blueprint, vm.Context);
+            try
+            {
+                var sim = vm.Context.CreateObjectInstance(guid, LotTilePos.OUT_OF_WORLD, Direction.NORTH, true)?.BaseObject;
+                if (sim == null) return null;
+                var head = GetObject(sim);
+                sim.Delete(true, vm.Context);
+                return head;
+            }
+            finally
+            {
+                world.Dispose();
+            }
+        }
+
         /// <summary>
         /// A catalog picture for an object that has none (many Makin' Magic objects, and some downloads): the object
         /// itself, drawn by the current lot's world on a square transparent background. Null when no lot is open.
@@ -91,31 +116,6 @@ namespace Simitone.Client.UI.Model
             finally
             {
                 group.Delete(vm.Context);
-            }
-        }
-
-        //neighbours are usually off-lot, so render the head in a throwaway VM like UIHouseFamilyList does
-        public static Texture2D GetNeighbor(uint guid)
-        {
-            var world = new FSO.LotView.World(GameFacade.GraphicsDevice);
-            world.Initialize(GameFacade.Scenes);
-            var context = new VMContext(world);
-            var vm = new VM(context, new VMServerDriver(new VMTS1GlobalLinkStub()), new VMNullHeadlineProvider());
-            vm.Init();
-            var blueprint = new Blueprint(1, 1);
-            context.Blueprint = blueprint;
-            context.Architecture = new VMArchitecture(1, 1, blueprint, vm.Context);
-            try
-            {
-                var sim = vm.Context.CreateObjectInstance(guid, LotTilePos.OUT_OF_WORLD, Direction.NORTH, true)?.BaseObject;
-                if (sim == null) return null;
-                var head = GetObject(sim);
-                sim.Delete(true, vm.Context);
-                return head;
-            }
-            finally
-            {
-                world.Dispose();
             }
         }
 
