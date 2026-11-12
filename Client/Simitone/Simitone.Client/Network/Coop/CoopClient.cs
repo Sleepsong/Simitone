@@ -19,6 +19,9 @@ namespace Simitone.Client.Network.Coop
         /// <summary>This guest's player ID in the VM. 0 until the host has welcomed us.</summary>
         public uint PlayerID { get; private set; }
 
+        /// <summary>The player IDs of everyone in the session (the host and all guests, including us).</summary>
+        public HashSet<uint> Players { get; private set; } = new HashSet<uint>();
+
         /// <summary>The host accepted us; PlayerID is set and the lot state will follow.</summary>
         public event Action OnWelcome;
         /// <summary>The session ended. The string says why, and is empty if we left ourselves.</summary>
@@ -162,6 +165,14 @@ namespace Simitone.Client.Network.Coop
                         Buffer.BlockCopy(frame.Data, headerSize, ticks, 0, ticks.Length);
                         Driver.EnqueueTicks(ticks, speeds, PendingWorld);
                         PendingWorld = null;
+                        break;
+                    case CoopFrameKind.Players:
+                        if (frame.Data.Length < 4) break;
+                        var playerCount = BitConverter.ToInt32(frame.Data, 0);
+                        if (playerCount < 0 || frame.Data.Length != 4 + playerCount * 4) break;
+                        var players = new HashSet<uint>();
+                        for (int i = 0; i < playerCount; i++) players.Add(BitConverter.ToUInt32(frame.Data, 4 + i * 4));
+                        Players = players;
                         break;
                     case CoopFrameKind.World:
                         if (PlayerID != 0) PendingWorld = frame.Data;

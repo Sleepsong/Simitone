@@ -157,8 +157,7 @@ namespace Simitone.Client.UI.Panels
             var game = FSO.Client.UI.Framework.UIScreen.Current as Simitone.Client.UI.Screens.TS1GameScreen;
             if (game != null && game.IsCoopGuest)
             {
-                game.ChangeSpeedTo(speed == 4 ? 0 : speed); //ask the host
-                return;
+                return; //only the host controls the clock
             }
             if (VM.SpeedMultiplier == -1) return;
             switch (VM.SpeedMultiplier)

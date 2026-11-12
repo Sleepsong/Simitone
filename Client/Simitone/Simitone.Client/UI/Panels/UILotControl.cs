@@ -794,7 +794,7 @@ namespace Simitone.Client.UI.Panels
                         //a guest starts on a family member nobody controls yet, or just watches if there is none
                         var family = vm.TS1State.CurrentFamily;
                         fallbackAvatar = vm.Context.ObjectQueries.Avatars.FirstOrDefault(x =>
-                            x.PersistID == 0 && !((VMAvatar)x).IsPet && family != null && family.RuntimeSubset.Contains(x.Object.OBJ.GUID));
+                            ((TS1GameScreen)Parent).CanControl(x) && !((VMAvatar)x).IsPet && family != null && family.RuntimeSubset.Contains(x.Object.OBJ.GUID));
                         FoundMe = true;
                     }
                     if (fallbackAvatar != null)

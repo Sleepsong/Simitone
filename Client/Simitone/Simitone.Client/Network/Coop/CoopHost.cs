@@ -125,6 +125,7 @@ namespace Simitone.Client.Network.Coop
                                 Driver.GuestIDs.Remove(guest.PersistID);
                                 Driver.DisconnectClient(guest);
                             }
+                            SendPlayers();
                             OnGuestChange?.Invoke(guest.AvatarState.Name, false);
                         }
                         break;
@@ -169,8 +170,27 @@ namespace Simitone.Client.Network.Coop
             Guests.Add(guest);
 
             conn.Send(CoopFrameKind.Welcome, CoopCompat.PackWelcome(id, GameVersion, GameObjects));
+            SendPlayers();
             if (Driver != null) AddToDriver(guest);
             OnGuestChange?.Invoke(name, true);
+        }
+
+        /// <summary>
+        /// Tells every guest who is in the session, so each knows which Sims are spoken for.
+        /// </summary>
+        private void SendPlayers()
+        {
+            using (var stream = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(stream))
+                {
+                    writer.Write(Guests.Count + 1);
+                    writer.Write(CoopProtocol.HostPlayerID);
+                    foreach (var guest in Guests) writer.Write(guest.PersistID);
+                }
+                var data = stream.ToArray();
+                foreach (var guest in Guests) ((CoopConnection)guest.NetHandle).Send(CoopFrameKind.Players, data);
+            }
         }
 
         private void Reject(CoopConnection conn, string reason)

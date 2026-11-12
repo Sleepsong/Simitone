@@ -341,14 +341,21 @@ namespace Simitone.Client.UI.Screens
         }
 
         /// <summary>
-        /// Whether the local player may take control of this Sim. In co-op, a Sim another player controls is off limits.
+        /// Whether the local player may take control of this Sim. In co-op, only a Sim that another player
+        /// in the session is controlling right now is off limits. (Sims keep the ID of whoever had them last,
+        /// including players that left and the host's own earlier picks, so a non-zero ID alone means nothing.)
         /// </summary>
         public bool CanControl(VMEntity sim)
         {
             if (sim.PersistID == 0 || sim.PersistID == vm.MyUID) return true;
-            if (IsCoopGuest) return false;
+            if (IsCoopGuest) return !CoopGuest.Players.Contains(sim.PersistID);
             return !((Driver as CoopServerDriver)?.IsConnectedPlayer(sim.PersistID) ?? false);
         }
+
+        /// <summary>
+        /// True while we host and at least one guest is playing. Build and buy mode then leave the game running.
+        /// </summary>
+        public bool HasCoopGuests { get { return CoopSession != null && CoopSession.GuestCount > 0; } }
 
         public void PlayHouse(short house, UIElement switcher)
         {
@@ -439,7 +446,6 @@ namespace Simitone.Client.UI.Screens
             if (IsCoopGuest)
             {
                 //the host owns the clock. Every tick it sends carries the speed to run it at.
-                CoopGuest.RequestSpeed(speed);
                 return;
             }
             if (vm.SpeedMultiplier == -1) return;
@@ -506,6 +512,8 @@ namespace Simitone.Client.UI.Screens
         {
             CoopSession?.Update();
             CoopGuest?.Update();
+            //away from home the family is only activated once the lot is running, after the state we were sent
+            if (IsCoopGuest && vm != null) ActiveFamily = vm.TS1State?.CurrentFamily;
 
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);
             

@@ -15,8 +15,8 @@ namespace Simitone.Client.Network.Coop
         /// <summary>The port to host on, or 0 when not hosting.</summary>
         public static readonly int HostPort;
 
-        /// <summary>Guests may change the game speed and pause for everyone.</summary>
-        public static bool GuestsControlSpeed = true;
+        /// <summary>Guests may change the game speed and pause for everyone. Off: only the host controls the clock.</summary>
+        public static bool GuestsControlSpeed = false;
 
         private static string JoinAddress;
 

@@ -22,6 +22,7 @@ namespace Simitone.Client.Network.Coop
         Reject = 17,      //string reason
         Tick = 18,        //byte n, int16[n] game speed for each tick (n is 0 when unknown), then a serialized VMNetTickList
         Direct = 19,      //a serialized VMNetCommand, run immediately by this guest only
+        Players = 21,     //int32 n, uint32[n] the player IDs of everyone in the session, the host's first
         World = 20,       //a packed CoopWorld: the host's neighbourhood as of the lot state in the Tick frame that follows
 
         //never sent: queued locally when a connection ends. payload is a UTF8 reason, possibly empty
@@ -37,9 +38,12 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 3;
+        public const int Version = 4;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
+
+        /// <summary>The host's player ID in the VM (what TS1GameScreen sets as vm.MyUID).</summary>
+        public const uint HostPlayerID = 65537;
 
         /// <summary>The first player ID given to a guest. The host's own IDs (1 and 65537) are well below it.</summary>
         public const uint FirstGuestID = 0x20000;

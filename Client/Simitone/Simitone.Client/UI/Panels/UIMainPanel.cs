@@ -430,6 +430,11 @@ namespace Simitone.Client.UI.Panels
             {
                 //the host owns the game speed; a guest builds and buys while the game runs
             }
+            else if (Game.HasCoopGuests && Game.ActiveFamily != null)
+            {
+                //with guests playing, the host's build and buy mode do not stop the game for everyone either
+                if (Game.vm.SpeedMultiplier == -1) Game.vm.SpeedMultiplier = 1;
+            }
             else if (Mode != UIMainPanelMode.LIVE)
             {
                 Game.vm.SpeedMultiplier = -1;

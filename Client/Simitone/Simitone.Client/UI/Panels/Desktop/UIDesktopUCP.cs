@@ -489,8 +489,7 @@ namespace Simitone.Client.UI.Panels.Desktop
             var vm = Game.vm;
             if (Game.IsCoopGuest)
             {
-                Game.ChangeSpeedTo(speed == 4 ? 0 : speed); //ask the host
-                return;
+                return; //only the host controls the clock
             }
             if (vm.SpeedMultiplier == -1) return;
             switch (vm.SpeedMultiplier)

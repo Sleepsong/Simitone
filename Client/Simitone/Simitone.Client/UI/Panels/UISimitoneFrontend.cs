@@ -241,7 +241,7 @@ namespace Simitone.Client.UI.Panels
             {
                 var selected = Game.LotControl.ActiveEntity;
                 var familyMembers = Game.vm.Context.ObjectQueries.Avatars.Where(x =>
-                    Game.vm.TS1State.CurrentFamily.RuntimeSubset.Contains(x.Object.OBJ.GUID)
+                    Game.vm.TS1State.CurrentFamily?.RuntimeSubset.Contains(x.Object.OBJ.GUID) == true
                     && Game.CanControl(x) //in co-op, skip Sims other players control
                         ).ToList();
                 var index = familyMembers.IndexOf(selected);
