@@ -219,6 +219,18 @@ namespace Simitone.Client.Network.Coop
                 if (!Files.ContainsKey("Characters/" + Path.GetFileName(existing))) File.Delete(existing);
             }
 
+            //the lot pickers (downtown, vacation...) read house files for their pictures and names. The host's
+            //are not sent, so stand in this game's own; nothing in the simulation depends on them.
+            var ownHouses = Path.Combine(FSOEnvironment.UserDir, "UserData/Houses");
+            if (Directory.Exists(ownHouses))
+            {
+                foreach (var house in Directory.GetFiles(ownHouses))
+                {
+                    var target = Path.Combine(root, "Houses", Path.GetFileName(house));
+                    if (!File.Exists(target)) File.Copy(house, target);
+                }
+            }
+
             var neigh = Content.Get().Neighborhood;
             if (!Applied)
             {

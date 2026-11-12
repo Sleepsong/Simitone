@@ -209,6 +209,10 @@ namespace Simitone.Client.UI.Panels
             if (!ShowSimanticsExceptions && info.Title == "SimAntics Exception!")
                 return;
 
+            //in co-op a question goes to one player only: whoever controls the Sim it is about
+            if (info.Block && info.Title != "SimAntics Exception!" && (Parent as TS1GameScreen)?.AnswersDialogFor(info.Caller) == false)
+                return;
+
             var options = new UIAlertOptions
             {
                 Title = info.Title,

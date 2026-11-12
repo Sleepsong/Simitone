@@ -353,6 +353,20 @@ namespace Simitone.Client.UI.Screens
         }
 
         /// <summary>
+        /// Whether this player is the one to be asked a blocking question (a chance card, where to travel...)
+        /// raised for this Sim. In co-op that is whoever controls the Sim, or the host if nobody does. The game
+        /// waits for everyone meanwhile, and whoever answers answers for all.
+        /// </summary>
+        public bool AnswersDialogFor(VMEntity caller)
+        {
+            if (!IsCoopGuest && !HasCoopGuests) return true;
+            var owner = caller?.PersistID ?? 0;
+            if (owner != 0 && owner == vm.MyUID) return true;
+            if (IsCoopGuest) return false;
+            return !((Driver as CoopServerDriver)?.IsConnectedPlayer(owner) ?? false);
+        }
+
+        /// <summary>
         /// True while we host and at least one guest is playing. Build and buy mode then leave the game running.
         /// </summary>
         public bool HasCoopGuests { get { return CoopSession != null && CoopSession.GuestCount > 0; } }

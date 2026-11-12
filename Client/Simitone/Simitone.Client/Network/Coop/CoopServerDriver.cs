@@ -60,13 +60,12 @@ namespace Simitone.Client.Network.Coop
         public override bool Tick(VM vm)
         {
             VM = vm;
-            //FreeSO writes the lot's SIMI in the long layout when it came from a newer game file, but always
-            //labels and reads it as the short one - which makes the whole lot state unreadable for guests.
-            //Saving the lot marks it short too (VMTS1LotState.UpdateSIMI).
-            var simi = vm.TS1State?.SimulationInfo;
-            if (simi != null && simi.Version > 0x3E) simi.Version = 0x3E;
+            FixSimulationInfo(vm);
             PendingSpeeds.Add((short)System.Math.Max(short.MinValue, System.Math.Min(short.MaxValue, vm.SpeedMultiplier)));
             var result = base.Tick(vm);
+            //again, now: a lot is loaded by a command inside the tick, and the state for guests is taken at the
+            //end of that same tick. It is written out in the background with this part last, well after we return.
+            FixSimulationInfo(vm);
             PendingClaims.Clear(); //everything queued before this tick has now run
 
             var history = SyncHistoryField?.GetValue(this);
@@ -82,6 +81,17 @@ namespace Simitone.Client.Network.Coop
                 CaptureWorld(vm); //a different FreeSO: the best we can do is the neighbourhood as the first guest joins
             }
             return result;
+        }
+
+        /// <summary>
+        /// FreeSO writes the lot's SIMI in the long layout when it came from a newer game file, but always labels
+        /// and reads it as the short one - which makes the whole lot state unreadable for guests. This marks it
+        /// short, as saving the lot does (VMTS1LotState.UpdateSIMI).
+        /// </summary>
+        private static void FixSimulationInfo(VM vm)
+        {
+            var simi = vm.TS1State?.SimulationInfo;
+            if (simi != null && simi.Version > 0x3E) simi.Version = 0x3E;
         }
 
         private void CaptureWorld(VM vm)
