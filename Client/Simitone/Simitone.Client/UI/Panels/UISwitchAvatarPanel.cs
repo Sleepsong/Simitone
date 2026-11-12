@@ -27,7 +27,7 @@ namespace Simitone.Client.UI.Panels
             Game = screen;
             Bg = Content.Get().CustomUI.Get("pswitch_bg.png").Get(GameFacade.GraphicsDevice);
             
-            var familyMembers = Game.vm.Context.ObjectQueries.Avatars.Where(x => Game.vm.TS1State.CurrentFamily?.RuntimeSubset.Contains(x.Object.OBJ.GUID) == true
+            var familyMembers = Game.vm.Context.ObjectQueries.Avatars.Where(x => Game.IsPlayable(x)
                 && Game.CanControl(x)); //in co-op, Sims other players control are not offered
             int i = 0;
             foreach (var fam in familyMembers)

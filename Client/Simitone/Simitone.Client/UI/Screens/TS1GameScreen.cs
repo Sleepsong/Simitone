@@ -353,6 +353,21 @@ namespace Simitone.Client.UI.Screens
         }
 
         /// <summary>
+        /// Whether this Sim is one the player's household can control on this lot. Normally that is the family's
+        /// active members: everyone at home, but only the Sim who made the trip on a community lot. In co-op it is
+        /// any member of the family who is on the lot, so a second player has someone to play when a relative
+        /// came along.
+        /// </summary>
+        public bool IsPlayable(VMEntity sim)
+        {
+            var family = vm?.TS1State?.CurrentFamily;
+            if (family == null || !(sim is VMAvatar)) return false;
+            var guid = sim.Object.OBJ.GUID;
+            var members = (IsCoopGuest || CoopSession != null) ? family.FamilyGUIDs : family.RuntimeSubset;
+            return members != null && members.Contains(guid);
+        }
+
+        /// <summary>
         /// Whether this player is the one to be asked a blocking question (a chance card, where to travel...)
         /// raised for this Sim. In co-op that is whoever controls the Sim, or the host if nobody does. The game
         /// waits for everyone meanwhile, and whoever answers answers for all.

@@ -89,6 +89,7 @@ namespace Simitone.Client.UI.Panels
         private int OldMX;
         private int OldMY;
         private bool FoundMe; //if false and avatar changes, center. Should center on join lot.
+        private int GuestPickWait; //frames until a co-op guest without a Sim next looks for a free one
 
         public bool RMBScroll;
         private int RMBScrollX;
@@ -790,16 +791,20 @@ namespace Simitone.Client.UI.Panels
                 }
 
                 // Fallback: if no sim with expected PersistID, take control of any available avatar
-                if (!FoundMe && ActiveEntity == null && vm.Context.ObjectQueries.Avatars.Count > 0)
+                var coopGame = Parent as TS1GameScreen;
+                var isGuest = coopGame?.IsCoopGuest == true;
+                if (isGuest && ActiveEntity == null && GuestPickWait > 0) GuestPickWait--;
+                if ((!FoundMe || (isGuest && GuestPickWait == 0)) && ActiveEntity == null && vm.Context.ObjectQueries.Avatars.Count > 0)
                 {
                     var fallbackAvatar = vm.Context.ObjectQueries.Avatars.FirstOrDefault();
-                    if ((Parent as TS1GameScreen)?.IsCoopGuest == true)
+                    if (isGuest)
                     {
-                        //a guest starts on a family member nobody controls yet, or just watches if there is none
-                        var family = vm.TS1State.CurrentFamily;
+                        //a guest takes a family member nobody controls, or just watches while there is none.
+                        //It keeps looking: one may turn up later, or after moving to another lot.
                         fallbackAvatar = vm.Context.ObjectQueries.Avatars.FirstOrDefault(x =>
-                            ((TS1GameScreen)Parent).CanControl(x) && !((VMAvatar)x).IsPet && family != null && family.RuntimeSubset.Contains(x.Object.OBJ.GUID));
+                            coopGame.IsPlayable(x) && coopGame.CanControl(x) && !((VMAvatar)x).IsPet);
                         FoundMe = true;
+                        GuestPickWait = 90;
                     }
                     if (fallbackAvatar != null)
                     {
@@ -953,7 +958,8 @@ namespace Simitone.Client.UI.Panels
                             if (clickedObjId > 0)
                             {
                                 var clickedObj = vm.GetObjectById(clickedObjId);
-                                if (clickedObj is VMAvatar && vm.TS1State.CurrentFamily?.RuntimeSubset.Contains(clickedObj.Object.OBJ.GUID) == true)
+                                var clickGame = Parent as TS1GameScreen;
+                                if (clickGame != null && clickGame.IsPlayable(clickedObj) && clickGame.CanControl(clickedObj))
                                 {
                                     // Switch to this family member
                                     vm.SendCommand(new VMNetChangeControlCmd() { TargetID = clickedObj.ObjectID });

@@ -183,7 +183,8 @@ namespace Simitone.Client.Network.Coop
             if (CoopProtocol.IsGuestID(actor))
             {
                 var family = VM.TS1State?.CurrentFamily;
-                if (family == null || !family.RuntimeSubset.Contains(target.Object.OBJ.GUID)) return false;
+                //any member of the family on the lot, not just its active ones: see TS1GameScreen.IsPlayable
+                if (family?.FamilyGUIDs == null || !family.FamilyGUIDs.Contains(target.Object.OBJ.GUID)) return false;
             }
             return true;
         }
