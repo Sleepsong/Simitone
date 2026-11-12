@@ -530,9 +530,36 @@ Download .NET:
 
 # Contributing
 
-If you do wanna contribute, I do recommend sending your PRs to [upstream](https://github.com/riperiperi/Simitone). They will be brought down here once merged.
+Make a PR against the simitone-forked branch in this repo, and if needed, a PR against my fork of [FreeSO](https://github.com/alexjyong/FreeSO). Please test out all changes and if possible, post screenshots, videos, logs, whatever makes sense to show your changes working. Please be prepared to answer any and all questions.
 
-If upstream is ever dead (but this is still active) and/or you can't/won't contribute to upstream for whatever reason, make all your PRs against the [alex-main](https://github.com/alexjyong/Simitone/tree/alex-main) branch, as this branch is just for gathering up changes and updates that aren't available in upstream and packaging them for folks to enjoy. Don't make changes from this branch please.
+Please have a quick summary in your PR. Long descriptions are fine, but you should also have a quick executive summary/TLDR or something at the top explaining what you did in simple terms. 
+
+# AI Policy
+
+Just to be upfront and to get it out of the way, AI-assisted coding is in this project. If that's not your thing, understandable, and have a nice day. 
+
+As for AI-assisted contributions, standard common sense policies apply. You are still responsible for all changes, be able to explain what your change does and such, and ofc test it. If it doesn't work, it won't be accepted. :)
+
+Bonus points if you can demonstrate that you were using open-weight and/or locally hosted AI in your project. (ofc, other rules still apply.)
+
+If you choose to use AI, recommend using [ponytail](https://github.com/dietrichgebert/ponytail) with your changes.
+
+## Testing lots without the game
+
+`Simitone.LotRunner` plays lots with no window, graphics or sound, as fast as the simulation can run (a game day on a family lot takes about a second). It reports SimAntics exceptions, dialogs, family members leaving and coming back, and objects such as cars and visitors arriving and leaving. It never saves.
+
+```bash
+dotnet build -c Release Client/Simitone/Simitone.LotRunner/Simitone.LotRunner.csproj
+cd Client/Simitone/Simitone.LotRunner/bin/Release/net9.0
+# play the Goths' lot (house 5) for two game days
+./Simitone.LotRunner -path "/path/to/The Sims/" -hours 48 5
+# every house a family lives in, only exceptions and a summary; the exit code is 0 only if there were no exceptions or crashes
+./Simitone.LotRunner -path "/path/to/The Sims/" -hours 48 -quiet all
+```
+
+It plays like a careful player, so households stay the same between runs: it answers No to yes/no questions (such as adopting a baby) and OK to everything else, and when a fire starts it has a family member call the fire department, calling again if nobody has come within an hour. Both show in the log.
+
+Saved lot states are read from Simitone's user folder like the game does (`-user` to choose another one). Rendering, sound and anything on screen aren't covered, so check those in the game.
 
 
 # Why is it called Simitone?
@@ -543,7 +570,7 @@ Further questions can be directed at my PR manager, uh, ... burglar cop.
 
 # Attributions
 
-* <a target="_blank" href="https://github.com/sithtoast">sithtoast</a> - Linux build fix for the CI (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/49">#49</a>), expansion pack catalog sorts (<a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/12">FreeSO #12</a>), the fixes for exceptions on lots with Sims (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/34">#34</a>, <a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/8">FreeSO #8</a>) and the test mode for automated runs (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/44">#44</a>)
+* <a target="_blank" href="https://github.com/sithtoast">sithtoast</a> - Linux build fix for the CI (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/49">#49</a>), expansion pack catalog sorts (<a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/12">FreeSO #12</a>), the fixes for exceptions on lots with Sims (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/34">#34</a>, <a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/8">FreeSO #8</a>), the test mode for automated runs (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/44">#44</a>), catalog pictures for objects that have none (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/46">#46</a>), detaching family members when deleting a family in CAS (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/35">#35</a>), the hillside car edge fix (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/41">#41</a>, <a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/9">FreeSO #9</a>), the pet-naming text box (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/42">#42</a>), and the headless lot runner (<a target="_blank" href="https://github.com/alexjyong/Simitone/pull/43">#43</a>, <a target="_blank" href="https://github.com/alexjyong/FreeSO/pull/10">FreeSO #10</a>)
 
 * Icon for Eyedropper tool: <a target="_blank" href="https://icons8.com/icon/78728/color-dropper">eyedropper</a> icon by <a target="_blank" href="https://icons8.com">Icons8</a>
 
