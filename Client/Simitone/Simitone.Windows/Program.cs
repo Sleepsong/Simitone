@@ -311,7 +311,7 @@ namespace Simitone.Windows
                 FSO.Files.Formats.IFF.Chunks.STR.DefaultLangCode = (FSO.Files.Formats.IFF.Chunks.STRLangCode)GlobalSettings.Default.LanguageCode;
 
                 // Set runtime settings (these may have been set during first-time config or command line).
-                // An explicit -path always wins: the saved paths default to a placeholder (D:/Games/The Sims/).
+                // A path from the command line overrides the saved one.
                 if (pathProvidedViaCommandLine || string.IsNullOrEmpty(GlobalSettings.Default.StartupPath))
                     GlobalSettings.Default.StartupPath = path;
                 if (pathProvidedViaCommandLine || string.IsNullOrEmpty(GlobalSettings.Default.TS1HybridPath))
