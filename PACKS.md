@@ -68,7 +68,7 @@ digits, `.`, `_` and `-`. If two folders share an id, the first one (by folder n
 
 | Field | Meaning |
 |---|---|
-| `requires` | Ids of packs that must be enabled before this one can be |
+| `requires` | Ids of packs that must be enabled before this one can be. Your code can use theirs (see the code layer) |
 | `conflicts` | Ids of packs that cannot be enabled alongside this one (applies in both directions) |
 | `minSimitoneVersion` | Lowest Simitone version the pack runs on |
 | `assembly` | A `.dll` inside the pack folder (the code layer, below) |
@@ -128,8 +128,17 @@ Implement only the calls you need.
   gets no more calls for the rest of the run and the reason is shown in the Packs screen. Its content
   and patches stay in use.
 - **Dependencies.** Put any other `.dll` your code needs beside it in the pack folder. Each pack loads
-  separately, so two packs can ship different versions of the same library. Do not ship Simitone's
-  own assemblies; copies in the pack folder are ignored.
+  separately, so two packs that don't require each other can ship different versions of the same
+  library. Do not ship Simitone's own assemblies; copies in the pack folder are ignored.
+- **Using another pack's code.** List the pack in `requires` and reference its `.dll` when you build.
+  Your code then gets the very copy that pack is running, with its statics, so you can call its methods
+  and use its types. Its `OnLoad` is called before yours. The same goes for every `.dll` in its folder,
+  and for the packs it requires in turn, even through a pack that has no code of its own. Where a pack you
+  require has a `.dll` of the same name as one in yours, its copy is used and yours is ignored, as with
+  Simitone's own. If that pack's code is not running (it was not approved, or it could not be loaded),
+  your code is stopped when it first needs it, and the Packs screen says which pack it needed. A pack
+  you do not list in `requires` is not shared: a copy of its `.dll` in your folder would be a second,
+  separate copy.
 - **Console commands.** Add commands to the cheat console (Ctrl+Shift+C) with
   `PackManager.RegisterCommand` from `OnLoad`. A name that is already taken is refused.
 - **Patching the engine.** Simitone ships [Harmony](https://github.com/pardeike/Harmony), so pack code

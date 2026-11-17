@@ -98,6 +98,8 @@ namespace Simitone.Client.Packs
         /// </summary>
         private static void LoadCode()
         {
+            Contexts.Clear();
+            //in dependency order, so the code of the packs a pack requires is loaded before it might ask for it
             foreach (var pack in Active)
             {
                 if (!pack.HasCode || pack.Folder == null) continue;
@@ -106,10 +108,12 @@ namespace Simitone.Client.Packs
                     pack.CodeError = "Its code has not been approved, so it is not running. Switch the pack off and on again to approve it";
                     continue;
                 }
+                var path = Path.GetFullPath(Path.Combine(pack.Folder, pack.Manifest.Assembly));
+                var context = new PackLoadContext(pack, Path.GetDirectoryName(path));
+                Contexts[pack.Id] = context;
                 try
                 {
-                    var path = Path.GetFullPath(Path.Combine(pack.Folder, pack.Manifest.Assembly));
-                    var assembly = new PackLoadContext(pack.Id, Path.GetDirectoryName(path)).LoadFromAssemblyPath(path);
+                    var assembly = context.LoadOwn(path);
                     var types = assembly.GetExportedTypes().Where(x => typeof(ISimitonePack).IsAssignableFrom(x) && x.IsClass && !x.IsAbstract).ToList();
                     if (types.Count == 0) throw new Exception("it has no public class that implements ISimitonePack");
                     var code = types.Select(x => (ISimitonePack)Activator.CreateInstance(x)).ToList();
@@ -118,22 +122,38 @@ namespace Simitone.Client.Packs
                 }
                 catch (Exception e)
                 {
-                    pack.CodeError = "Its code could not be loaded: " + Unwrap(e).Message;
+                    //packs that require this one must not be handed what it loaded
+                    context.Failed = true;
+                    pack.CodeError = "Its code could not be loaded: " + Describe(pack, e);
                 }
             }
             Notify(x => x.Code.ToList().ForEach(code => code.OnLoad(x)));
         }
 
+        /// <summary>The load contexts of the packs whose code was approved this run, by pack id.</summary>
+        private static Dictionary<string, PackLoadContext> Contexts = new Dictionary<string, PackLoadContext>();
+
         /// <summary>
-        /// Each pack's code loads into its own context, so two packs can ship assemblies with the same name
-        /// (or different versions of the same library) without one silently getting the other's.
+        /// Each pack's code loads into its own context, so two packs that don't require each other can ship assemblies
+        /// with the same name (or different versions of the same library) without one silently getting the other's.
+        /// A pack that requires others shares their code instead: see Resolve.
         /// </summary>
         private class PackLoadContext : AssemblyLoadContext
         {
-            private string Dir;
+            public readonly Pack Pack;
+            public readonly string Dir;
 
-            public PackLoadContext(string packId, string dir) : base("Pack " + packId)
+            /// <summary>The pack's code could not be loaded. Nothing more is handed out of this context to other packs.</summary>
+            public bool Failed;
+
+            /// <summary>Why this pack's code was refused an assembly that a pack it requires owns, or null if it never was.</summary>
+            public string Refused;
+
+            private readonly object LoadLock = new object();
+
+            public PackLoadContext(Pack pack, string dir) : base("Pack " + pack.Id)
             {
+                Pack = pack;
                 Dir = dir;
             }
 
@@ -142,9 +162,65 @@ namespace Simitone.Client.Packs
                 //anything Simitone itself has loaded must be shared, even if the pack ships a copy:
                 //a second copy of eg. Simitone.Client would have its own ISimitonePack that ours doesn't recognise
                 if (Default.Assemblies.Any(x => x.GetName().Name == name.Name)) return null;
-                var local = Path.Combine(Dir, name.Name + ".dll");
-                return File.Exists(local) ? LoadFromAssemblyPath(local) : null; //null: fall back to Simitone's and the system's
+                var result = Resolve(Pack, name, out var owner);
+                if (result == null && owner != null) Refused = "It needs the code of \"" + owner.DisplayName + "\", which is not running";
+                return result; //null: fall back to Simitone's and the system's
             }
+
+            /// <summary>Load an assembly from this pack's folder into this context, or give the copy it already has.</summary>
+            public Assembly LoadOwn(string path)
+            {
+                var name = Path.GetFileNameWithoutExtension(path);
+                lock (LoadLock)
+                {
+                    //a context refuses a second assembly of the same name, so this can only be done once per name
+                    return Assemblies.FirstOrDefault(x => string.Equals(x.GetName().Name, name, StringComparison.OrdinalIgnoreCase))
+                        ?? LoadFromAssemblyPath(path);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The assembly a pack's code gets for a name it references (other than Simitone's own): the one from the packs it
+        /// requires, the nearest first, or else the one in its own folder. A required pack's copy wins over a pack's own,
+        /// so code that uses another pack's types and statics gets the very copy that pack is running.
+        /// Null if none of them has it. If a required pack whose code is not running has it, that pack is the owner,
+        /// and the result is null: its code must not run unapproved, and a second copy would not be the one it runs.
+        /// </summary>
+        private static Assembly Resolve(Pack pack, AssemblyName name, out Pack owner, bool asking = true)
+        {
+            owner = null;
+            foreach (var id in pack.Manifest.Requires)
+            {
+                var required = Active.FirstOrDefault(x => x.Id == id);
+                if (required == null) continue; //can't happen: an active pack's requirements are active
+                var found = Resolve(required, name, out owner, false);
+                if (found != null || owner != null) return found;
+            }
+
+            if (!pack.HasCode || pack.Folder == null) return null; //a pack without code passes on its requirements' code only
+            Contexts.TryGetValue(pack.Id, out var context);
+            var dir = context?.Dir ?? Path.GetDirectoryName(Path.GetFullPath(Path.Combine(pack.Folder, pack.Manifest.Assembly)));
+            var local = Path.Combine(dir, name.Name + ".dll");
+            if (!File.Exists(local)) return null;
+            if (asking) return context?.LoadOwn(local); //the pack's own folder, for its own code
+            if (context == null || context.Failed)
+            {
+                owner = pack;
+                return null;
+            }
+            return context.LoadOwn(local);
+        }
+
+        /// <summary>What went wrong in a pack's code, in words for the Packs screen.</summary>
+        private static string Describe(Pack pack, Exception e)
+        {
+            e = Unwrap(e);
+            //a refused assembly surfaces as the runtime not finding it, which hides the reason
+            if ((e is FileNotFoundException || e is FileLoadException || e is TypeLoadException || e is ReflectionTypeLoadException)
+                && Contexts.TryGetValue(pack.Id, out var context) && context.Refused != null)
+                return context.Refused;
+            return e.Message;
         }
 
         private static Exception Unwrap(Exception e)
@@ -168,7 +244,7 @@ namespace Simitone.Client.Packs
                 catch (Exception e)
                 {
                     pack.Code = new List<ISimitonePack>();
-                    pack.CodeError = "Its code failed and was stopped: " + Unwrap(e).Message;
+                    pack.CodeError = "Its code failed and was stopped: " + Describe(pack, e);
                     Console.WriteLine("Pack " + pack.Id + " code failed and was stopped: " + Unwrap(e));
                 }
             }
