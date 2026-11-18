@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–7 are done, and the controller settings are in the Options dialog (§17). The engine changes are on `simitone/controller-phase7` in `Sleepsong/FreeSO` (which includes Phases 1–6), and the submodule points at it (see §10–§17). Phases 1–6 have been tested on hardware (§11–§15). Phase 7 and §17 haven't been yet.
+**Status:** Phases 1–7 are done; the controller settings are in the Options dialog (§17), with Nintendo button names and in-game button mapping (§18). The engine changes are on `simitone/controller-phase7` in `Sleepsong/FreeSO` (which includes Phases 1–6), and the submodule points at it (see §10–§18). Phases 1–6 have been tested on hardware (§11–§15). Phase 7, §17 and §18 haven't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -17,7 +17,7 @@ Here, "PS2-style" means the *control model* of the 2003–2004 console Sims game
 | No pointer required anywhere | Every panel, dialog and catalog can be reached with D-pad focus. |
 | Centered build cursor | Buy and build modes place at the screen centre, and the stick scrolls the lot under it. |
 
-**Non-goals for v1:** reproducing PS2 UI art or menus, PS2-exclusive modes, split-screen 2-player (the input layer should not rule it out), and an in-game rebinding UI (overrides go in a config file).
+**Non-goals for v1:** reproducing PS2 UI art or menus, PS2-exclusive modes, split-screen 2-player (the input layer should not rule it out), and an in-game rebinding UI (overrides go in a config file). The rebinding UI was added later (§18).
 
 ---
 
@@ -792,7 +792,7 @@ Each mode navigates only its own panel plus Back and Accept. The other modes' pa
 
 | Key | Default | Meaning |
 |---|---|---|
-| `GamePadGlyphs` | `auto` | Button names in prompts: `auto` (from the pad's name), `xbox` or `playstation` |
+| `GamePadGlyphs` | `auto` | Button names in prompts: `auto` (from the pad's name), `xbox`, `playstation` or `nintendo` (§18) |
 | `GamePadInvertZoom` | `false` | Right stick up zooms out instead of in (and, in first person, looks down instead of up) |
 | `GamePadInvertTurn` | `false` | Right stick left/right turns the camera the other way (and, in first person, looks the other way); added in §17 |
 | `GamePadDirectControl` | `false` | Live mode starts in direct control (3D only) instead of cursor mode |
@@ -1056,26 +1056,26 @@ The controller's settings were only in `config.ini`. They now have their own tab
 
 ### The Controller tab
 
-A third tab, Controller, after Graphics and Sound & Controls. It has nine settings, in three columns (a tab with more than six settings gets three columns; the others keep two):
+A third tab, Controller, after Graphics and Sound & Controls. It has nine settings (as changed in §18), in three columns (a tab with more than six settings gets three columns; the others keep two):
 
 | Setting | Choices | Saved as |
 |---|---|---|
 | Controller | On / Off | `GamePadEnabled` |
 | Live Mode Starts In | Cursor / Direct Control | `GamePadDirectControl` |
-| Button Symbols | Automatic / Xbox / PlayStation | `GamePadGlyphs` (`auto`, `xbox`, `playstation`) |
+| Button Symbols | Automatic / Xbox / PlayStation / Nintendo | `GamePadGlyphs` (`auto`, `xbox`, `playstation`, `nintendo`) |
 | Confirm Button | A / Cross, or B / Circle | `GamePadSwapConfirmCancel` |
 | Camera Up/Down | Normal / Inverted | `GamePadInvertZoom` |
 | Camera Left/Right | Normal / Inverted | `GamePadInvertTurn` (new) |
 | Stick Dead Zone | 0% to 50%, in steps of 5% | `GamePadDeadZone` |
-| Stick Pointer | On / Off | `GamePadVirtualCursor` |
-| Pointer Speed | 50% to 300% (greyed out with the pointer off) | `GamePadCursorSpeed` |
+| Stick Pointer | Off, or a speed from 50% to 300% (§18 joined the two settings) | `GamePadVirtualCursor`, `GamePadCursorSpeed` |
+| Button Mapping | Set Buttons: opens the mapping screen (§18) | `gamepad.ini` |
 
 - **Applied at once.** The settings the input loop holds (on/off, symbols, confirm button, dead zone, pointer and its speed) are pushed to it straight away (`GameFacade.ApplyGamePadSettings`). The rest are read as they're used.
 - **Saved as you change them,** as the other tabs are.
 - **Values set by hand** in `config.ini` show as the nearest step (a dead zone of 0.23 shows as 25%), and are only changed if you step them.
 - **Turning the controller off from the pad** stops the pad there and then. The tab then says so: "The controller is off. Use the mouse to turn it back on."
 - **Live Mode Starts In** applies until you press X in a lot; after that, your choice holds for the session (as before, §16).
-- **Left out:** `GamePadIgnoreEchoes` (Steam Input's echo filter, §16) stays in `config.ini` only, as does `gamepad.ini` for rebinding.
+- **Left out:** `GamePadIgnoreEchoes` (Steam Input's echo filter, §16) stays in `config.ini` only.
 - **The tabs** are sized to fit across the dialog (up to 300 wide each), so a fourth tab still fits.
 
 ### Invert
@@ -1107,4 +1107,79 @@ The right stick is the camera stick, read in one place (`UILotControlPadHelper.U
 5. Camera Up/Down inverted: up zooms out. Camera Left/Right inverted: right turns the other way, in 3D and in 2D. In first person (FISH EYE), both flip the look.
 6. Controller Off from the pad: the pad stops, the note shows, and the mouse turns it back on.
 7. Close and reopen the game: everything as you left it.
+
+---
+
+## 18. Nintendo symbols and button mapping
+
+### Nintendo symbols
+
+A third symbol set, alongside Xbox and PlayStation:
+
+- **Names:** L and R for the shoulders, ZL and ZR for the triggers, + and - for Start and Back, Home for the Guide button. The face buttons keep their letters, drawn on plain discs (Xbox's are coloured; Nintendo's letters are on different buttons).
+- **Which button is which:** SDL reads Nintendo pads by the labels on their buttons, so the button marked A (on the right) is A, and confirms by default, as Nintendo's own games do. Through Steam Input, turn on Steam's "Use Nintendo Button Layout" for the same; without it, Steam passes the buttons on by position, and the letters on screen won't match the ones on the pad.
+- **Automatic** picks Nintendo for pads named Nintendo, Switch, Joy-Con or Pro Controller. A pad through Steam Input is named "Steam Virtual Gamepad", so choose Nintendo by hand there.
+- Options > Controller > Button Symbols has Nintendo; in `config.ini` it's `GamePadGlyphs = nintendo` (or `switch`).
+
+### Button mapping
+
+Options > Controller > Button Mapping > Set Buttons opens a screen with every action, what it does, and its button(s):
+
+| Action | Shown as | Default |
+|---|---|---|
+| Confirm | Confirm | A |
+| Cancel | Cancel | B |
+| FaceLeft | Direct Control / Eyedropper | X |
+| FaceTop | Action Queue / Sell | Y |
+| ShoulderLeft / ShoulderRight | Previous Sim / Rotate, Next Sim / Rotate | LB, RB |
+| TriggerLeft / TriggerRight | Needs Panel / Catalog, Panel Tab / Category | LT, RT |
+| Up / Down | Floor Up, Floor Down | D-pad |
+| Left / Right | Slower, Faster | D-pad |
+| Start / Select | Pause, Next Mode | Start, Back |
+| LeftStickClick / RightStickClick | Walls, Find Sim | L3, R3 |
+
+(Where an action has two jobs, the first is live mode's and the second buy and build mode's. Menus take Confirm, Cancel and the d-pad; the left stick moves through them too.)
+
+- **Setting a button:** choose an action (A, or click it), then press the button for it. Nothing else happens while it waits: the pad's actions are held off (`GamePadInput.Capture`) and the button is read as it is (`JustPressed`). Once it's set, the pad works as usual again when the buttons are let go, so the button just pressed doesn't act as well.
+- **Swapping:** the action that had that button takes the one this action had (`PadBindings.Rebind`). So every action keeps a button, Confirm and Cancel can't be lost, and each button does one thing. An action that had two buttons (from a hand-written `gamepad.ini`) just gives one up.
+- **Nothing pressed** within five seconds leaves the action as it was.
+- **Reset to Defaults** puts every action back.
+- **Saved** to `gamepad.ini` as each change is made, as the differences from the defaults (the file is rewritten, with a note on its format; hand edits still work).
+- **The Confirm Button setting** swaps A and B under the mapping. An action you've set yourself keeps its button whichever way it's set.
+- **Shown in the pad's symbols**, and an action you've changed shows in the highlight colour. The prompts everywhere name the new buttons straight away.
+- **Bindable buttons:** the face buttons, shoulders, triggers, d-pad, Start, Back and the stick clicks (16, one per action). Not the Guide button, which the system keeps.
+- **Stick Pointer** became one setting (Off, or its speed), which made room for Button Mapping on the Controller tab.
+
+### Code
+
+- Engine (`tso.common/Rendering/Framework/IO/`):
+  - `PadGlyphs`: the Nintendo set, and telling Nintendo pads by name.
+  - `PadBindings`: `Bindable`, `Clone`, `ActionOf`, `Rebind` (the swap), `SaveOverrides`.
+  - `GamePadSettings`: `Defaults`, `SaveBindings`.
+  - `GamePadInput`: `Capture`, `JustPressed`, `AnyBindableDown`.
+- Simitone:
+  - `UI/Panels/UIPadMappingDialog.cs`: the mapping screen.
+  - `UI/Model/PadOptions.cs`: the actions' names, the pointer steps, and the Nintendo choice.
+  - `UI/Model/PadDraw.cs`: Nintendo's plain discs.
+  - `UI/Panels/UIOptionsAlert.cs`: Button Mapping and the joined Stick Pointer.
+
+### Verification
+
+- Pad tests (412 passed):
+  - Nintendo's names, telling Nintendo pads by name (and not Xbox, PlayStation or Steam's), and choosing it by hand or in Options.
+  - Rebinding: the swap; binding the same button again changes nothing; every action keeps a button and every button one action; an action with two buttons gives one up.
+  - Saved as only the changed actions and read back the same; applied over the Confirm/Cancel swap; reset leaves no overrides.
+  - Capture: a button is read but its action doesn't happen; a held button isn't pressed again; a trigger counts; afterwards, the pad acts as usual.
+  - The mapping list has every action once, with a name.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. Button Symbols > Nintendo: the prompt bar shows L, R, ZL, ZR, + and -, and the face buttons on plain discs.
+2. With a Switch Pro Controller or Joy-Con (without Steam Input), Automatic picks Nintendo, and the button marked A confirms. Through Steam Input, with "Use Nintendo Button Layout" on, the same.
+3. Button Mapping from Options with the pad: move between the actions, A on one, then press another button. The two swap, the note says so, and the prompts name the new buttons.
+4. While it waits, pressing B doesn't close the screen (it binds B). Waiting five seconds leaves it as it was.
+5. With the mouse: click an action, then press a button on the pad.
+6. Reset to Defaults, Done, and B to close.
+7. Quit and restart: the mapping is kept (`gamepad.ini` in the user folder).
 

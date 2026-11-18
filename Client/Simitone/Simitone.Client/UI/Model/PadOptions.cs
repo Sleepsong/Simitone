@@ -1,3 +1,5 @@
+using FSO.Common.Rendering.Framework.IO;
+using Microsoft.Xna.Framework.Input;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,8 +19,53 @@ namespace Simitone.Client.UI.Model
         public static readonly float[] PointerSpeeds = { 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f };
 
         /// <summary>The button symbol sets, as GamePadGlyphs takes them, and their names.</summary>
-        public static readonly string[] GlyphSettings = { "auto", "xbox", "playstation" };
-        public static readonly string[] GlyphNames = { "Automatic", "Xbox", "PlayStation" };
+        public static readonly string[] GlyphSettings = { "auto", "xbox", "playstation", "nintendo" };
+        public static readonly string[] GlyphNames = { "Automatic", "Xbox", "PlayStation", "Nintendo" };
+
+        /// <summary>
+        /// The actions as Button Mapping lists them, in order, with what they do: in live mode, then (after the slash) in
+        /// buy and build mode where that's different. Menus take Confirm, Cancel and the d-pad (the left stick moves
+        /// through them too).
+        /// </summary>
+        public static readonly (PadAction Action, string Name)[] ActionNames =
+        {
+            (PadAction.Confirm, "Confirm"),
+            (PadAction.Cancel, "Cancel"),
+            (PadAction.FaceLeft, "Direct Control / Eyedropper"),
+            (PadAction.FaceTop, "Action Queue / Sell"),
+            (PadAction.ShoulderLeft, "Previous Sim / Rotate"),
+            (PadAction.ShoulderRight, "Next Sim / Rotate"),
+            (PadAction.TriggerLeft, "Needs Panel / Catalog"),
+            (PadAction.TriggerRight, "Panel Tab / Category"),
+            (PadAction.Up, "Floor Up"),
+            (PadAction.Down, "Floor Down"),
+            (PadAction.Left, "Slower"),
+            (PadAction.Right, "Faster"),
+            (PadAction.Start, "Pause"),
+            (PadAction.Select, "Next Mode"),
+            (PadAction.LeftStickClick, "Walls"),
+            (PadAction.RightStickClick, "Find Sim"),
+        };
+
+        public static string ActionName(PadAction action)
+        {
+            foreach (var entry in ActionNames) if (entry.Action == action) return entry.Name;
+            return action.ToString();
+        }
+
+        /// <summary>An action's buttons, by name in a symbol set ("B, Back"), or "None".</summary>
+        public static string ButtonsText(Buttons[] buttons, PadGlyphSet set)
+        {
+            return (buttons == null || buttons.Length == 0) ? "None" : string.Join(", ", buttons.Select(x => PadGlyphs.ButtonName(x, set)));
+        }
+
+        /// <summary>The stick pointer row: Off, then its speeds (index 0 is off).</summary>
+        public static List<string> PointerSteps()
+        {
+            return new[] { "Off" }.Concat(Labels(PointerSpeeds)).ToList();
+        }
+
+        public static int PointerStep(bool on, float speed) => on ? 1 + Nearest(PointerSpeeds, speed) : 0;
 
         /// <summary>A step's label: a fraction as a percentage ("20%").</summary>
         public static string Percent(float value)
@@ -49,6 +96,8 @@ namespace Simitone.Client.UI.Model
                 case "xbox": return 1;
                 case "playstation":
                 case "ps": return 2;
+                case "nintendo":
+                case "switch": return 3;
                 default: return 0;
             }
         }
