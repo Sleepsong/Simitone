@@ -1,6 +1,6 @@
 # Controller Support Plan (PS2-style)
 
-**Status:** Phases 1–7 are done. The engine changes are on `simitone/controller-phase7` in `Sleepsong/FreeSO` (which includes Phases 1–6), and the submodule points at it (see §10–§16). Phases 1–6 have been tested on hardware (§11–§15). Phase 7 hasn't been yet.
+**Status:** Phases 1–7 are done, and the controller settings are in the Options dialog (§17). The engine changes are on `simitone/controller-phase7` in `Sleepsong/FreeSO` (which includes Phases 1–6), and the submodule points at it (see §10–§17). Phases 1–6 have been tested on hardware (§11–§15). Phase 7 and §17 haven't been yet.
 **Scope:** the Simitone client (`Client/Simitone`) and the FreeSO engine submodule (`FreeSO/TSOClient`).
 
 ---
@@ -217,7 +217,7 @@ This is in the spirit of the console games. It is not a verified reproduction of
 | Input | Cursor mode | Direct control |
 |---|---|---|
 | Left stick | Move the selector | Walk relative to the camera (run past ~0.9 deflection) |
-| Right stick | ↑↓ zoom, ←→ rotate | same |
+| Right stick | ↑↓ zoom, ←→ rotate (either way can be inverted in Options, §17) | same |
 | A / Cross | Interact, or Go Here on empty floor | Interact with whatever is just in front of the Sim; nothing if there's nothing there |
 | B / Circle | Cancel / close | Cancel / close |
 | X / Square | Switch to direct control (3D camera only; in 2D a hint says so) | Back to cursor mode (the selector starts at the Sim) |
@@ -793,7 +793,8 @@ Each mode navigates only its own panel plus Back and Accept. The other modes' pa
 | Key | Default | Meaning |
 |---|---|---|
 | `GamePadGlyphs` | `auto` | Button names in prompts: `auto` (from the pad's name), `xbox` or `playstation` |
-| `GamePadInvertZoom` | `false` | Right stick up zooms out instead of in |
+| `GamePadInvertZoom` | `false` | Right stick up zooms out instead of in (and, in first person, looks down instead of up) |
+| `GamePadInvertTurn` | `false` | Right stick left/right turns the camera the other way (and, in first person, looks the other way); added in §17 |
 | `GamePadDirectControl` | `false` | Live mode starts in direct control (3D only) instead of cursor mode |
 
 Prompts name the button each action is bound to, so `GamePadSwapConfirmCancel` and `gamepad.ini` rebinding read correctly. PlayStation naming (Cross, Circle, L1, Options...) is chosen when the pad's name looks like a Sony pad, including Sony's generic "Wireless Controller". Everything else, including Steam Input's virtual pad, gets Xbox names. Prompts are text only; there is no button artwork.
@@ -1046,3 +1047,64 @@ The pad's hover look disappeared everywhere, as soon as the frame rate dropped (
 - **Fix:** it's now let go when a whole draw has passed without it being asked for (`PadFocusStyle.EndDraw`, called from the overlay's draw). It still clears a draw after focus moves or the mouse takes over.
 
 The refresh rate itself is the game's update and draw rate (fixed time step), not just a display setting. The default is 60. At 144 the game falls behind and runs catch-up updates, which is likely where the 9 FPS came from.
+
+---
+
+## 17. Controller options and invert
+
+The controller's settings were only in `config.ini`. They now have their own tab in the Options dialog, and the camera stick can be inverted on either axis.
+
+### The Controller tab
+
+A third tab, Controller, after Graphics and Sound & Controls. It has nine settings, in three columns (a tab with more than six settings gets three columns; the others keep two):
+
+| Setting | Choices | Saved as |
+|---|---|---|
+| Controller | On / Off | `GamePadEnabled` |
+| Live Mode Starts In | Cursor / Direct Control | `GamePadDirectControl` |
+| Button Symbols | Automatic / Xbox / PlayStation | `GamePadGlyphs` (`auto`, `xbox`, `playstation`) |
+| Confirm Button | A / Cross, or B / Circle | `GamePadSwapConfirmCancel` |
+| Camera Up/Down | Normal / Inverted | `GamePadInvertZoom` |
+| Camera Left/Right | Normal / Inverted | `GamePadInvertTurn` (new) |
+| Stick Dead Zone | 0% to 50%, in steps of 5% | `GamePadDeadZone` |
+| Stick Pointer | On / Off | `GamePadVirtualCursor` |
+| Pointer Speed | 50% to 300% (greyed out with the pointer off) | `GamePadCursorSpeed` |
+
+- **Applied at once.** The settings the input loop holds (on/off, symbols, confirm button, dead zone, pointer and its speed) are pushed to it straight away (`GameFacade.ApplyGamePadSettings`). The rest are read as they're used.
+- **Saved as you change them,** as the other tabs are.
+- **Values set by hand** in `config.ini` show as the nearest step (a dead zone of 0.23 shows as 25%), and are only changed if you step them.
+- **Turning the controller off from the pad** stops the pad there and then. The tab then says so: "The controller is off. Use the mouse to turn it back on."
+- **Live Mode Starts In** applies until you press X in a lot; after that, your choice holds for the session (as before, §16).
+- **Left out:** `GamePadIgnoreEchoes` (Steam Input's echo filter, §16) stays in `config.ini` only, as does `gamepad.ini` for rebinding.
+- **The tabs** are sized to fit across the dialog (up to 300 wide each), so a fourth tab still fits.
+
+### Invert
+
+The right stick is the camera stick, read in one place (`UILotControlPadHelper.UpdateCamera`), and both axes go through `CameraStick` first:
+
+- **Camera Up/Down** flips up and down: zoom, and looking up and down in first person (FISH EYE). It's the old `GamePadInvertZoom`, which only covered zoom.
+- **Camera Left/Right** flips left and right: turning the camera (smoothly in 3D, a step per flick in 2D), and looking left and right in first person.
+
+### Code
+
+- `Simitone.Client/UI/Panels/UIOptionsAlert.cs`: the Controller tab; stepper rows over any list of steps (the volumes are now one kind of them); three columns for a long tab; tabs sized to fit.
+- `Simitone.Client/UI/Model/PadOptions.cs`: the steps (dead zones, pointer speeds, symbol sets) and how a saved value maps onto them.
+- `Simitone.Client/UI/Panels/UILotControlPadHelper.cs`: `CameraStick`, used for zoom, turning and the first-person look.
+- Engine, `FSO.UI/GlobalSettings.cs`: `GamePadInvertTurn`.
+
+### Verification
+
+- Pad tests (392 passed): the steps and their labels, the nearest step for a hand-set value, the symbol choices against the prompts' own reading of them, each invert axis on its own and both, and the new setting's default and a save/reload through `config.ini`.
+- Breaking `CameraStick` on purpose fails the invert checks.
+- **Not yet tested in the running game.**
+
+### To check on hardware
+
+1. Options from a lot and from the neighbourhood: the Controller tab, its nine settings in three columns, and the tabs' captions fitting their buttons.
+2. With the pad: move through the settings, A on each, and the - and + on the dead zone and pointer speed.
+3. Button Symbols: Xbox and PlayStation change the prompt bar's names at once. Confirm Button: B / Circle makes B confirm and A cancel, straight away.
+4. Stick Dead Zone: at 0% a resting stick may drift; at 50% it takes a big push.
+5. Camera Up/Down inverted: up zooms out. Camera Left/Right inverted: right turns the other way, in 3D and in 2D. In first person (FISH EYE), both flip the look.
+6. Controller Off from the pad: the pad stops, the note shows, and the mouse turns it back on.
+7. Close and reopen the game: everything as you left it.
+

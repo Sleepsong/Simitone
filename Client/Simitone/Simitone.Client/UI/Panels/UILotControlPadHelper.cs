@@ -1104,9 +1104,19 @@ namespace Simitone.Client.UI.Panels
 
         #region Camera
 
+        /// <summary>
+        /// The right stick as the camera takes it, with each axis turned round if Options says so: up/down (zoom, and looking
+        /// up and down in first person) and left/right (turning, and looking left and right).
+        /// </summary>
+        public static Vector2 CameraStick(Vector2 stick, bool invertUpDown, bool invertLeftRight)
+        {
+            return new Vector2(invertLeftRight ? -stick.X : stick.X, invertUpDown ? -stick.Y : stick.Y);
+        }
+
         private void UpdateCamera(GamePadInput pad, float dt, TS1GameScreen screen)
         {
-            var stick = pad.RightStick;
+            var settings = GlobalSettings.Default;
+            var stick = CameraStick(pad.RightStick, settings.GamePadInvertZoom, settings.GamePadInvertTurn);
             if (FishEye)
             {
                 //look: right turns right (yaw falls), up looks up (RotationY below level)
@@ -1121,7 +1131,7 @@ namespace Simitone.Client.UI.Panels
 
             if (Math.Abs(stick.Y) >= Math.Abs(stick.X))
             {
-                Master.Touch.NudgeZoom((GlobalSettings.Default.GamePadInvertZoom ? -stick.Y : stick.Y) * ZoomRate * dt);
+                Master.Touch.NudgeZoom(stick.Y * ZoomRate * dt);
             }
             else if (Master.Touch._3D)
             {
