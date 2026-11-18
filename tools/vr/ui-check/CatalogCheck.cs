@@ -59,9 +59,9 @@ class SampleCatalog : IVRCatalogSource
     public int ActiveCategory => 0;
     public IReadOnlyList<VRCatalogSubcategory> Subcategories => SubList;
     public int ActiveSubcategory => Chosen;
-    public IReadOnlyList<VRCatalogEntry> Items => Chosen >= 0 ? ItemList : (IReadOnlyList<VRCatalogEntry>)Array.Empty<VRCatalogEntry>();
-    public int SelectedItem => Selected;
-    public int Version => 1;
+    public IReadOnlyList<VRCatalogEntry> Items => Searching ? SearchResults() : Chosen >= 0 ? ItemList : (IReadOnlyList<VRCatalogEntry>)Array.Empty<VRCatalogEntry>();
+    public int SelectedItem => Searching ? -1 : Selected;
+    public int Version => Searching ? 2 + SearchTerm.Length : 1;
     public int Floor => 2;
     public int Floors => 5;
     public Simitone.VR.VRWallView Walls => Build ? Simitone.VR.VRWallView.Down : Simitone.VR.VRWallView.Cutaway;
@@ -75,6 +75,24 @@ class SampleCatalog : IVRCatalogSource
     public void ChooseCategory(int index) { }
     public void ChooseSubcategory(int index) { }
     public void ChooseItem(int index) { }
+    /// <summary>A search: the items whose names have the term in them, each from "Seating" (empty: not searching).</summary>
+    public string SearchTerm = "";
+    public bool Searching => SearchTerm.Length > 0;
+    public void Search(string term)
+    {
+        SearchTerm = term ?? "";
+        Results = null;
+    }
+    private List<VRCatalogEntry> Results;
+    private IReadOnlyList<VRCatalogEntry> SearchResults()
+    {
+        if (Results != null) return Results;
+        Results = new List<VRCatalogEntry>();
+        foreach (var item in ItemList)
+            if (item.Name.IndexOf(SearchTerm, StringComparison.OrdinalIgnoreCase) >= 0)
+                Results.Add(new VRCatalogEntry { Name = item.Name, Price = item.Price, Icon = item.Icon, GUID = item.GUID, Description = item.Description, Category = "Seating" });
+        return Results;
+    }
 }
 
 /// <summary>A pie menu: the top level, or a category of eleven choices (eight around, three stacked).</summary>

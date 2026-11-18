@@ -69,9 +69,24 @@ namespace Simitone.Client.VR
             get
             {
                 var browse = Browse;
-                return browse == null || browse.ChoosingSub ? -1 : browse.ActiveSubcategory;
+                return browse == null || browse.ChoosingSub || browse.Searching ? -1 : browse.ActiveSubcategory;
             }
         }
+
+        /// <summary>The game's search is showing results (they can come from the category's front page too).</summary>
+        public bool Searching => Browse?.Searching ?? false;
+
+        /// <summary>Searches as the game's search box does (its text too, so the desk catalogue shows the same).</summary>
+        public void Search(string term)
+        {
+            var panel = MainPanel;
+            if (Browse == null || panel == null) return;
+            panel.SetSearchText(term ?? "");
+            SimitoneVR.Log(string.IsNullOrEmpty(term) ? "catalogue search ended" : "catalogue search: \"" + term + "\" (" + (Browse?.FilterCategory?.Count() ?? 0) + " found)");
+        }
+
+        /// <summary>The items shown: a subcategory's, or the search's results (also from the category's front page).</summary>
+        private static bool ShowsItems(UIBuyBrowsePanel browse) => browse != null && (!browse.ChoosingSub || browse.Searching);
 
         public IReadOnlyList<VRCatalogEntry> Items { get { Poll(); return ItemList; } }
 
@@ -81,7 +96,7 @@ namespace Simitone.Client.VR
             {
                 var browse = Browse;
                 var lc = Screen.LotControl;
-                if (browse == null || browse.ChoosingSub || lc == null) return -1;
+                if (!ShowsItems(browse) || lc == null) return -1;
                 // (the panel remembers the last choice after what it made has gone, e.g. sold back with B)
                 var holding = lc.ObjectHolder?.Holding != null || lc.CustomControl != null;
                 return holding ? browse.ItemID : -1;
@@ -97,7 +112,7 @@ namespace Simitone.Client.VR
             var categories = Mode == VRCatalogMode.Live ? null : switcher?.Categories;
             var browse = Browse;
             var subcategories = browse?.Subcategories;
-            var items = browse == null || browse.ChoosingSub ? null : browse.FilterCategory;
+            var items = ShowsItems(browse) ? browse.FilterCategory : null;
             if (categories == ShownCategories && browse == ShownPanel && subcategories == ShownSubcategories && items == ShownItems)
                 return;
             VersionNumber++;
@@ -144,7 +159,8 @@ namespace Simitone.Client.VR
                         Price = (int)elem.Item.Price,
                         Icon = special?.Res != null ? special.Res.GetIcon(special.ResID) : ObjectIcon(elem.Item.GUID),
                         GUID = special == null ? elem.Item.GUID : 0,
-                        Description = special?.Res != null ? special.Res.GetDescription(special.ResID) : ObjectDescription(elem.Item.GUID)
+                        Description = special?.Res != null ? special.Res.GetDescription(special.ResID) : ObjectDescription(elem.Item.GUID),
+                        Category = elem.CategoryName
                     });
                 }
             }
@@ -251,6 +267,7 @@ namespace Simitone.Client.VR
         {
             var browse = Browse;
             if (browse == null || index < 0 || index >= browse.Subcategories.Count) return;
+            if (browse.Searching) Search(""); //(the subcategory's items, not the search's)
             if (!browse.ChoosingSub)
             {
                 if (index == browse.ActiveSubcategory) return;
@@ -263,7 +280,7 @@ namespace Simitone.Client.VR
         public void ChooseItem(int index)
         {
             var browse = Browse;
-            if (browse == null || browse.ChoosingSub || browse.FilterCategory == null) return;
+            if (!ShowsItems(browse) || browse.FilterCategory == null) return;
             if (index < 0 || index >= ItemList.Count) return;
             if (index == SelectedItem) browse.Deselect();
             else browse.Selected(index);

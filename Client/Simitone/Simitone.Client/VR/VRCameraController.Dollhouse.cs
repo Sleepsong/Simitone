@@ -285,7 +285,7 @@ namespace Simitone.Client.VR
         {
             var active = input != null && input.Active;
             // ---- floors: right stick up/down, PageUp/PageDown (any floor: there's nothing to stand on anyway)
-            var turnY = active ? input.Turn.Y : 0;
+            var turnY = active && !SimitoneVR.StickOnTablet ? input.Turn.Y : 0; //(pointing at the tablet, it scrolls that)
             int levelChange = KeyboardLevel;
             KeyboardLevel = 0;
             if (!LevelLatched && Math.Abs(turnY) > 0.8f && Math.Abs(turnX) < 0.5f)

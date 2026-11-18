@@ -39,6 +39,8 @@ namespace Simitone.Client.UI.Panels.LiveSubpanels
         public int ActiveSubcategory = -1;
 
         private string ActiveSearchTerm;
+        /// <summary>Whether a name search is showing results (from the whole catalog for this mode).</summary>
+        public bool Searching => ActiveSearchTerm != null;
         private IEnumerable<UICatalogElement> PreSearchFilterCategory;
         public UILabel NoResultsLabel;
 

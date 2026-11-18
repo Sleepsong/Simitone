@@ -44,6 +44,12 @@ class UIGame : FSO.Common.Rendering.Framework.Game
     /// <summary>What a shot does on each of its frames (by frame number), e.g. pressing a button, before it's taken.</summary>
     private readonly Dictionary<string, Action<int>> During = new Dictionary<string, Action<int>>();
     private bool DialFailed;
+
+    private void CatalogCheckResult(string name, bool ok, string detail)
+    {
+        Console.WriteLine($"{(ok ? "ok  " : "FAIL")} tablet: {name}{(detail.Length > 0 ? ": " + detail : "")}");
+        if (!ok) DialFailed = true;
+    }
     private int Shot;
     private int ShotFrame;
     private VRCatalogThumbnails CatalogThumbs;
@@ -178,6 +184,41 @@ class UIGame : FSO.Common.Rendering.Framework.Game
             buy.SetMouse(new Vector2(30 + 14 + 184 + 86, 336 + 70), false, false); // over the second tile
         }));
         Shots.Add(("catalogue-build", build, () => build.Show()));
+        // the stick scrolls the items a row at a time while you point at the tablet: pushed down once, then let go
+        var scrolled = new VRCatalogTablet { Source = new SampleCatalog(false, Dot), Thumbnail = CatalogThumbs.Get };
+        Shots.Add(("catalogue-scrolled", scrolled, () => scrolled.Show()));
+        During["catalogue-scrolled"] = frame =>
+        {
+            if (frame == 10) scrolled.StickY = -1f;
+            if (frame == 12) scrolled.StickY = 0;
+            if (frame == 20) scrolled.StickY = -1f; //(again: the last row is already showing, so it stays)
+            if (frame == 22) scrolled.StickY = 0;
+            if (frame == 49) CatalogCheckResult("the stick scrolls a row, and stops at the last", scrolled.FirstItem == 4, "first item shown " + scrolled.FirstItem);
+        };
+        // Search (bottom left), then typing "chair" on the keyboard: the results, from the whole catalogue
+        var searchSource = new SampleCatalog(false, Dot);
+        var search = new VRCatalogTablet { Source = searchSource, Thumbnail = CatalogThumbs.Get };
+        var searchKey = new Vector2(30 + 75, 940 - 68 + 27);
+        Shots.Add(("catalogue-search", search, () =>
+        {
+            search.Show();
+            search.SetMouse(searchKey, false, false); // pointing at Search
+        }));
+        During["catalogue-search"] = frame =>
+        {
+            var key = searchKey;
+            if (frame == 10) search.SetMouse(key, true, false);
+            if (frame == 12) search.SetMouse(key, false, false);
+            if (frame == 14)
+            {
+                CatalogCheckResult("Search gives the keyboard the tablet's search box", search.SearchTarget != null && search.TakeKeyboardRequest(), "");
+                search.SearchTarget?.PadType("chair");
+            }
+            if (frame == 16) search.SetMouse(new Vector2(30 + 14 + 184 + 86, 336 + 70), false, false); // over the second result
+            if (frame == 49)
+                CatalogCheckResult("typing searches the catalogue", searchSource.Searching && searchSource.SearchTerm == "chair" && searchSource.Items.Count == 5,
+                    $"searching \"{searchSource.SearchTerm}\", {searchSource.Items.Count} found");
+        };
         var held = new VRCatalogTablet { Source = new SampleCatalog(false, Dot) { HeldObject = new VRHeldObject
             { Name = "Two-Seater Sofa", Text = "Sell Two-Seater Sofa for §337?", CanSell = true, Value = 337 } } };
         Shots.Add(("catalogue-held", held, () => held.Show()));
@@ -232,7 +273,7 @@ class UIGame : FSO.Common.Rendering.Framework.Game
                 if (CatalogCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("catalogue picture checks failed");
                 if (BundledCheck.Run(GraphicsDevice, OutDir) > 0) throw new Exception("bundled controller model checks failed");
                 if (SoundCheck.Run() > 0) throw new Exception("3D sound checks failed");
-                if (DialFailed) throw new Exception("the speed dial check failed");
+                if (DialFailed) throw new Exception("the speed dial or tablet checks failed");
                 Summary = "rendered to " + OutDir;
                 ExitCode = 0;
                 Exit();

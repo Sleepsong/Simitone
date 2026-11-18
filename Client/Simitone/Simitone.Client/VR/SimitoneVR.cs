@@ -122,6 +122,11 @@ namespace Simitone.Client.VR
         public static bool CatalogInHand => Settings.Catalogue == VRCatalogStyle.Hand;
         /// <summary>The catalogue tablet is in your hand now.</summary>
         public static bool TabletShown => Tablet?.Shown == true;
+        /// <summary>
+        /// You're pointing at the catalogue tablet: the pointing hand's stick scrolls it, so nothing else uses that stick
+        /// (floors, the arc's reach, flying, turning, turning what you hold).
+        /// </summary>
+        public static bool StickOnTablet { get; private set; }
 
         /// <summary>The catalogue item whose tile a fingertip (tracking space) is on, or -1 (see <see cref="VRCatalogTablet.ItemAt"/>).</summary>
         public static int TabletItemAt(Vector3 point, float reach) => Tablet?.Shown == true ? Tablet.ItemAt(point, reach) : -1;
@@ -570,10 +575,12 @@ namespace Simitone.Client.VR
             var target = KeyboardTarget;
             if (Keyboard != null)
             {
+                if (Tablet?.TakeKeyboardRequest() == true) KeyboardDismissed = null; //(the tablet's search wants it again)
                 if (Keyboard.HideRequested)
                 {
                     Keyboard.HideRequested = false;
                     KeyboardDismissed = target;
+                    if (target != null && target == Tablet?.SearchTarget) Tablet.StopTyping(); //(the results stay)
                 }
                 var wantKeyboard = target != null && target != KeyboardDismissed && LastHead.Valid;
                 if (wantKeyboard && !Keyboard.Shown) Keyboard.ShowAt(LastHead);
@@ -597,6 +604,9 @@ namespace Simitone.Client.VR
                     pointedDistance = distance;
                 }
             }
+            // pointing at the tablet, the stick scrolls its items
+            StickOnTablet = pointed != null && pointed == Tablet;
+            if (Tablet != null) Tablet.StickY = StickOnTablet && inputActive ? input.Turn.Y : 0;
             var buttonsDown = inputActive && (input.Select.Down || input.Secondary.Down);
             if (!buttonsDown) PanelPressArmed = true;
             else if (pointed == null) PanelPressArmed = false;
@@ -1137,7 +1147,7 @@ namespace Simitone.Client.VR
         {
             if (state.NewKeys.Contains(Keys.F9) && SessionRunning) KeyboardMenuToggle = true;
             // the VR keyboard types into the text box that's waiting (between frames, like real key presses)
-            KeyboardTarget = FindTextTarget(state);
+            KeyboardTarget = (Tablet?.Shown == true ? Tablet.SearchTarget : null) ?? FindTextTarget(state); //(the tablet's search first)
             if (KeyboardTarget == null) KeyboardDismissed = null;
             if (Keyboard != null) Keyboard.TextTarget = KeyboardTarget; // the keyboard types into it as its keys are pressed
             var real = state.MouseState;

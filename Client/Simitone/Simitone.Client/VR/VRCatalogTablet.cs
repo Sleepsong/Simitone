@@ -28,6 +28,8 @@ namespace Simitone.Client.VR
         public uint GUID;
         /// <summary>The catalogue's description (may be empty).</summary>
         public string Description;
+        /// <summary>For a search result, the category it's from (null otherwise).</summary>
+        public string Category;
     }
 
     /// <summary>An object picked up from the lot, as the game's pickup panel describes it.</summary>
@@ -78,6 +80,10 @@ namespace Simitone.Client.VR
         void ChooseSubcategory(int index);
         /// <summary>Picks an item up to place it (choosing the one already held puts it back).</summary>
         void ChooseItem(int index);
+        /// <summary>A name search over every item for the mode is showing its results (in <see cref="Items"/>).</summary>
+        bool Searching { get; }
+        /// <summary>Searches every item for the mode by name, as the game's search box does (empty: stops searching).</summary>
+        void Search(string term);
     }
 
     /// <summary>
@@ -86,6 +92,9 @@ namespace Simitone.Client.VR
     /// the game's own category buttons, then the items as tiles with their price (a 3D view of each object, turning when
     /// you point at it; the catalogue's picture for build tools and until the 3D view is ready). Point with the other
     /// hand and pull the trigger: choosing an item picks it up, and you place it with the arc as before.
+    /// The items show two rows at a time: the pointing hand's stick scrolls them a row at a time while you point at the
+    /// tablet (<see cref="StickY"/>), and the arrows a page. Search (bottom left) searches every item for the mode by
+    /// name, typed on the VR keyboard (<see cref="SearchTarget"/>), with the search box in place of the subcategories.
     /// </summary>
     public class VRCatalogTablet : VRUIPanel
     {
@@ -109,10 +118,29 @@ namespace Simitone.Client.VR
         private readonly UIVRKey PrevPage, NextPage, SellKey, PutBackKey;
         private readonly UILabel DescLabel, HeldTitle, HeldText;
         private bool HeldShown;
-        private int ShownVersion = -1, Page;
+        private int ShownVersion = -1;
         private VRCatalogMode ShownMode = (VRCatalogMode)(-1);
         private IVRCatalogSource ShownSource;
-        private int Hovered = -1;
+        /// <summary>The tile pointed at (0 to 7), or -1; and the item on it.</summary>
+        private int HoveredTile = -1;
+        private int Hovered => HoveredTile >= 0 ? First + HoveredTile : -1;
+        /// <summary>The top row of items shown (two rows at a time), and its first item.</summary>
+        private int FirstRow;
+        private int First => FirstRow * Columns;
+        /// <summary>The first item shown (for the checks).</summary>
+        public int FirstItem => First;
+
+        /// <summary>The pointing hand's stick (up is positive) while you point at the tablet, else 0 (set by SimitoneVR).</summary>
+        public float StickY;
+        private float StickRepeat;
+        private bool StickHeld;
+
+        // the search: its key, its box (in place of the subcategories) and the text the VR keyboard types into
+        private readonly UIVRKey SearchKey;
+        private readonly UIVRSearchBox SearchBox;
+        private readonly UITextBox SearchEdit;
+        private bool SearchShown, SearchTyping, KeyboardRequest;
+        private string SearchedFor = "";
 
         public VRCatalogTablet() : base(PanelWidth, PanelHeight, 0.26f)
         {
@@ -163,8 +191,8 @@ namespace Simitone.Client.VR
                 {
                     Position = new Vector2(Left + 14 + (i % Columns) * (TileW + 12), GridTop + (i / Columns) * (TileH + 8))
                 };
-                tile.OnChosen += () => { Source?.ChooseItem(Page * PerPage + index); Click(); };
-                tile.OnHover += hover => { if (hover) { Hovered = Page * PerPage + index; Tick(); } else if (Hovered == Page * PerPage + index) Hovered = -1; };
+                tile.OnChosen += () => { Source?.ChooseItem(First + index); SearchTyping = false; Click(); }; //(the keyboard goes, to place it)
+                tile.OnHover += hover => { if (hover) { HoveredTile = index; Tick(); } else if (HoveredTile == index) HoveredTile = -1; };
                 Add(tile);
                 Tiles[i] = tile;
             }
@@ -212,11 +240,24 @@ namespace Simitone.Client.VR
 
             var pageY = PanelHeight - 68;
             PrevPage = new UIVRKey("<", 90, 54, 25) { Position = new Vector2(Left + 170, pageY) };
-            PrevPage.OnPress += _ => { if (Page > 0) { Page--; ShowPage(); Click(); } };
+            PrevPage.OnPress += _ => { if (ScrollRows(-Rows)) Click(); };
             Add(PrevPage);
             NextPage = new UIVRKey(">", 90, 54, 25) { Position = new Vector2(PanelWidth - 32 - Left - 170 - 90, pageY) };
-            NextPage.OnPress += _ => { if ((Page + 1) * PerPage < (Source?.Items.Count ?? 0)) { Page++; ShowPage(); Click(); } };
+            NextPage.OnPress += _ => { if (ScrollRows(Rows)) Click(); };
             Add(NextPage);
+
+            // the search
+            SearchKey = new UIVRKey("Search", 150, 54, 21) { Position = new Vector2(Left, pageY) };
+            SearchKey.OnPress += _ => { if (SearchShown) EndSearch(); else StartSearch(); Click(); };
+            Add(SearchKey);
+            SearchBox = new UIVRSearchBox(PanelWidth - 32 - Left * 2 - 20, 64) { Position = new Vector2(Left + 10, 226) };
+            SearchBox.OnPress += () => { StartTyping(); Click(); };
+            SearchBox.OnClear += () => { SearchEdit.CurrentText = ""; SearchChanged(); StartTyping(); Click(); };
+            Add(SearchBox);
+            SearchEdit = new UITextBox { Visible = false, MaxChars = 40 }; //(the keyboard's text: SearchBox shows it)
+            SearchEdit.OnChange += _ => SearchChanged();
+            Add(SearchEdit);
+            SetSearchShown(false);
             PageLabel = VRUI.Label("", 19, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Middle);
             PageLabel.Position = new Vector2(Left + 270, pageY);
             PageLabel.Size = new Vector2(PanelWidth - 32 - Left * 2 - 540, 54);
@@ -235,9 +276,20 @@ namespace Simitone.Client.VR
         {
             var source = Source;
             if (source == null) return;
+            if (source != ShownSource || source.Mode != ShownMode)
+            {
+                if (SearchShown) EndSearch(); //(a new mode, or another game's catalogue)
+            }
+            else if (SearchShown && !source.Searching && SearchedFor.Length > 0)
+            {
+                // the game stopped the search (a category chosen on the desk, say)
+                SearchEdit.CurrentText = "";
+                SearchedFor = "";
+                SetSearchShown(false);
+            }
             if (source != ShownSource || source.Version != ShownVersion || source.Mode != ShownMode)
             {
-                if (source != ShownSource || source.Mode != ShownMode) Page = 0;
+                if (source != ShownSource || source.Mode != ShownMode) FirstRow = 0;
                 ShownSource = source;
                 ShownVersion = source.Version;
                 ShownMode = source.Mode;
@@ -261,6 +313,11 @@ namespace Simitone.Client.VR
             var money = "§" + source.Budget.ToString("##,#0");
             if (MoneyLabel.Caption != money) MoneyLabel.Caption = money;
 
+            UpdateStick((float)(state.Time?.ElapsedGameTime.TotalSeconds ?? 1 / 60.0));
+            SearchKey.Visible = source.Mode != VRCatalogMode.Live && !HeldShown;
+            SearchKey.Caption = SearchShown ? "Close" : "Search";
+            if (SearchShown) SearchBox.Set(SearchEdit.CurrentText, SearchTyping, SearchedFor.Length > 0 ? source.Items.Count : -1);
+
             // something picked up from the lot: what it is and selling it, instead of the catalogue (as the game does)
             var held = source.Held;
             if ((held != null) != HeldShown)
@@ -278,14 +335,16 @@ namespace Simitone.Client.VR
                 SetCaption(PriceLabel, "");
                 SetCaption(DescLabel, "");
                 SetCaption(HintLabel, "Aim the arc and pull the trigger to put it down somewhere else.");
+                SearchKey.Visible = SearchBox.Visible = false;
                 return;
             }
+            SearchBox.Visible = SearchShown;
 
             // the tiles' pictures (3D when ready) and selection, and what's described below them
             var items = source.Items;
             for (int i = 0; i < PerPage; i++)
             {
-                var index = Page * PerPage + i;
+                var index = First + i;
                 var tile = Tiles[i];
                 if (index >= items.Count) { tile.Visible = false; continue; }
                 var entry = items[index];
@@ -306,6 +365,7 @@ namespace Simitone.Client.VR
                 SetCaption(DescLabel, entry.Description ?? "");
                 SetCaption(HintLabel, shown == source.SelectedItem
                     ? "Aim the arc and pull the trigger to place it. Grip puts it back."
+                    : SearchShown && entry.Category != null ? "In " + entry.Category + ". Pull the trigger to pick it up."
                     : "Pull the trigger to pick it up.");
             }
             else
@@ -314,7 +374,10 @@ namespace Simitone.Client.VR
                 SetCaption(PriceLabel, "");
                 SetCaption(DescLabel, "");
                 SetCaption(HintLabel, source.Mode == VRCatalogMode.Live ? ""
-                    : source.ActiveCategory < 0 ? "Choose a category." : source.ActiveSubcategory < 0 ? "Choose a subcategory." : "");
+                    : SearchTyping ? "Type on the keyboard. Choose an item to place it."
+                    : SearchShown ? "Point at the search box to type again."
+                    : source.ActiveCategory < 0 ? "Choose a category." : source.ActiveSubcategory < 0 ? "Choose a subcategory."
+                    : items.Count > PerPage ? "Push the stick up or down to scroll." : "");
             }
         }
 
@@ -330,7 +393,7 @@ namespace Simitone.Client.VR
                 var tile = Tiles[i];
                 if (!tile.Visible) continue;
                 var r = new Rectangle((int)tile.X, (int)tile.Y, TileW, TileH);
-                if (r.Contains((int)pixel.X, (int)pixel.Y)) return Page * PerPage + i;
+                if (r.Contains((int)pixel.X, (int)pixel.Y)) return First + i;
             }
             return -1;
         }
@@ -344,6 +407,106 @@ namespace Simitone.Client.VR
             EmptyLabel.Visible = false;
             PrevPage.Visible = NextPage.Visible = false;
             PageLabel.Caption = "";
+        }
+
+        // ---- scrolling
+
+        /// <summary>Moves the items shown by some rows (stopping at the ends). False if they didn't move.</summary>
+        private bool ScrollRows(int rows)
+        {
+            var count = Source?.Items.Count ?? 0;
+            var lastRow = Math.Max(0, (count + Columns - 1) / Columns - Rows);
+            var row = Math.Max(0, Math.Min(lastRow, FirstRow + rows));
+            if (row == FirstRow) return false;
+            FirstRow = row;
+            ShowPage();
+            return true;
+        }
+
+        /// <summary>
+        /// The stick, pushed up or down while you point at the tablet: a row at once, then a row every 0.16 s while it's
+        /// held there (after 0.45 s). A tick on the hand each row.
+        /// </summary>
+        private void UpdateStick(float dt)
+        {
+            var y = HeldShown ? 0 : StickY;
+            if (Math.Abs(y) > 0.6f)
+            {
+                StickRepeat -= dt;
+                if (StickRepeat > 0) return;
+                if (ScrollRows(y > 0 ? -1 : 1)) Tick();
+                StickRepeat = StickHeld ? 0.16f : 0.45f;
+                StickHeld = true;
+            }
+            else if (Math.Abs(y) < 0.3f)
+            {
+                StickHeld = false;
+                StickRepeat = 0;
+            }
+        }
+
+        // ---- search
+
+        /// <summary>The text box the VR keyboard types into while you search (null otherwise; SimitoneVR asks every update).</summary>
+        public FSO.Client.UI.Controls.UITextEdit SearchTarget => Shown && SearchShown && SearchTyping ? SearchEdit : null;
+
+        /// <summary>Search, or the search box pointed at: the keyboard comes (again, after Hide). True once per request.</summary>
+        public bool TakeKeyboardRequest()
+        {
+            var request = KeyboardRequest;
+            KeyboardRequest = false;
+            return request;
+        }
+
+        /// <summary>The keyboard's Hide: the search stays, its results showing.</summary>
+        public void StopTyping() => SearchTyping = false;
+
+        private void StartSearch()
+        {
+            var source = Source;
+            if (source == null || source.Mode == VRCatalogMode.Live) return;
+            SearchEdit.CurrentText = "";
+            SearchedFor = "";
+            SetSearchShown(true);
+            StartTyping();
+        }
+
+        private void StartTyping()
+        {
+            if (!SearchShown) return;
+            SearchTyping = true;
+            KeyboardRequest = true;
+        }
+
+        private void EndSearch()
+        {
+            SearchEdit.CurrentText = "";
+            SearchTyping = false;
+            SetSearchShown(false);
+            if (SearchedFor.Length > 0) Source?.Search("");
+            SearchedFor = "";
+            FirstRow = 0;
+            ShowPage();
+        }
+
+        /// <summary>Typed: the game's search for it (the whole catalogue for the mode), from the top.</summary>
+        private void SearchChanged()
+        {
+            var term = SearchEdit.CurrentText.Trim();
+            if (term == SearchedFor) return;
+            SearchedFor = term;
+            Source?.Search(term);
+            FirstRow = 0;
+            HoveredTile = -1;
+            ShowPage();
+        }
+
+        /// <summary>The search box in place of the subcategories (and back).</summary>
+        private void SetSearchShown(bool shown)
+        {
+            SearchShown = shown;
+            SearchBox.Visible = shown;
+            foreach (var (b, l) in SubButtons) b.Visible = l.Visible = !shown;
         }
 
         private static void SetCaption(UILabel label, string text)
@@ -366,8 +529,8 @@ namespace Simitone.Client.VR
                 {
                     var index = i;
                     var button = new UICatButton(cats[i]) { Position = new Vector2(Left + 10 + i * spacing, 118) };
-                    button.Selected = i == source.ActiveCategory;
-                    button.OnButtonClick += _ => { source.ChooseCategory(index); Click(); };
+                    button.Selected = i == source.ActiveCategory && !SearchShown;
+                    button.OnButtonClick += _ => { if (SearchShown) EndSearch(); source.ChooseCategory(index); Click(); };
                     Add(button);
                     CategoryButtons.Add(button);
                 }
@@ -380,36 +543,44 @@ namespace Simitone.Client.VR
                     var button = new UICatButton(subs[i].Icon) { Position = new Vector2(x + (subSpacing - 75) / 2, 214) };
                     button.Selected = i == source.ActiveSubcategory;
                     button.Disabled = subs[i].Disabled;
-                    button.OnButtonClick += _ => { if (!subs[index].Disabled) { source.ChooseSubcategory(index); Click(); } };
+                    button.OnButtonClick += _ => { if (!subs[index].Disabled && !SearchShown) { source.ChooseSubcategory(index); Click(); } };
                     var label = VRUI.Label(subs[i].Label, 12, UIStyle.Current.Text, TextAlignment.Center | TextAlignment.Top);
                     label.Position = new Vector2(x, 292);
                     label.Size = new Vector2(subSpacing, 30);
                     label.Wrapped = true;
+                    button.Visible = label.Visible = !SearchShown;
                     Add(button);
                     Add(label);
                     SubButtons.Add((button, label));
                 }
             }
-            ShowPage();
+            ShowPage(keepSelected: true);
         }
 
-        private void ShowPage()
+        /// <summary>
+        /// Shows the rows from <see cref="FirstRow"/>. With <paramref name="keepSelected"/> (the list changed under it),
+        /// the item you're holding is brought into view; scrolling yourself leaves it.
+        /// </summary>
+        private void ShowPage(bool keepSelected = false)
         {
             var source = Source;
             var count = source?.Items.Count ?? 0;
-            var pages = Math.Max(1, (count + PerPage - 1) / PerPage);
-            Page = Math.Max(0, Math.Min(Page, pages - 1));
-            // keep the selected item's page in view when the list changes under it
-            if (source != null && source.SelectedItem >= 0 && source.SelectedItem / PerPage != Page && Hovered < 0)
-                Page = Math.Min(pages - 1, source.SelectedItem / PerPage);
-            PageLabel.Caption = count > PerPage ? $"{Page + 1} / {pages}" : "";
+            var lastRow = Math.Max(0, (count + Columns - 1) / Columns - Rows);
+            FirstRow = Math.Max(0, Math.Min(FirstRow, lastRow));
+            if (keepSelected && source != null && source.SelectedItem >= 0 && source.SelectedItem < count && HoveredTile < 0)
+            {
+                var row = source.SelectedItem / Columns;
+                if (row < FirstRow) FirstRow = row;
+                else if (row >= FirstRow + Rows) FirstRow = Math.Min(lastRow, row - Rows + 1);
+            }
+            PageLabel.Caption = count > PerPage ? $"{First + 1}-{Math.Min(count, First + PerPage)} of {count}" : "";
             PrevPage.Visible = NextPage.Visible = count > PerPage;
-            Hovered = -1;
             EmptyLabel.Visible = true;
             EmptyLabel.Caption = source == null || source.Mode == VRCatalogMode.Live
                 ? "Live mode. Choose Buy or Build above (or squeeze the walking hand's grip)."
+                : SearchShown ? (SearchedFor.Length == 0 ? "Type a name to search every item." : count == 0 ? "Nothing found." : "")
                 : source.ActiveSubcategory >= 0 && count == 0 ? "Nothing here." : "";
-            for (int i = 0; i < PerPage; i++) Tiles[i].Visible = Page * PerPage + i < count;
+            for (int i = 0; i < PerPage; i++) Tiles[i].Visible = First + i < count;
             if (HeldShown) SetHeldShown(true); // (still showing what you picked up)
         }
 
@@ -422,6 +593,65 @@ namespace Simitone.Client.VR
             var side = rightHand ? -1 : 1; // toward the middle of your body
             PanelOrientation = grip.Orientation * Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathHelper.ToRadians(-55));
             PanelPosition = grip.Position + Vector3.Transform(new Vector3(side * 0.06f, 0.11f, -0.02f), grip.Orientation);
+        }
+    }
+
+    /// <summary>
+    /// The tablet's search box: what's typed (or what to do), with a caret while the keyboard types into it, how many
+    /// items were found, and a clear key. Pointing at it and pulling the trigger brings the keyboard back.
+    /// </summary>
+    public class UIVRSearchBox : UIContainer
+    {
+        private readonly int BoxW, BoxH;
+        private readonly UILabel TextLabel, CountLabel;
+        private readonly UIVRKey ClearKey;
+        private bool Hover;
+        public event Action OnPress, OnClear;
+
+        public UIVRSearchBox(int width, int height)
+        {
+            BoxW = width;
+            BoxH = height;
+            Add(VRUI.Outline(width, height));
+            TextLabel = VRUI.Label("", 24, UIStyle.Current.Text, TextAlignment.Left | TextAlignment.Middle);
+            TextLabel.Position = new Vector2(22, 0);
+            TextLabel.Size = new Vector2(width - 22 - 70, height);
+            Add(TextLabel);
+            CountLabel = VRUI.Label("", 14, UIStyle.Current.Text * 0.7f, TextAlignment.Right | TextAlignment.Top);
+            CountLabel.Position = new Vector2(0, height + 4);
+            CountLabel.Size = new Vector2(width, 24);
+            Add(CountLabel);
+            ListenForMouse(new Rectangle(0, 0, width - 64, height), (type, state) =>
+            {
+                if (type == UIMouseEventType.MouseOver) Hover = true;
+                else if (type == UIMouseEventType.MouseOut) Hover = false;
+                else if (type == UIMouseEventType.MouseUp && Hover) OnPress?.Invoke();
+            });
+            ClearKey = new UIVRKey("x", 52, height - 12, 22) { Position = new Vector2(width - 58, 6) };
+            ClearKey.OnPress += _ => OnClear?.Invoke();
+            Add(ClearKey);
+        }
+
+        /// <summary>The text, whether the keyboard is typing into it, and how many were found (-1: not searched yet).</summary>
+        public void Set(string text, bool typing, int found)
+        {
+            var caption = text.Length > 0 ? text + (typing ? "|" : "") : typing ? "|" : "Search every item";
+            if (TextLabel.Caption != caption) TextLabel.Caption = caption;
+            TextLabel.CaptionStyle.Color = text.Length > 0 || typing ? UIStyle.Current.Text : UIStyle.Current.Text * 0.55f;
+            var count = found < 0 ? "" : found == 1 ? "1 item" : found + " items";
+            if (CountLabel.Caption != count) CountLabel.Caption = count;
+            ClearKey.Visible = text.Length > 0;
+        }
+
+        public override void Draw(UISpriteBatch batch)
+        {
+            if (!Visible) return;
+            if (Hover)
+            {
+                var px = TextureGenerator.GetPxWhite(batch.GraphicsDevice);
+                DrawLocalTexture(batch, px, null, new Vector2(5, 5), new Vector2(BoxW - 10, BoxH - 10), Color.White * 0.08f);
+            }
+            base.Draw(batch);
         }
     }
 

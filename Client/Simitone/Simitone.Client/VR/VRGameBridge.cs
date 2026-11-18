@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using FSO.Client;
 using FSO.Client.UI.Model;
@@ -91,7 +92,7 @@ namespace Simitone.Client.VR
         private readonly Func<Vector2, sbyte, int> RoomAtFunc;
         private static readonly VMMotive[] HudMotives = { VMMotive.Hunger, VMMotive.Comfort, VMMotive.Hygiene, VMMotive.Bladder,
             VMMotive.Energy, VMMotive.Fun, VMMotive.Social, VMMotive.Room };
-        private readonly Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level)?> StairsAtFunc;
+        private readonly Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level, IReadOnlyList<Vector2> path)?> StairsAtFunc;
         private readonly Func<Vector2, sbyte, float, bool> ObjectBlocksFunc;
 
         public VRGameBridge(TS1GameScreen screen)
@@ -566,7 +567,12 @@ namespace Simitone.Client.VR
         /// portal parts on two floors, one part of it on this tile. Returns the centres of the portal part on this floor
         /// and the one on the other floor. Doors are portals too, but both their parts are on one floor.
         /// </summary>
-        private (Vector2 from, Vector2 to, sbyte level)? StairsAt(Vector2 tile, sbyte level)
+        /// <summary>
+        /// The stairs at a tile on a floor: the end you're at, the other end and its floor, and the way between them
+        /// through the stairs' own tiles from the one you're on (see <see cref="VRStairPath"/>), so stairs that turn are
+        /// followed.
+        /// </summary>
+        private (Vector2 from, Vector2 to, sbyte level, IReadOnlyList<Vector2> path)? StairsAt(Vector2 tile, sbyte level)
         {
             var vm = Screen.vm;
             var context = vm?.Context;
@@ -581,10 +587,12 @@ namespace Simitone.Client.VR
                 if (group == null || here.Position.Level != level) continue;
                 VMEntity there = null;
                 var onTile = false;
+                var footprint = new List<Microsoft.Xna.Framework.Point>();
                 foreach (var part in group.Objects)
                 {
                     var pos = part.Position;
                     if (pos == LotTilePos.OUT_OF_WORLD) continue;
+                    footprint.Add(new Microsoft.Xna.Framework.Point(pos.TileX, pos.TileY));
                     if (pos.Level != level)
                     {
                         if (part.Portal && there == null) there = part;
@@ -592,7 +600,9 @@ namespace Simitone.Client.VR
                     else if (pos.TileX == tx && pos.TileY == ty) onTile = true;
                 }
                 if (there == null || !onTile) continue;
-                return (TileCentre(here.Position), TileCentre(there.Position), there.Position.Level);
+                var path = VRStairPath.Tiles(footprint, new Microsoft.Xna.Framework.Point(tx, ty),
+                    new Microsoft.Xna.Framework.Point(there.Position.TileX, there.Position.TileY));
+                return (TileCentre(here.Position), TileCentre(there.Position), there.Position.Level, path);
             }
             return null;
         }
@@ -956,7 +966,7 @@ namespace Simitone.Client.VR
 
             // Right stick left/right turns what you hold by 90 degrees.
             var input = SimitoneVR.Runtime?.Input;
-            var turnX = input != null && input.Active ? input.Turn.X : 0;
+            var turnX = input != null && input.Active && !SimitoneVR.StickOnTablet ? input.Turn.X : 0;
             if (holding != null && !RotateLatched && Math.Abs(turnX) > 0.7f)
             {
                 holder.RotateObject(turnX > 0 ? 2 : -2);

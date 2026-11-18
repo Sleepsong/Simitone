@@ -182,7 +182,8 @@ the house to see it from any side: the walls facing you are cut away room by roo
 - smooth locomotion, snap or smooth turning, and right stick up/down to change floors;
 - walls and furniture stop you as they stop Sims (you slide along them); doors don't;
 - **stairs:** walk onto them and you ride up or down them at walking speed, with the vignette as when the stick
-  moves you (`ObserverStairs=Blink` blinks you to the other end instead);
+  moves you, round their turns if they turn (an L, or a spiral) without turning you (`ObserverStairs=Blink` blinks
+  you to the other end instead);
 - **teleport:** hold the left trigger, aim the arc and let go to blink there;
 - the same pointing and pie menus as in Sim mode, so you can direct Sims like in the normal game;
 - **your controllers in your hands** (also when you've stepped out of your Sim): the real ones, as the headset's
@@ -220,13 +221,22 @@ stay in first person. The game pauses, as usual, and you build on the floor you'
 - **As the observer** you stay where you were standing and move about as usual.
 - **The catalogue** is a tablet in your walking hand (the left, or the right when left-handed), in Simitone's look:
   - at the top, Live / Buy / Build tabs and your money; then the categories, and the subcategories with their names;
-  - then the items, eight to a page, each with its price (red if you can't afford it). Objects are shown in 3D,
-    and the one you point at turns, so you can see it from all sides. Build tools keep the catalogue's pictures,
-    as do objects whose 3D model isn't ready yet;
-  - below them, the name and price of what you're pointing at or holding, and the page buttons.
+  - then the items, two rows of four at a time, each with its price (red if you can't afford it). Objects are shown
+    in 3D, and the one you point at turns, so you can see it from all sides. Build tools keep the catalogue's
+    pictures, as do objects whose 3D model isn't ready yet;
+  - below them, the name and price of what you're pointing at or holding; at the bottom, **Search** and the arrows,
+    which move the items a page (two rows) at a time, with which ones are showing ("5-11 of 11").
 
   Point at it with the other hand and pull the trigger. Choosing an item picks it up (choosing it again puts it
   back); then aim the arc as below. Your needs display makes way for the tablet while it's there.
+  - **Scrolling:** while you point at the tablet, the pointing hand's stick scrolls the items, up or down a row
+    (held, a row every 0.16 s), with a tick on your hand each row. Meanwhile that stick does nothing else (no floor
+    changes, reach, flying or turning).
+  - **Search:** Search brings up the VR keyboard, and the search box takes the subcategories' place. What you type
+    searches every item for the mode by name, as the game's own search box does (it's the same search, and the
+    desk catalogue shows it too), from any category: the results show as the items do, each saying which category
+    it's from. Choosing one puts the keyboard away so you can place it; point at the search box to type again, its
+    x to clear it, and Close (or a category) to end the search. The keyboard's Hide leaves the results showing.
   `Catalogue=Desk` puts the game's own catalogue on a desk-like panel below you instead.
 - **Placing:** what you're holding hangs at the end of an arc from your controller, like a teleport arc. Green
   means it fits, red means it doesn't. Aim and pull the trigger to place it.
@@ -318,7 +328,7 @@ running or routing. If you share a log from a headset session, the defaults can 
 | Left trigger (hold, aim, let go) | Movement arc: your Sim walks there | Teleport there | (observer: teleport) | n/a |
 | Left menu button (Touch); left trackpad squeeze (Index); VR Options on the left wrist | VR menu | VR menu | VR menu | VR menu |
 | Right stick left/right | Snap / smooth turn | Snap / smooth turn | Turn what you hold; else turn | n/a |
-| Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else floor (any, built or not) | Scroll |
+| Right stick up/down | n/a | Go up / down a floor | Arc reach while holding; else floor (any, built or not); pointing at the tablet, scroll its items | Scroll |
 | Right stick click | Cycle game speed | Cycle game speed | n/a (paused) | Cycle game speed |
 | Right trigger | Point and interact; click on menus | Point and interact; click on menus | Pick up / place / drag a tool; choose in the catalogue | Left click |
 | Right trigger on the left wrist | Cancel the queue icon pointed at, or press VR Options | Same | Same | n/a |
@@ -748,10 +758,15 @@ Design choices:
   cursor every update. Only while the eyes are drawn, its parts are shown part of the way there from where they
   were drawn last (closing the gap in about a tenth of a second), and put back straight after, so the game never
   sees them anywhere else.
-- **Stair ride.** Walking onto stairs as the observer starts a ride along the line from where you are to just past
-  their far end, eased in and out, at walking speed: the rig carries you (you can still move your head) while
-  your height goes from one floor's to the other's, and the floor you're on changes halfway. Gravity waits until
-  it's over.
+- **Stair ride.** Walking onto stairs as the observer starts a ride from where you are to just past their far end,
+  eased in and out, at walking speed: the rig carries you (you can still move your head) while your height goes from
+  one floor's to the other's, and the floor you're on changes halfway. Gravity waits until it's over. The way goes
+  through the stairs' own tiles (`VRStairPath`: every part of the multitile object, on both floors, as one
+  footprint), from the tile you're on to the other end's, moving between tiles that share an edge: the shortest
+  way, which for an L goes round its corner; for a 2x2 block with its ends side by side, the long way round all
+  four, as a spiral staircase goes. Corners are rounded (a curve from 0.45 tiles before to 0.45 tiles after), and
+  you step off in the direction of the last stretch. The ride moves you but never turns you, so you face where you
+  faced. With no way through the tiles it goes straight from end to end, as before.
 - **Hand roll and poses.** Each controller's roll about the way it points (0 with the thumb up) turns the Sim's
   hand the same way about the same line, after it's aimed, so it works without knowing the skeleton's bone axes.
   The hand poses are FreeSO's `SimAvatar.LeftHandGesture` / `RightHandGesture` (the game's open, fist and pointing
@@ -817,7 +832,8 @@ Design choices:
 - `tools/vr/layout-check/run.sh` compares every hand-written OpenXR struct's size and field offsets with the
   Khronos C headers (169 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
   `include`, 1.1.4x or later) it also checks the render model structs (203 checks).
-- `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU:
+- `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU (and the stair
+  ride's way, below):
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
   - the picking camera reproduces the controller ray;
   - the arc solver lands on a grabbed object;
@@ -829,7 +845,11 @@ Design choices:
   - the dollhouse: what one hand holds stays in it as it moves; turning two hands turns the world and what each
     holds stays in it; moving them twice as far apart makes it twice the size; the size limit holds; you start ten
     times a Sim's size (a tile 10 cm); the lid's clip plane, for the dollhouse's view moved with the lid, keeps what's above the lifted
-    floor (to within a thousandth of a unit).
+    floor (to within a thousandth of a unit);
+  - the stair ride's way (`VRStairPath`): straight stairs go straight; an L is followed through its corner, rounded,
+    staying inside its tiles and shorter than the corner but longer than a straight line; a 2x2 block with its ends
+    side by side goes round all four, and the same way back reversed; opposite corners go the short way; no way
+    through the tiles goes straight, and one tile is one point; points along the way start and end at its ends.
 - `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
   field of view, to a PNG file under Xvfb.
 - `tools/vr/ui-check/run.sh <published Simitone> [dir]` renders every VR panel with Simitone's real UI (its fonts,
@@ -841,6 +861,9 @@ Design choices:
   - the keyboard and the placement tip;
   - the catalogue tablet in buy mode (two items with made-up 3D meshes, one held and one pointed at, one too dear,
     with a description), in build mode choosing a subcategory, and showing an object picked up from the lot;
+    scrolled by the stick (pushed down twice: it moves a row, then stays at the last, checked), and searching
+    (Search gives the keyboard the tablet's search box, and typing "chair" there searches the catalogue: five found,
+    checked);
   - the VR pie menu's top level (with a stand-in for the Sim's head) and a category of eleven choices;
   - the built-in controller model, from the side and from above.
 
@@ -918,7 +941,6 @@ Design choices:
   - where the tablet sits in your hand and its tilt are first guesses;
   - the 3D pictures are taken from the angle of FreeSO's own object thumbnails, unchecked against real objects
     (some may show their side or back; the pointed-at one turns anyway);
-  - the tablet has no search box (the game's catalogue on the desk has one: `Catalogue=Desk`);
   - the pie menu's Sim head is the game's own render, so it is tested only with a stand-in.
 - **The dollhouse** is tested in its maths and builds, not yet in a headset with a real lot (that needs The Sims):
   - picking up furniture relies on the game's picking finding the same object as the hand test, and on its object
@@ -948,7 +970,10 @@ Design choices:
 - **3D sound** is tested by measuring OpenAL Soft's output, not by ear in a headset. Only mono sounds are placed
   (most of the game's); stereo ones play as they are. On the Steam Frame the system's OpenAL is used: if it has no
   HRTF data, the VR menu says HRTF is off and sounds are still placed, with plain stereo panning.
-- **The observer stair ride** goes in a straight line from end to end; it doesn't follow stairs that turn.
+- **The observer stair ride** follows stairs through their tiles, which is right for straight stairs and those that
+  turn on the grid; a spiral is taken to be a 2x2 block (going round it once), and stairs with other shapes go the
+  shortest way through their tiles. Untested with the game's own stairs, and the expansion packs' and custom
+  content's (which need The Sims).
 - **Performance** is unmeasured on the Frame:
   - single-pass stereo is tested on Mesa's llvmpipe, not on the Frame's driver (Zink on Turnip); if that lacks
     multiview it falls back to two passes;
@@ -961,6 +986,4 @@ Design choices:
 - Windows VR is implemented (WGL binding; loader or registry runtime lookup) but untested.
 
 **Buy/build mode: next steps.**
-- **Catalogue:** the tablet pages through a subcategory eight at a time; scrolling with the stick and a search
-  (with the VR keyboard) would help in big categories.
 - **Feedback:** the held object glides between tiles but there is no "pull" animation from where you picked it up.

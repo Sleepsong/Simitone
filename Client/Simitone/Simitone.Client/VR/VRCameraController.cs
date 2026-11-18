@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FSO.Common.Rendering.Framework.Model;
 using FSO.LotView;
 using FSO.LotView.Components;
@@ -224,18 +225,22 @@ namespace Simitone.Client.VR
 
         // ---- observer: stairs and furniture (set by the bridge, which has the game)
         /// <summary>
-        /// Where stairs at a tile on a floor lead: the centre of the end you're at, the centre of the other end, and
-        /// the other end's floor. Null if there are no stairs there.
+        /// Where stairs at a tile on a floor lead: the centre of the end you're at, the centre of the other end, the
+        /// other end's floor, and the way there through the stairs' tiles (tile centres, from the tile you're on to the
+        /// other end). Null if there are no stairs there.
         /// </summary>
-        public Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level)?> StairsAt;
+        public Func<Vector2, sbyte, (Vector2 from, Vector2 to, sbyte level, IReadOnlyList<Vector2> path)?> StairsAt;
         /// <summary>Whether furniture blocks a body this wide (radius, tiles) at a tile on a floor, as it blocks Sims.</summary>
         public Func<Vector2, sbyte, float, bool> ObjectBlocks;
         private bool StairsArmed = true;
-        /// <summary>A ride up or down stairs in progress (observer): along a line, from one floor's height to the other's.</summary>
+        /// <summary>
+        /// A ride up or down stairs in progress (observer): along the stairs' way (turns rounded off), from one floor's
+        /// height to the other's.
+        /// </summary>
         private sealed class StairRide
         {
-            public Vector2 From, To;
-            public float FromHeight, ToHeight, Duration, T;
+            public List<Vector2> Path;
+            public float Length, FromHeight, ToHeight, Duration, T;
             public sbyte Level;
         }
         private StairRide Ride;
@@ -569,7 +574,7 @@ namespace Simitone.Client.VR
             UpdateBlink(dt); // at full black this makes the blink's move
 
             // ---- turning (pivot around the head so the world rotates around you, not around the play space centre)
-            float turnX = (input != null && input.Active && !SuppressTurn ? input.Turn.X : 0) + KeyboardTurn;
+            float turnX = (input != null && input.Active && !SuppressTurn && !SimitoneVR.StickOnTablet ? input.Turn.X : 0) + KeyboardTurn;
             float yawDelta = 0;
             bool smoothTurn = false;
             if (settings.TurnMode == VRTurnMode.Snap && KeyboardTurn == 0)
@@ -1052,18 +1057,18 @@ namespace Simitone.Client.VR
 
         /// <summary>Your own standing eye height over the floor where you are (observer, or stepped out of the Sim).</summary>
         /// <summary>
-        /// One frame of a stair ride: carries the rig along the stairs (you can still move your head in the room) with
-        /// your height going from one floor to the other, eased in and out, and puts you on the new floor at the end.
-        /// Returns false once it's over.
+        /// One frame of a stair ride: carries the rig along the stairs' way, round any turns (you can still move your head
+        /// in the room, and you keep facing where you face: the ride doesn't turn you), with your height going from one
+        /// floor to the other, eased in and out, and puts you on the new floor at the end. Returns false once it's over.
         /// </summary>
         private bool UpdateStairRide(World world, float dt)
         {
             var ride = Ride;
             float Ease(float t) => t * t * (3 - 2 * t);
-            var before = Vector2.Lerp(ride.From, ride.To, Ease(ride.T));
+            var before = VRStairPath.At(ride.Path, Ease(ride.T) * ride.Length);
             ride.T = Math.Min(1, ride.T + dt / ride.Duration);
             var e = Ease(ride.T);
-            var after = Vector2.Lerp(ride.From, ride.To, e);
+            var after = VRStairPath.At(ride.Path, e * ride.Length);
             RigPosition.X += (after.X - before.X) * TileUnits;
             RigPosition.Z += (after.Y - before.Y) * TileUnits;
             FloorY = MathHelper.Lerp(ride.FromHeight, ride.ToHeight, e);
@@ -1312,7 +1317,7 @@ namespace Simitone.Client.VR
             }
             if (FreeFlight || SimAvatar == null) return;
             // from their head: a floor change means flying there
-            var turnY = active && !PlacementMode ? input.Turn.Y : 0;
+            var turnY = active && !PlacementMode && !SimitoneVR.StickOnTablet ? input.Turn.Y : 0;
             if (!FlightLatched && Math.Abs(turnY) > 0.8f)
             {
                 FlightLatched = true;
@@ -1340,7 +1345,7 @@ namespace Simitone.Client.VR
             HeadWorld = TrackingToWorld(headTrack);
             var active = input != null && input.Active;
             var move = MoveIntent;
-            var rise = active && !PlacementMode ? input.Turn.Y : 0;
+            var rise = active && !PlacementMode && !SimitoneVR.StickOnTablet ? input.Turn.Y : 0;
             if (Math.Abs(rise) < 0.25f) rise = 0;
             var look = head.Valid ? TrackingDirectionToWorld(Vector3.Transform(-Vector3.UnitZ, head.Orientation)) : Vector3.Forward;
             if (look.LengthSquared() > 1e-6f) look.Normalize();
@@ -1401,7 +1406,7 @@ namespace Simitone.Client.VR
             }
 
             // ---- floor changes (right stick up/down, PageUp/PageDown); while placing, the stick changes the reach
-            float turnY = input != null && input.Active && !(BuildMode && PlacementMode) ? input.Turn.Y : 0;
+            float turnY = input != null && input.Active && !(BuildMode && PlacementMode) && !SimitoneVR.StickOnTablet ? input.Turn.Y : 0;
             int levelChange = KeyboardLevel;
             KeyboardLevel = 0;
             if (!LevelLatched && Math.Abs(turnY) > 0.8f && Math.Abs(turnX) < 0.5f)
@@ -1440,24 +1445,33 @@ namespace Simitone.Client.VR
             else if (StairsArmed && move != Vector2.Zero && !BuildMode)
             {
                 StairsArmed = false; // until you've stepped off them
-                var (from, to, level) = stairs.Value;
-                // step off past the far end, onto a floor, in the direction the stairs go
-                var along = to - from;
+                var (from, to, level, way) = stairs.Value;
+                // step off past the far end, onto a floor, in the direction the stairs go at that end
+                var along = way != null && way.Count >= 2 ? way[way.Count - 1] - way[way.Count - 2] : to - from;
+                if (along.LengthSquared() < 1e-4f) along = to - from;
                 var step = along.LengthSquared() > 1e-4f ? Vector2.Normalize(along) * 0.9f : Vector2.Zero;
                 var destination = HasFloor(world, to + step, level) ? to + step : to;
                 if (settings.ObserverStairs == VRStairs.Ride)
                 {
-                    // ride there at walking speed (the vignette closes in as when the stick moves you)
+                    // ride there at walking speed (the vignette closes in as when the stick moves you), from where you
+                    // are along the stairs' tiles (the first is the one you're on), round their turns
+                    var points = new List<Vector2> { headTile };
+                    if (way != null) for (int i = 1; i < way.Count; i++) points.Add(way[i]);
+                    else points.Add(to);
+                    if (Vector2.DistanceSquared(points[points.Count - 1], destination) > 1e-4f) points.Add(destination);
+                    var path = VRStairPath.Round(points);
+                    var length = VRStairPath.Length(path);
                     var tilesPerSecond = Math.Max(0.5f, settings.MoveSpeed * Scale / TileUnits);
                     Ride = new StairRide
                     {
-                        From = headTile,
-                        To = destination,
+                        Path = path,
+                        Length = length,
                         FromHeight = FloorY,
                         ToHeight = FloorHeight(world, destination, level),
-                        Duration = MathHelper.Clamp(Vector2.Distance(headTile, destination) / tilesPerSecond, 0.8f, 4f),
+                        Duration = MathHelper.Clamp(length / tilesPerSecond, 0.8f, 5f),
                         Level = level
                     };
+                    if (path.Count > points.Count) SimitoneVR.Log($"stair ride round {path.Count - points.Count} point(s) of turns, {length:0.0} tiles");
                 }
                 else
                 {
@@ -1762,7 +1776,7 @@ namespace Simitone.Client.VR
             else if (PlacementMode)
             {
                 // (the stick scrolls the catalogue instead while you point at it)
-                var stickY = input != null && input.Active && !SimitoneVR.PanelPointerOnPanel ? input.Turn.Y : 0;
+                var stickY = input != null && input.Active && !SimitoneVR.PanelPointerOnPanel && !SimitoneVR.StickOnTablet ? input.Turn.Y : 0;
                 Reach = MathHelper.Clamp(Reach * (float)Math.Exp(stickY * 1.2f * dt), 1.5f, 18f);
 
                 var pos = TraceArc(world, PointerStart, PointerDirection * Reach * scale, PlayerLevel, ArcPoints, out ArcCount, out var landed);

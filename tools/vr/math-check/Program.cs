@@ -271,6 +271,70 @@ static class Program
                 $"largest difference from the height above the floor {worst:0.00000} units");
         }
 
+        // ---- the observer's stair ride: the way through the stairs' own tiles (VRStairPath), round any turns
+        {
+            System.Collections.Generic.List<Point> T(params (int x, int y)[] tiles)
+            {
+                var list = new System.Collections.Generic.List<Point>();
+                foreach (var (x, y) in tiles) list.Add(new Point(x, y));
+                return list;
+            }
+            string Show(System.Collections.Generic.IReadOnlyList<Vector2> path) => string.Join(" ", System.Linq.Enumerable.Select(path, p => $"({p.X:0.#},{p.Y:0.#})"));
+            bool InsideTiles(System.Collections.Generic.IReadOnlyList<Vector2> path, System.Collections.Generic.List<Point> tiles)
+            {
+                foreach (var p in path)
+                {
+                    var inside = false;
+                    foreach (var t in tiles) if (p.X >= t.X - 1e-3f && p.X <= t.X + 1 + 1e-3f && p.Y >= t.Y - 1e-3f && p.Y <= t.Y + 1 + 1e-3f) inside = true;
+                    if (!inside) return false;
+                }
+                return true;
+            }
+
+            var straight = VRStairPath.Tiles(T((3, 2), (3, 3), (3, 4), (3, 5)), new Point(3, 2), new Point(3, 5));
+            var straightRound = VRStairPath.Round(straight);
+            Check("stair ride: straight stairs go straight, end to end", straight.Count == 4 && straightRound.Count == 4
+                && Math.Abs(VRStairPath.Length(straightRound) - 3) < 1e-4f, Show(straightRound));
+
+            var lTiles = T((0, 0), (0, 1), (0, 2), (1, 2), (2, 2));
+            var l = VRStairPath.Tiles(lTiles, new Point(0, 0), new Point(2, 2));
+            var lRound = VRStairPath.Round(l);
+            var lLength = VRStairPath.Length(lRound);
+            Check("stair ride: stairs that turn (an L) are followed through their corner, rounded, inside their tiles",
+                l.Count == 5 && l[2] == new Vector2(0.5f, 2.5f) && lRound.Count > l.Count && InsideTiles(lRound, lTiles)
+                && lLength < 4 && lLength > Vector2.Distance(l[0], l[4]), $"{l.Count} tiles, rounded {lRound.Count} points, {lLength:0.00} tiles (corners {4:0} unrounded)");
+
+            var spiralTiles = T((5, 5), (6, 5), (6, 6), (5, 6));
+            var spiral = VRStairPath.Tiles(spiralTiles, new Point(5, 5), new Point(6, 5));
+            Check("stair ride: a 2x2 block with its ends side by side goes the long way round all four (a spiral)",
+                spiral.Count == 4 && spiral[1] == new Vector2(5.5f, 6.5f) && spiral[2] == new Vector2(6.5f, 6.5f) && spiral[3] == new Vector2(6.5f, 5.5f), Show(spiral));
+            var spiralBack = VRStairPath.Tiles(spiralTiles, new Point(6, 5), new Point(5, 5));
+            Check("stair ride: and the same way back down, reversed", spiralBack.Count == 4 && spiralBack[1] == new Vector2(6.5f, 6.5f)
+                && spiralBack[2] == new Vector2(5.5f, 6.5f), Show(spiralBack));
+            var diagonal = VRStairPath.Tiles(spiralTiles, new Point(5, 5), new Point(6, 6));
+            Check("stair ride: opposite corners of a block go the short way (two steps)", diagonal.Count == 3, Show(diagonal));
+
+            var gap = VRStairPath.Tiles(T((0, 0), (0, 2)), new Point(0, 0), new Point(0, 2));
+            Check("stair ride: no way through the tiles: straight from end to end", gap.Count == 2, Show(gap));
+            var same = VRStairPath.Tiles(T((4, 4)), new Point(4, 4), new Point(4, 4));
+            Check("stair ride: stairs on one tile (straight up): one point", same.Count == 1, Show(same));
+
+            var start = VRStairPath.At(lRound, 0);
+            var end = VRStairPath.At(lRound, lLength + 1);
+            var monotonic = true;
+            var last = 0f;
+            for (int i = 1; i <= 20; i++)
+            {
+                var p = VRStairPath.At(lRound, lLength * i / 20f);
+                var progress = Vector2.Distance(start, p);
+                // (along an L, the distance from the start only grows)
+                if (progress + 1e-3f < last) monotonic = false;
+                last = progress;
+            }
+            Check("stair ride: points along the way start and end at its ends and move steadily away", start == lRound[0]
+                && end == lRound[lRound.Count - 1] && monotonic, $"start {start}, end {end}");
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }
