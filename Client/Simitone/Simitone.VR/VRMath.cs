@@ -250,6 +250,29 @@ namespace Simitone.VR
             return new Vector2(local.X / width + 0.5f, 0.5f - local.Y / height);
         }
 
+        /// <summary>The point on a panel at a uv (as <see cref="PointOnPlane"/> gives it), in the panel's space (metres).</summary>
+        public static Vector3 PlanePoint(Vector2 uv, Vector3 position, Quaternion orientation, float width, float height)
+            => position + Vector3.Transform(new Vector3((uv.X - 0.5f) * width, (0.5f - uv.Y) * height, 0), orientation);
+
+        /// <summary>
+        /// One update of something you've just picked up in buy/build being pulled to where it goes (the game's positions:
+        /// tiles, Z up): where it's shown closes on <paramref name="target"/> at 9 per second (a third of the glide's speed),
+        /// and it rises while it's far off, by a third of the way still to go (at most 1.2 tiles), settling as it arrives;
+        /// in its first 0.3 s it also hops 0.3 tiles, as if lifted. Returns the rise (tiles). <paramref name="done"/> once it
+        /// has moved and arrived (within 0.05 tiles), or after 4 s.
+        /// </summary>
+        public static float PullStep(ref Vector3 shown, Vector3 target, ref float time, ref bool moved, float dt, out bool done)
+        {
+            time += dt;
+            if (Vector3.Distance(shown, target) > 0.5f) moved = true;
+            shown = target + (shown - target) * (float)Math.Exp(-dt * 9f);
+            var remaining = Vector3.Distance(shown, target);
+            var rise = Math.Min(1.2f, remaining / 3f);
+            if (time < 0.3f) rise += 0.3f * (float)Math.Sin(Math.PI * time / 0.3f);
+            done = (moved && remaining < 0.05f) || time > 4f;
+            return rise;
+        }
+
         /// <summary>A direction's tangents in a view (x / -z, y / -z); null if it points behind.</summary>
         public static Vector2? Tangents(in ViewFrustum view, Vector3 worldDirection)
         {

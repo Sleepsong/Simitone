@@ -110,6 +110,10 @@ namespace Simitone.Client.VR
             return true;
         }
 
+        /// <summary>Where a pixel of the panel is in your room (tracking space).</summary>
+        public Vector3 PixelToTracking(Vector2 pixel)
+            => VRMath.PlanePoint(new Vector2(pixel.X / Width, pixel.Y / Height), PanelPosition, PanelOrientation, WidthMetres, WidthMetres * Height / Width);
+
         /// <summary>The pixel a point (tracking space) is over, and how far in front of the panel it is (metres). False if it's off the panel.</summary>
         public bool PointAt(Vector3 point, out Vector2 pixel, out float distance)
         {

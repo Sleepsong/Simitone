@@ -122,6 +122,28 @@ namespace Simitone.Client.VR
         public static bool CatalogInHand => Settings.Catalogue == VRCatalogStyle.Hand;
         /// <summary>The catalogue tablet is in your hand now.</summary>
         public static bool TabletShown => Tablet?.Shown == true;
+
+        // what was just chosen on the tablet comes from there: where (tracking space), and when
+        private static Vector3 PullOrigin;
+        private static long PullAt = long.MinValue;
+
+        /// <summary>The tablet: something was chosen from it, at this point (tracking space), to be pulled out to the arc's end.</summary>
+        public static void PullFromTablet(Vector3 tracking)
+        {
+            PullOrigin = tracking;
+            PullAt = Stopwatch.GetTimestamp();
+        }
+
+        /// <summary>
+        /// The lot, when something new is held: where it was chosen on the tablet, if that was in the last second (once).
+        /// </summary>
+        public static bool TakePull(out Vector3 tracking)
+        {
+            tracking = PullOrigin;
+            var fresh = PullAt != long.MinValue && Stopwatch.GetTimestamp() - PullAt < Stopwatch.Frequency;
+            PullAt = long.MinValue;
+            return fresh;
+        }
         /// <summary>
         /// You're pointing at the catalogue tablet: the pointing hand's stick scrolls it, so nothing else uses that stick
         /// (floors, the arc's reach, flying, turning, turning what you hold).

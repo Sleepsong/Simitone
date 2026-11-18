@@ -15,6 +15,9 @@ namespace Simitone.Client.VR
     /// a skeleton of its own: the game's rest pose standing, the upper body bending at the base of the spine towards
     /// your head, the arms reaching for your hands (<see cref="VRSimArms"/>), the head left out (you look out of it).
     /// The feet stay put while you lean and step after you when you walk further; crouch and the body sinks.
+    /// Its hands take your hands' poses, the game's own (open, fist, pointing: a fist while you squeeze or pull the
+    /// trigger, pointing while the pointing hand's beam is on something), on a copy of the Sim's avatar of its own, so the
+    /// real Sim's hands are left as the game has them.
     /// Only for drawing: the real Sim keeps living in the house.
     /// </summary>
     public sealed class VRGiant
@@ -30,6 +33,14 @@ namespace Simitone.Client.VR
         private float BodyYaw;
         private bool Placed;
         private float StandingEye = 1.6f; // metres: the tallest your head has been lately
+        // the giant's own copy of the Sim's avatar (their look, with hands that take your poses), and what it was made
+        // from, to make it again if they change clothes
+        private SimAvatar Model;
+        private (Outfit head, Outfit body, Outfit hands, AppearanceType skin) ModelFrom;
+        private bool ModelChanged;
+        /// <summary>The giant's hand poses this frame (left, right).</summary>
+        public SimHandGesture LeftGesture { get; private set; }
+        public SimHandGesture RightGesture { get; private set; }
         /// <summary>The giant's world matrix this frame (model space to the lot's world).</summary>
         public Matrix World { get; private set; }
         /// <summary>Drawn this frame.</summary>
@@ -83,7 +94,53 @@ namespace Simitone.Client.VR
             Shown = Pose(Feet, BodyYaw, size, headBone,
                 camera.LeftHandValid ? camera.LeftWrist : (Vector3?)null, camera.LeftPoint,
                 camera.RightHandValid ? camera.RightWrist : (Vector3?)null, camera.RightPoint, camera.LeftRoll, camera.RightRoll);
+            // the hands: your poses (open while a hand isn't tracked)
+            UseModelOf(sim.Avatar as SimAvatar);
+            SetGestures(camera.LeftHandValid ? camera.LeftGesture : SimHandGesture.Idle,
+                camera.RightHandValid ? camera.RightGesture : SimHandGesture.Idle);
         }
+
+        /// <summary>
+        /// The giant's own copy of <paramref name="real"/> (made again when their clothes, head, hands or skin change).
+        /// Without one (not a Sim's avatar), the real one is drawn, with the hands it has.
+        /// </summary>
+        private void UseModelOf(SimAvatar real)
+        {
+            if (real == null) { Model = null; return; }
+            var from = (real.Head, real.Body, real.Handgroup, real.Appearance);
+            if (Model != null && from == ModelFrom) return;
+            try
+            {
+                Model = new SimAvatar(real) { HideHead = true };
+                ModelFrom = from;
+                ModelChanged = true;
+                LeftGesture = RightGesture = SimHandGesture.Idle; //(the copy starts open-handed)
+            }
+            catch (Exception e)
+            {
+                Model = null;
+                SimitoneVR.Log("the giant's hands: couldn't copy the Sim's avatar (" + e.Message + "); it has theirs");
+            }
+        }
+
+        /// <summary>
+        /// The giant's hand poses (on its own copy: changing one reloads that hand's mesh, so only on a change). Also used
+        /// by tools/vr/ui-check.
+        /// </summary>
+        public void SetGestures(SimHandGesture left, SimHandGesture right)
+        {
+            if (Model == null) return;
+            if (Model.LeftHandGesture != left) { Model.LeftHandGesture = left; ModelChanged = true; }
+            if (Model.RightHandGesture != right) { Model.RightHandGesture = right; ModelChanged = true; }
+            LeftGesture = left;
+            RightGesture = right;
+        }
+
+        /// <summary>The giant's own avatar, for tools/vr/ui-check (null until it has a Sim's).</summary>
+        public SimAvatar OwnModel => Model;
+
+        /// <summary>For tools/vr/ui-check: a copy of this Sim's avatar as the giant's own, as when it takes a Sim.</summary>
+        public void UseModelForCheck(SimAvatar real) => UseModelOf(real);
 
         /// <summary>
         /// The pose itself (world units): standing with its soles at <paramref name="feet"/>, facing <paramref name="yaw"/>,
@@ -177,14 +234,22 @@ namespace Simitone.Client.VR
         /// </summary>
         public void Draw(GraphicsDevice device, WorldState state)
         {
-            var model = Source?.Avatar;
-            if (!Shown || model == null || VRSimArms.SkelBonesField == null) return;
+            var real = Source?.Avatar;
+            if (!Shown || real == null || VRSimArms.SkelBonesField == null) return;
+            // its own copy (hands posed as yours), drawn as the real one's component draws it; else the real one
+            var model = (Avatar)Model ?? real;
+            if (Model != null && ModelChanged)
+            {
+                Model.StoreOnGPU(device); //(a hand pose the Sim hasn't used yet)
+                ModelChanged = false;
+            }
             var saved = VRSimArms.SkelBonesField.GetValue(model);
             var hideHead = model.HideHead;
             try
             {
                 VRSimArms.SkelBonesField.SetValue(model, Bones);
                 model.HideHead = true;
+                Source.Avatar = model;
                 device.DepthStencilState = DepthStencilState.Default;
                 device.BlendState = BlendState.AlphaBlend;
                 device.RasterizerState = RasterizerState.CullCounterClockwise;
@@ -197,6 +262,7 @@ namespace Simitone.Client.VR
             }
             finally
             {
+                Source.Avatar = real;
                 VRSimArms.SkelBonesField.SetValue(model, saved);
                 model.HideHead = hideHead;
                 device.RasterizerState = RasterizerState.CullNone;

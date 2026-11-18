@@ -191,7 +191,14 @@ namespace Simitone.Client.VR
                 {
                     Position = new Vector2(Left + 14 + (i % Columns) * (TileW + 12), GridTop + (i / Columns) * (TileH + 8))
                 };
-                tile.OnChosen += () => { Source?.ChooseItem(First + index); SearchTyping = false; Click(); }; //(the keyboard goes, to place it)
+                tile.OnChosen += () =>
+                {
+                    // (what you pick up comes out of the tile, to the arc's end: see VRLotWorld's pull)
+                    SimitoneVR.PullFromTablet(PixelToTracking(tile.Position + new Vector2(TileW / 2f, 74)));
+                    Source?.ChooseItem(First + index);
+                    SearchTyping = false; //(the keyboard goes, to place it)
+                    Click();
+                };
                 tile.OnHover += hover => { if (hover) { HoveredTile = index; Tick(); } else if (HoveredTile == index) HoveredTile = -1; };
                 Add(tile);
                 Tiles[i] = tile;

@@ -26,7 +26,9 @@ namespace Simitone.Client.VR
     ///    below, at once: on the tile under the hand or the nearest free one, reset as moving a Sim in The Sims resets
     ///    them (so they stay there rather than walking back to what they were doing), and moved by
     ///    <see cref="VMNetMoveObjectCmd"/> (which moves Sims in The Sims 1, as its "moveobjects" cheat does). If nowhere
-    ///    near is free, they stay where they were.
+    ///    near is free, they stay where they were. Each hand can hold a Sim (two at once), and you can pick another
+    ///    one up while the last one put down is still on its way there. A Sim in one hand and furniture in the other
+    ///    works too; furniture is one piece at a time (the game's object holder holds one).
     ///  - <b>the edge of the floor shown</b> (round its outside, where the walls below it end): you lift that floor off like
     ///    a dollhouse lid and see the one below (which is now the floor you play on). Let go of it near its place and it
     ///    goes back on; anywhere else (beside the house, on the ground) it stays there until you take it again. Changing
@@ -50,12 +52,20 @@ namespace Simitone.Client.VR
         private float TurnReference;
         private FSO.SimAntics.Entities.VMMultitileGroup CarriedGroup;
 
-        // Sims
-        private VMAvatar Lifted;
-        private int SimHand = -1;
-        private VMAvatar Dropping;
-        private LotTilePos DropTile;
-        private float CancelWait, MoveWait;
+        // Sims: the one in each hand, and those put down until the game has moved them there
+        private readonly VMAvatar[] Lifted = new VMAvatar[2];
+        private readonly float[] CancelWait = new float[2];
+        private sealed class Drop
+        {
+            public VMAvatar Sim;
+            public LotTilePos Tile;
+            public Vector3 Feet;
+            public float Wait;
+        }
+        private readonly System.Collections.Generic.List<Drop> Drops = new System.Collections.Generic.List<Drop>();
+        /// <summary>Whether a Sim is in a hand or on their way to where they were put down.</summary>
+        private bool Carried(VMAvatar sim) => sim != null && (Lifted[0] == sim || Lifted[1] == sim || Drops.Any(d => d.Sim == sim));
+        private bool AnySims => Lifted[0] != null || Lifted[1] != null || Drops.Count > 0;
 
         // the floor lifted off like a lid
         private int LidHand = -1;
@@ -203,18 +213,17 @@ namespace Simitone.Client.VR
                 }
             }
 
-            // a Sim (live mode: in buy and build the game is paused, and they couldn't be moved)
-            if (lc.LiveMode && Lifted == null && Dropping == null)
+            // a Sim (live mode: in buy and build the game is paused, and they couldn't be moved); not one already in the
+            // other hand or on their way down
+            if (lc.LiveMode && Lifted[hand] == null)
             {
-                var sim = SimAt(screen.vm, camera, point, reach);
+                var sim = SimAt(screen.vm, camera, point, reach, Carried);
                 if (sim != null)
                 {
-                    Lifted = sim;
-                    SimHand = hand;
-                    CancelWait = 0;
+                    Lifted[hand] = sim;
+                    CancelWait[hand] = 0;
                     StopActions(screen.vm, sim);
-                    world.LiftedSim = sim.WorldUI as AvatarComponent;
-                    world.LiftedFeet = point - Vector3.Up * SimHang;
+                    ShowSims(world, camera);
                     HITVM.Get()?.PlaySoundEvent(UISounds.ObjectRotate);
                     Buzz(hand, input, 0.4f, 0.04f);
                     SimitoneVR.Log("dollhouse: picked up " + sim.Name);
@@ -242,7 +251,7 @@ namespace Simitone.Client.VR
             }
             // the edge of the floor shown (or of the one already off): lift it off
             // (not while carrying something else: it's yours, whichever floor it came from)
-            if (LidHand < 0 && FurnitureStep == Step.None && Lifted == null && Dropping == null && camera.AtLidEdge(world, point))
+            if (LidHand < 0 && FurnitureStep == Step.None && !AnySims && camera.AtLidEdge(world, point))
             {
                 camera.TakeLid(world, point);
                 if (camera.LidFloor > 0)
@@ -267,7 +276,7 @@ namespace Simitone.Client.VR
                         FinishFurniture(screen, world, camera); // let go before it was picked up
                     break;
                 case Hold.Sim:
-                    if (hand == SimHand) PutDownSim(screen.vm, world, camera, hand);
+                    if (Lifted[hand] != null) PutDownSim(screen.vm, world, camera, hand);
                     break;
                 case Hold.Lid:
                     if (hand != LidHand) break;
@@ -295,12 +304,12 @@ namespace Simitone.Client.VR
                 if (holder?.Holding != null && FurnitureStep >= Step.Press) holder.Cancel();
                 FinishFurniture(screen, world, camera);
             }
-            if (Lifted != null || Dropping != null)
+            if (AnySims)
             {
-                Lifted = Dropping = null;
-                SimHand = -1;
-                if (world != null) world.LiftedSim = null;
+                Lifted[0] = Lifted[1] = null;
+                Drops.Clear();
             }
+            world?.LiftedSims.Clear();
         }
 
         // ------------------------------------------------------------------ what a hand is on
@@ -309,13 +318,14 @@ namespace Simitone.Client.VR
         /// The Sim a hand is on (as the game's 3D picking sees Sims: a box around the middle of their body), on the
         /// floor shown or below it.
         /// </summary>
-        private static VMAvatar SimAt(VM vm, VRCameraController camera, Vector3 point, float reach)
+        private static VMAvatar SimAt(VM vm, VRCameraController camera, Vector3 point, float reach, Func<VMAvatar, bool> skip = null)
         {
             VMAvatar best = null;
             var bestDistance = float.MaxValue;
             foreach (var entity in vm.Context.ObjectQueries.Avatars)
             {
                 if (!(entity is VMAvatar avatar) || avatar.Dead || avatar.Position == LotTilePos.OUT_OF_WORLD) continue;
+                if (skip != null && skip(avatar)) continue;
                 if (avatar.Position.Level > camera.PlayerLevel || !(avatar.WorldUI is AvatarComponent component) || !component.Visible) continue;
                 var pelvis = component.GetPelvisPosition() * VRCameraController.TileUnits;
                 var centre = new Vector3(pelvis.X, pelvis.Z, pelvis.Y);
@@ -495,39 +505,57 @@ namespace Simitone.Client.VR
         private void UpdateSims(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input, float dt)
         {
             var vm = screen.vm;
-            if (Lifted != null)
+            for (int hand = 0; hand < 2; hand++)
             {
-                if (Lifted.Dead || SimHand < 0) { Lifted = null; world.LiftedSim = null; }
-                else if (Vector3.Distance(RoomHandPoint(input, SimHand), SimitoneVR.HeadPoseTracking().Position) < 0.2f)
-                    HopInto(screen, world, camera, input);
-                else
+                var sim = Lifted[hand];
+                if (sim == null) continue;
+                if (sim.Dead) Lifted[hand] = null;
+                else if (Vector3.Distance(RoomHandPoint(input, hand), SimitoneVR.HeadPoseTracking().Position) < 0.2f)
+                    HopInto(screen, world, camera, input, hand);
+                else KeepStopping(vm, sim, dt, hand);
+            }
+            var running = vm.SpeedMultiplier > 0; // (paused, the game can't move them yet)
+            for (int i = Drops.Count - 1; i >= 0; i--)
+            {
+                var drop = Drops[i];
+                if (drop.Sim.Dead) { Drops.RemoveAt(i); continue; }
+                if (running) drop.Wait += dt;
+                var pos = drop.Sim.Position;
+                if (pos.TileX == drop.Tile.TileX && pos.TileY == drop.Tile.TileY && pos.Level == drop.Tile.Level)
                 {
-                    world.LiftedSim = Lifted.WorldUI as AvatarComponent;
-                    world.LiftedFeet = camera.HandPoint(SimHand) - Vector3.Up * SimHang;
-                    KeepStopping(vm, Lifted, dt);
+                    HITVM.Get()?.PlaySoundEvent(UISounds.ObjectMovePlace);
+                    SimitoneVR.Log("dollhouse: put " + drop.Sim.Name + " down");
+                    Drops.RemoveAt(i);
+                }
+                else if (drop.Wait > 1.5f)
+                {
+                    // the game wouldn't put them there (in the way of something): they stay where they were
+                    HITVM.Get()?.PlaySoundEvent(UISounds.Error);
+                    SimitoneVR.Runtime?.Haptic(true, 0.6f, 0.1f);
+                    SimitoneVR.Log("dollhouse: couldn't put " + drop.Sim.Name + " there");
+                    Drops.RemoveAt(i);
                 }
             }
-            world.LiftedDangling = Lifted != null;
-            if (Dropping == null) return;
-            if (Dropping.Dead) { Dropping = null; world.LiftedSim = null; return; }
-            var running = vm.SpeedMultiplier > 0; // (paused, the game can't move them yet)
-            if (running) MoveWait += dt;
-            var pos = Dropping.Position;
-            if (pos.TileX == DropTile.TileX && pos.TileY == DropTile.TileY && pos.Level == DropTile.Level)
+            ShowSims(world, camera);
+        }
+
+        /// <summary>
+        /// Tells the lot where to draw the Sims you have: dangling from each hand (kicking their legs), and standing where
+        /// you put them down until the game has moved them there.
+        /// </summary>
+        private void ShowSims(VRLotWorld world, VRCameraController camera)
+        {
+            var shown = world.LiftedSims;
+            shown.Clear();
+            for (int hand = 0; hand < 2; hand++)
             {
-                HITVM.Get()?.PlaySoundEvent(UISounds.ObjectMovePlace);
-                SimitoneVR.Log("dollhouse: put " + Dropping.Name + " down");
-                Dropping = null;
-                world.LiftedSim = null;
+                if (Lifted[hand]?.WorldUI is AvatarComponent component)
+                    shown.Add(new VRLiftedSim { Sim = component, Feet = camera.HandPoint(hand) - Vector3.Up * SimHang, Dangling = true });
             }
-            else if (MoveWait > 1.5f)
+            foreach (var drop in Drops)
             {
-                // the game wouldn't put them there (in the way of something): they stay where they were
-                HITVM.Get()?.PlaySoundEvent(UISounds.Error);
-                SimitoneVR.Runtime?.Haptic(true, 0.6f, 0.1f);
-                SimitoneVR.Log("dollhouse: couldn't put " + Dropping.Name + " there");
-                Dropping = null;
-                world.LiftedSim = null;
+                if (drop.Sim.WorldUI is AvatarComponent component)
+                    shown.Add(new VRLiftedSim { Sim = component, Feet = drop.Feet, Dangling = false });
             }
         }
 
@@ -535,15 +563,17 @@ namespace Simitone.Client.VR
         /// You brought the Sim you're holding up to your face: you become them (one of your family: they're selected and
         /// you play as them, in first person), or, for anyone else, the observer standing beside them.
         /// </summary>
-        private void HopInto(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input)
+        private void HopInto(TS1GameScreen screen, VRLotWorld world, VRCameraController camera, VRInput input, int hand)
         {
-            var sim = Lifted;
+            var sim = Lifted[hand];
             var vm = screen.vm;
-            Holds[SimHand] = Hold.None; // (letting go of the grip afterwards does nothing)
-            Buzz(SimHand, input, 0.5f, 0.06f);
-            Lifted = null;
-            SimHand = -1;
-            world.LiftedSim = null;
+            Holds[hand] = Hold.None; // (letting go of the grip afterwards does nothing)
+            Buzz(hand, input, 0.5f, 0.06f);
+            Lifted[hand] = null;
+            // (a Sim in the other hand goes back where they were: you're leaving the dollhouse)
+            var other = 1 - hand;
+            if (Lifted[other] != null) { Lifted[other] = null; Holds[other] = Hold.None; }
+            ShowSims(world, camera);
             var family = vm.TS1State?.CurrentFamily;
             if (family != null && family.RuntimeSubset.Contains(sim.Object.OBJ.GUID))
             {
@@ -563,9 +593,9 @@ namespace Simitone.Client.VR
         /// <summary>Lets go of a Sim over the floor below the hand: they're drawn standing there until the game moves them.</summary>
         private void PutDownSim(VM vm, VRLotWorld world, VRCameraController camera, int hand)
         {
-            var sim = Lifted;
-            Lifted = null;
-            SimHand = -1;
+            var sim = Lifted[hand];
+            Lifted[hand] = null;
+            ShowSims(world, camera);
             if (sim == null) return;
             var point = camera.HandPoint(hand);
             var tile = new Vector2(point.X, point.Z) / VRCameraController.TileUnits;
@@ -573,7 +603,6 @@ namespace Simitone.Client.VR
             if (bp == null || tile.X < 1 || tile.Y < 1 || tile.X >= bp.Width - 1 || tile.Y >= bp.Height - 1)
             {
                 // off the lot: they stay where they were
-                world.LiftedSim = null;
                 SimitoneVR.Runtime?.Haptic(true, 0.6f, 0.1f);
                 return;
             }
@@ -581,18 +610,17 @@ namespace Simitone.Client.VR
             var level = camera.PlayerLevel;
             while (level > 1 && !VRCameraController.HasFloor(world, tile, level)) level--;
             // where they can stand: the tile under the hand, else the nearest one free within two tiles
-            var spot = FreeSpot(vm, sim, tile, level);
+            var spot = FreeSpot(vm, sim, tile, level, Drops.Select(d => d.Tile));
             if (spot == null)
             {
-                world.LiftedSim = null;
                 HITVM.Get()?.PlaySoundEvent(UISounds.Error);
                 SimitoneVR.Runtime?.Haptic(true, 0.6f, 0.1f);
                 SimitoneVR.Log("dollhouse: nowhere free to put " + sim.Name + " there; they stay where they were");
                 return;
             }
-            DropTile = spot.Value;
-            var centre = new Vector2(DropTile.x / 16f, DropTile.y / 16f);
-            world.LiftedFeet = new Vector3(centre.X * VRCameraController.TileUnits, VRCameraController.FloorHeight(world, centre, level),
+            var dropTile = spot.Value;
+            var centre = new Vector2(dropTile.x / 16f, dropTile.y / 16f);
+            var feet = new Vector3(centre.X * VRCameraController.TileUnits, VRCameraController.FloorHeight(world, centre, level),
                 centre.Y * VRCameraController.TileUnits);
             // As The Sims does when you move a Sim (its "moveobjects" cheat): whatever they were doing is dropped, so they
             // stay where they're put instead of walking back to it. (The game runs on this thread, between its ticks.)
@@ -600,13 +628,13 @@ namespace Simitone.Client.VR
             vm.SendCommand(new VMNetMoveObjectCmd
             {
                 ObjectID = sim.ObjectID,
-                x = DropTile.x,
-                y = DropTile.y,
-                level = DropTile.Level,
+                x = dropTile.x,
+                y = dropTile.y,
+                level = dropTile.Level,
                 dir = sim.Direction
             });
-            Dropping = sim;
-            MoveWait = 0;
+            Drops.Add(new Drop { Sim = sim, Tile = dropTile, Feet = feet });
+            ShowSims(world, camera);
             HITVM.Get()?.PlaySoundEvent(UISounds.ObjectPlace);
         }
 
@@ -614,8 +642,9 @@ namespace Simitone.Client.VR
         /// A tile centre a Sim can be put on (the game's own test for placing them), the tile under the hand first, then
         /// the others within two tiles, nearest first. Null if none.
         /// </summary>
-        private static LotTilePos? FreeSpot(VM vm, VMAvatar sim, Vector2 tile, sbyte level)
+        private static LotTilePos? FreeSpot(VM vm, VMAvatar sim, Vector2 tile, sbyte level, System.Collections.Generic.IEnumerable<LotTilePos> taken)
         {
+            var takenTiles = taken.Select(t => (t.TileX, t.TileY, t.Level)).ToList(); //(where Sims on their way down will be)
             int tx = (int)Math.Floor(tile.X), ty = (int)Math.Floor(tile.Y);
             var candidates = new System.Collections.Generic.List<(int x, int y, float d)>();
             for (int dy = -2; dy <= 2; dy++)
@@ -624,6 +653,7 @@ namespace Simitone.Client.VR
             foreach (var (x, y, _) in candidates.OrderBy(c => c.d))
             {
                 var pos = new LotTilePos((short)(x * 16 + 8), (short)(y * 16 + 8), level);
+                if (takenTiles.Contains((pos.TileX, pos.TileY, pos.Level))) continue;
                 try
                 {
                     if (sim.PositionValid(pos, sim.Direction, vm.Context, VMPlaceRequestFlags.UserPlacement).Status == VMPlacementError.Success)
@@ -635,11 +665,11 @@ namespace Simitone.Client.VR
         }
 
         /// <summary>Cancels what a Sim is doing or has queued, again every so often (free will finds them things to do).</summary>
-        private void KeepStopping(VM vm, VMAvatar sim, float dt)
+        private void KeepStopping(VM vm, VMAvatar sim, float dt, int hand)
         {
-            CancelWait -= dt;
-            if (CancelWait > 0) return;
-            CancelWait = 1.5f;
+            CancelWait[hand] -= dt;
+            if (CancelWait[hand] > 0) return;
+            CancelWait[hand] = 1.5f;
             StopActions(vm, sim);
         }
 

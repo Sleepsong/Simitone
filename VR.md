@@ -141,8 +141,10 @@ the house to see it from any side: the walls facing you are cut away room by roo
 *Dollhouse: Fit it to me* in the VR menu puts it back around you that way.
 - **Your body** is your selected Sim's, at your size: look down and it's there, standing on the lot. Lean in and it
   bends forward at the spine with its feet where they were (walk further and they step after you); crouch and it
-  sinks; its arms reach where your hands are, and its hands are what pick things up. Its head isn't drawn (you look
-  out of it). The real Sim goes on living in the house. *Dollhouse body* in the VR menu (`DollhouseBody`) swaps it
+  sinks; its arms reach where your hands are, and its hands are what pick things up: they make a fist while you squeeze
+  the grip or pull the trigger, point while your pointing hand's beam is on something, and are open otherwise (the
+  game's own hand poses, on a copy of the Sim of its own, so the real one's hands are left alone). Its head isn't drawn
+  (you look out of it). The real Sim goes on living in the house. *Dollhouse body* in the VR menu (`DollhouseBody`) swaps it
   for just the controllers.
 - **Pointing** works as everywhere: point at a Sim or an object and pull the trigger for its pie menu, or at the
   floor for "Go Here".
@@ -156,8 +158,9 @@ the house to see it from any side: the walls facing you are cut away room by roo
 - **Sims:** put your hand on a Sim and squeeze to pick them up; they dangle from your hand. Let go over the floor
   where you want them: they're put there at once, on the tile under your hand or the nearest free one, and what
   they were doing is dropped, as when you move a Sim in The Sims (its "moveobjects" cheat), so they stay put rather
-  than walking back to it. If nowhere near is free, they stay where they were. One Sim at a time; not in buy or
-  build mode, where the game is paused. They kick their legs while they dangle.
+  than walking back to it. If nowhere near is free, they stay where they were. A Sim in each hand if you like (and
+  another one picked up while the last one's being put down), or a Sim in one and furniture in the other; furniture
+  is one piece at a time. Not in buy or build mode, where the game is paused. They kick their legs while they dangle.
 - **Becoming a Sim:** bring the Sim you're holding up to your face and you're them: one of your family becomes
   the selected Sim and you play as them, in first person; anyone else, and you're the observer standing beside
   them. Or put your head into a room of the floor shown (below its ceiling) for half a second, and you're the
@@ -243,13 +246,15 @@ stay in first person. The game pauses, as usual, and you build on the floor you'
   - Right stick up/down throws the arc further or nearer.
   - Right stick left/right turns the object 90 degrees.
 - **Moving existing objects:** point the straight beam at an object (green when you're on one) and pull the
-  trigger to pick it up, gravity-gun style; it stays where it is until you aim the arc somewhere else.
+  trigger to pick it up, gravity-gun style: it hops up off the floor and stays there until you aim the arc somewhere
+  else, then it's pulled there, rising as it flies and settling as it lands.
 - **Cancel and sell:** the right grip puts it back or cancels (as Escape does), and B sells or deletes what you're
   holding.
 - **Build tools** work the same way: walls, floors, wallpaper, terrain, doors and windows. Pick the tool in the
   catalogue, then aim the arc at the floor; walls and floors are dragged by holding the trigger while you sweep the
   arc.
-- **Gliding:** what you hold glides from tile to tile as you sweep the arc, rather than jumping.
+- **Gliding:** what you hold glides from tile to tile as you sweep the arc, rather than jumping. Something you pick
+  off the tablet flies out of its tile to the arc's end the same way, rather than appearing there.
 - **Picked up from the lot:** the tablet shows what it is and what it sells for, as the game's pickup panel does,
   with **Sell** (or Delete) and **Put back**.
 - **Other floors:** the floor buttons at the top of the tablet change the floor you build on at any time, even while
@@ -648,6 +653,9 @@ instead of 3, so a tile is about 2 cm and the eyes' separation, the controllers 
   (`VRLotWorld.HeldLift`, with the glide), and the placement line runs from the hand to the floor.
 - **Sims:** lifting one cancels what they're doing (again every 1.5 s, as free will finds them things to do); they're
   drawn hanging from the hand, out of their seat if they're in one (`VRLotWorld.ApplyLift`, put back after drawing).
+  Each hand holds its own (`VRDollhouse.Lifted`), and those put down wait in a list until the game has moved them
+  (`Drops`; a tile one of them is going to isn't offered to the next); the lot draws them all (`VRLotWorld.LiftedSims`),
+  each dangling one kicking with its own `VRSimArms`.
   Let go, and they're drawn standing on the tile below until they've stopped (nothing left in their queue, not
   seated; or after 6 s of game time), then `VMNetMoveObjectCmd` moves them: in The Sims 1 it moves Sims too. If they
   aren't there shortly after, it didn't work, and they're shown where they really are. A dangling Sim's legs swing
@@ -754,10 +762,24 @@ Design choices:
   Soft's `ALC_SOFT_HRTF`, switched on with `alcResetDeviceSOFT` on MonoGame's own device, found by reflection
   (`OpenALSoundController._device`, `MonoGame.OpenAL.AL.NativeLibrary`); MonoGame's OpenAL Soft (1.23) has a built-in
   HRTF data set. When VR stops, it goes back to OpenAL's own choice.
+  OpenAL only places mono sounds: a stereo source plays as it is, wherever it is. So while sounds are placed, FreeSO's
+  sound VM asks for a placeable copy of each sound that has an owner as it starts a note (`HITThread.PlacedVariant`):
+  for a stereo one, `VRAudio.PlaceableCopy` reads the sound's file again (`TS1Audio.GetSFXData`), mixes its two sides
+  to mono (`VRSoundMix`, 8- or 16-bit PCM) and keeps the copy for the session; mono ones (most) play as they are. Music
+  and the interface's sounds (no owner) stay stereo.
 - **Held objects glide (`VRLotWorld.ApplyGlide`).** The object holder puts what you hold on the tile under the
   cursor every update. Only while the eyes are drawn, its parts are shown part of the way there from where they
   were drawn last (closing the gap in about a tenth of a second), and put back straight after, so the game never
-  sees them anywhere else.
+  sees them anywhere else. Something newly in hand is pulled instead (`VRMath.PullStep`): it closes the gap at a
+  third of that speed and rises by a third of the distance still to go (up to 1.2 tiles), with a 0.3-tile hop in its
+  first 0.3 s, until it has moved and arrived. Chosen on the tablet, it starts from the tile's point in the world (the
+  tablet's pixel to your room with `VRMath.PlanePoint`, then to the lot), so it flies out of the tablet. Not in the
+  dollhouse, where your hand carries it.
+- **The giant's hands (`VRGiant`).** The giant is drawn from its own copy of the Sim's avatar (FreeSO's `SimAvatar`
+  copy, made again if their clothes change), whose hand poses (`LeftHandGesture`, `RightHandGesture`: open, fist,
+  pointing) are set from your hands as your Sim's are when you steer them, only when they change (a change reloads
+  the hand's mesh, uploaded before it's drawn). The real Sim's avatar component draws it, with the copy put in for
+  the draw.
 - **Stair ride.** Walking onto stairs as the observer starts a ride from where you are to just past their far end,
   eased in and out, at walking speed: the rig carries you (you can still move your head) while your height goes from
   one floor's to the other's, and the floor you're on changes halfway. Gravity waits until it's over. The way goes
@@ -833,7 +855,7 @@ Design choices:
   Khronos C headers (169 checks). With `OPENXR_INCLUDE` set to a folder of newer headers (e.g. OpenXR-SDK's
   `include`, 1.1.4x or later) it also checks the render model structs (203 checks).
 - `tools/vr/math-check` (`dotnet run -c Release`) checks the buy/build cursor maths without a GPU (and the stair
-  ride's way, below):
+  ride's way, the pull, and stereo sounds mixed to mono, below):
   - the shifted projection unprojects the mouse pixel onto the aim point, to within 3 mm;
   - the picking camera reproduces the controller ray;
   - the arc solver lands on a grabbed object;
@@ -849,7 +871,12 @@ Design choices:
   - the stair ride's way (`VRStairPath`): straight stairs go straight; an L is followed through its corner, rounded,
     staying inside its tiles and shorter than the corner but longer than a straight line; a 2x2 block with its ends
     side by side goes round all four, and the same way back reversed; opposite corners go the short way; no way
-    through the tiles goes straight, and one tile is one point; points along the way start and end at its ends.
+    through the tiles goes straight, and one tile is one point; points along the way start and end at its ends;
+  - a tablet pixel's point in the room (`VRMath.PlanePoint`) lands back on that pixel;
+  - the pull (`VRMath.PullStep`): from the tablet, five tiles off, it rises on the way (to 1.3 tiles) and lands in about
+    half a second; grabbed off the lot, it hops 0.3 tiles, stays until aimed elsewhere, then is pulled over;
+  - `VRSoundMix`: 16-bit stereo becomes mono, each sample the average of its sides; 8-bit stereo becomes 16-bit mono;
+    a mono file, and a broken one, are left alone.
 - `tools/vr/render-check/run.sh [dir]` renders the real vignette and blink overlay, on a headset-like asymmetric
   field of view, to a PNG file under Xvfb.
 - `tools/vr/ui-check/run.sh <published Simitone> [dir]` renders every VR panel with Simitone's real UI (its fonts,
@@ -900,11 +927,12 @@ Design choices:
   Simitone's own controller models (3 checks): each headset gets its controllers' model, all ten (five sets, each
   hand) load and draw, and their triggers, grips, sticks and buttons move (image: `controllers-bundled.png`).
 
-  3D sound (7 checks), with OpenAL Soft playing into a WAV file (`run.sh` sets that up): HRTF switches on through
+  3D sound (10 checks), with OpenAL Soft playing into a WAV file (`run.sh` sets that up): HRTF switches on through
   `VRAudio` on MonoGame's device ("Default HRTF"); a noise burst placed to the left is louder and brighter in the
   left ear, and the other way round; behind you it is duller than in front (HRTF's spectral cue; without HRTF they
-  differ only in level); and inside OpenAL's reference distance, where `VRAudio` puts sounds, the level is the
-  game's own.
+  differ only in level); inside OpenAL's reference distance, where `VRAudio` puts sounds, the level is the
+  game's own; and the same burst as a stereo sound placed to the left is in both ears alike (not placed), while its
+  mono copy (a stereo WAV file mixed down by `VRSoundMix`) is louder and brighter on the left.
 
   It needs only Simitone's own `Content` folder from a published build, not The Sims.
 - `tools/vr/smoke-test/run-monado.sh` opens a MonoGame DesktopGL window under Xvfb, starts a session on the
@@ -949,9 +977,10 @@ Design choices:
     too; how a Sim takes being reset mid-action (carrying something, say) is untested;
   - the giant is posed from the game's rest skeleton, assumed to be a standing pose (untested against the game's own:
     if it isn't, its legs will show it);
-    it has no hand gestures, and its size follows your standing height from the headset (`FallbackEyeHeight` without
-    a floor-level tracking space);
-  - only one Sim and one piece of furniture can be carried at a time;
+    its hand poses are the game's three (open, fist, pointing), untested on the game's own hand meshes (they need The
+    Sims), and its size follows your standing height from the headset (`FallbackEyeHeight` without a floor-level
+    tracking space);
+  - furniture is carried one piece at a time (the game's object holder holds one); Sims, one in each hand;
   - the lifted floor (the lid) is drawn by drawing the lot a second time, so it costs about that much more while a
     floor is off; it isn't drawn at all without single-pass stereo; its lights are as they were when it came off;
     a roof isn't part of it (the dollhouse hides roofs);
@@ -967,8 +996,10 @@ Design choices:
   (`ValveSoftware/Unity`, `ValveOpenXRRenderModelFeature`). Simitone's own models are tested offscreen; picking them
   by the interaction profile is untested on Meta's runtime (it may report a newer Touch profile for some
   controllers, which picks the right model too). Valve Index models aren't included (12 MB; SteamVR provides them).
-- **3D sound** is tested by measuring OpenAL Soft's output, not by ear in a headset. Only mono sounds are placed
-  (most of the game's); stereo ones play as they are. On the Steam Frame the system's OpenAL is used: if it has no
+- **3D sound** is tested by measuring OpenAL Soft's output, not by ear in a headset. Stereo sounds are placed as mono
+  copies, made from their files the first time each plays (untested on the game's own files, which need The Sims; a
+  file it can't read plays as it is), from the next note they play after you put the headset on. On the Steam Frame
+  the system's OpenAL is used: if it has no
   HRTF data, the VR menu says HRTF is off and sounds are still placed, with plain stereo panning.
 - **The observer stair ride** follows stairs through their tiles, which is right for straight stairs and those that
   turn on the grid; a spiral is taken to be a 2x2 block (going round it once), and stairs with other shapes go the
@@ -986,4 +1017,4 @@ Design choices:
 - Windows VR is implemented (WGL binding; loader or registry runtime lookup) but untested.
 
 **Buy/build mode: next steps.**
-- **Feedback:** the held object glides between tiles but there is no "pull" animation from where you picked it up.
+- **The pull's** speeds and heights are first guesses, to tune in a headset.

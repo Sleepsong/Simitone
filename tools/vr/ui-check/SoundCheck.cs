@@ -44,14 +44,29 @@ static class SoundCheck
             pcm[2 * i + 1] = (byte)(v >> 8);
         }
         using var sfx = new SoundEffect(pcm, 44100, AudioChannels.Mono);
-        SoundEffect.DistanceScale = 100; // (as FreeSO's HITSound.Set3D sets it)
-        // the listener looks along -Z; one burst left, right, in front, behind, then in front nearer and much further
-        var listener = new AudioListener { Position = new Vector3(10, 5, 20), Forward = -Vector3.UnitZ, Up = Vector3.UnitY };
-        var places = new[] { new Vector3(-50, 0, 0), new Vector3(50, 0, 0), new Vector3(0, 0, -50), new Vector3(0, 0, 50),
-            new Vector3(0, 0, -25), new Vector3(0, 0, -400) };
-        foreach (var place in places)
+        // the same noise as a stereo sound (both sides alike), and as a stereo WAV file mixed down to mono by VRSoundMix,
+        // as VRAudio does for the game's stereo sounds
+        var stereoPcm = new byte[n * 4];
+        for (int i = 0; i < n; i++)
         {
-            var instance = sfx.CreateInstance();
+            stereoPcm[4 * i] = stereoPcm[4 * i + 2] = pcm[2 * i];
+            stereoPcm[4 * i + 1] = stereoPcm[4 * i + 3] = pcm[2 * i + 1];
+        }
+        using var stereo = new SoundEffect(stereoPcm, 44100, AudioChannels.Stereo);
+        var mixed = Simitone.VR.VRSoundMix.MonoFromStereoWav(StereoWav(stereoPcm, 44100), out var mixedRate);
+        Check("a stereo WAV file mixes down to mono, as long as it was", mixed != null && mixed.Length == pcm.Length && mixedRate == 44100,
+            mixed == null ? "nothing" : $"{mixed.Length / 2} samples at {mixedRate} Hz");
+        if (mixed == null) return Failures;
+        using var mono = new SoundEffect(mixed, 44100, AudioChannels.Mono);
+        SoundEffect.DistanceScale = 100; // (as FreeSO's HITSound.Set3D sets it)
+        // the listener looks along -Z; one burst left, right, in front, behind, then in front nearer and much further;
+        // then the stereo one on the left, and its mono copy on the left
+        var listener = new AudioListener { Position = new Vector3(10, 5, 20), Forward = -Vector3.UnitZ, Up = Vector3.UnitY };
+        var places = new[] { (sfx, new Vector3(-50, 0, 0)), (sfx, new Vector3(50, 0, 0)), (sfx, new Vector3(0, 0, -50)), (sfx, new Vector3(0, 0, 50)),
+            (sfx, new Vector3(0, 0, -25)), (sfx, new Vector3(0, 0, -400)), (stereo, new Vector3(-50, 0, 0)), (mono, new Vector3(-50, 0, 0)) };
+        foreach (var (sound, place) in places)
+        {
+            var instance = sound.CreateInstance();
             var emitter = new AudioEmitter { Position = listener.Position + place };
             instance.Volume = 1;
             instance.Play();
@@ -66,8 +81,8 @@ static class SoundCheck
 
         var (left, right) = ReadWav(wav);
         var bursts = Bursts(left, right, 441);
-        Check("six bursts recorded", bursts.Count == 6, $"{bursts.Count} found in {left.Length / 44100.0:0.0} s");
-        if (bursts.Count != 6) return Failures;
+        Check("eight bursts recorded", bursts.Count == 8, $"{bursts.Count} found in {left.Length / 44100.0:0.0} s");
+        if (bursts.Count != 8) return Failures;
         var m = new List<(double l, double r, double hfL, double hfR)>();
         foreach (var (a, b) in bursts) m.Add((Rms(left, a, b), Rms(right, a, b), Bright(left, a, b), Bright(right, a, b)));
         Check("on your left: louder and brighter in the left ear", m[0].l > 3 * m[0].r && m[0].hfL > 2 * m[0].hfR,
@@ -80,7 +95,24 @@ static class SoundCheck
             $"{m[4].l:0.0000} at 25, {m[2].l:0.0000} at 50 (VRAudio places sounds at 50)");
         Check("...and beyond it OpenAL would make it quieter", m[5].l > 0.15 * m[2].l && m[5].l < 0.35 * m[2].l,
             $"{m[5].l / m[2].l:0.00} of it at 400");
+        Check("a stereo sound isn't placed: on your left, both ears alike", Math.Abs(m[6].l - m[6].r) < 0.1 * m[6].l,
+            $"left {m[6].l:0.000} / right {m[6].r:0.000}");
+        Check("...but its mono copy is: louder and brighter in the left ear", m[7].l > 3 * m[7].r && m[7].hfL > 2 * m[7].hfR,
+            $"left {m[7].l:0.000} / right {m[7].r:0.000}");
         return Failures;
+    }
+
+    /// <summary>A 16-bit stereo PCM WAV file's bytes, as the game's sound files are decoded.</summary>
+    static byte[] StereoWav(byte[] pcm, int rate)
+    {
+        using var stream = new MemoryStream();
+        using var w = new BinaryWriter(stream);
+        w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + pcm.Length); w.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+        w.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write((short)2); w.Write(rate);
+        w.Write(rate * 4); w.Write((short)4); w.Write((short)16);
+        w.Write(System.Text.Encoding.ASCII.GetBytes("data")); w.Write(pcm.Length); w.Write(pcm);
+        w.Flush();
+        return stream.ToArray();
     }
 
     /// <summary>The two channels of a WAV file (16-bit PCM or 32-bit float, as OpenAL Soft writes them).</summary>

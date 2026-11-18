@@ -335,6 +335,87 @@ static class Program
                 && end == lRound[lRound.Count - 1] && monotonic, $"start {start}, end {end}");
         }
 
+        // ---- a pixel on a panel to your room (VRMath.PlanePoint), the inverse of PointOnPlane: where a tablet tile is
+        {
+            var position = new Vector3(0.3f, 1.1f, -0.4f);
+            var orientation = Quaternion.CreateFromYawPitchRoll(0.4f, -0.9f, 0.2f);
+            float worst = 0;
+            foreach (var uv in new[] { new Vector2(0, 0), new Vector2(1, 1), new Vector2(0.25f, 0.8f), new Vector2(0.5f, 0.5f) })
+            {
+                var point = VRMath.PlanePoint(uv, position, orientation, 0.26f, 0.28f);
+                var back = VRMath.PointOnPlane(point, position, orientation, 0.26f, 0.28f, out var off);
+                worst = Math.Max(worst, Vector2.Distance(back, uv) + Math.Abs(off));
+            }
+            Check("panel: a pixel's point in the room lands back on that pixel, on the panel", worst < 1e-4f, $"worst {worst:0.000000}");
+        }
+
+        // ---- the pull of something just picked up in buy/build (VRMath.PullStep)
+        {
+            // from the tablet, 5 tiles off and 1 up: it rises on the way and lands on the arc's end
+            var pullTarget = new Vector3(20, 30, 0.2f);
+            var shown = pullTarget + new Vector3(-4, 3, 1);
+            float time = 0, peak = 0, arrived = -1;
+            var moved = false;
+            for (int i = 0; i < 300 && arrived < 0; i++)
+            {
+                var rise = VRMath.PullStep(ref shown, pullTarget, ref time, ref moved, 1 / 90f, out var done);
+                peak = Math.Max(peak, rise);
+                if (done) arrived = time;
+            }
+            Check("pull: from the tablet it rises on the way and lands on the arc's end in under a second", arrived > 0.3f && arrived < 1f
+                && peak > 1f && peak <= 1.5f && Vector3.Distance(shown, pullTarget) < 0.05f, $"arrived after {arrived:0.00} s, rose up to {peak:0.00} tiles");
+
+            // grabbed off the lot: it hops, then waits there until you aim it somewhere else, and is pulled there
+            pullTarget = new Vector3(10, 10, 0);
+            shown = pullTarget;
+            time = 0; peak = 0; moved = false;
+            var doneEarly = false;
+            for (int i = 0; i < 45; i++)
+            {
+                peak = Math.Max(peak, VRMath.PullStep(ref shown, pullTarget, ref time, ref moved, 1 / 90f, out var done));
+                doneEarly |= done;
+            }
+            var aimed = pullTarget + new Vector3(3, 0, 0);
+            arrived = -1;
+            var start = time;
+            for (int i = 0; i < 300 && arrived < 0; i++)
+            {
+                VRMath.PullStep(ref shown, aimed, ref time, ref moved, 1 / 90f, out var done);
+                if (done) arrived = time - start;
+            }
+            Check("pull: grabbed off the lot it hops about 0.3 tiles, stays until aimed elsewhere, then is pulled there",
+                peak > 0.25f && peak < 0.35f && !doneEarly && arrived > 0.2f && arrived < 1f, $"hop {peak:0.00} tiles, pulled over in {arrived:0.00} s");
+        }
+
+        // ---- stereo sounds mixed down to mono (VRSoundMix), so they can be placed in 3D
+        {
+            byte[] Wav(short channels, short bits, byte[] data)
+            {
+                var stream = new System.IO.MemoryStream();
+                var w = new System.IO.BinaryWriter(stream);
+                w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + data.Length); w.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+                w.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write(channels); w.Write(22050);
+                w.Write(22050 * channels * bits / 8); w.Write((short)(channels * bits / 8)); w.Write(bits);
+                w.Write(System.Text.Encoding.ASCII.GetBytes("data")); w.Write(data.Length); w.Write(data);
+                return stream.ToArray();
+            }
+            // 16 bits: (1000, -200) and (-30000, -30000)
+            var s16 = new byte[8];
+            BitConverter.GetBytes((short)1000).CopyTo(s16, 0); BitConverter.GetBytes((short)-200).CopyTo(s16, 2);
+            BitConverter.GetBytes((short)-30000).CopyTo(s16, 4); BitConverter.GetBytes((short)-30000).CopyTo(s16, 6);
+            var m16 = VRSoundMix.MonoFromStereoWav(Wav(2, 16, s16), out var rate16);
+            Check("sound: 16-bit stereo becomes mono, each sample the average of its sides", m16 != null && m16.Length == 4 && rate16 == 22050
+                && BitConverter.ToInt16(m16, 0) == 400 && BitConverter.ToInt16(m16, 2) == -30000,
+                m16 == null ? "nothing" : $"{BitConverter.ToInt16(m16, 0)}, {BitConverter.ToInt16(m16, 2)} at {rate16} Hz");
+            // 8 bits (unsigned, 128 silent): (200, 56) cancel out; (255, 255) is loud
+            var m8 = VRSoundMix.MonoFromStereoWav(Wav(2, 8, new byte[] { 200, 56, 255, 255 }), out _);
+            Check("sound: 8-bit stereo becomes 16-bit mono", m8 != null && m8.Length == 4 && BitConverter.ToInt16(m8, 0) == 0
+                && BitConverter.ToInt16(m8, 2) == 127 * 256, m8 == null ? "nothing" : $"{BitConverter.ToInt16(m8, 0)}, {BitConverter.ToInt16(m8, 2)}");
+            Check("sound: a mono file is left alone (it can be placed as it is), and a broken one too",
+                VRSoundMix.MonoFromStereoWav(Wav(1, 16, s16), out _) == null && VRSoundMix.MonoFromStereoWav(new byte[] { 1, 2, 3 }, out _) == null
+                && VRSoundMix.MonoFromStereoWav(null, out _) == null, "");
+        }
+
         Console.WriteLine(Failures == 0 ? "all VR cursor maths checks passed" : $"{Failures} failure(s)");
         return Failures == 0 ? 0 : 1;
     }

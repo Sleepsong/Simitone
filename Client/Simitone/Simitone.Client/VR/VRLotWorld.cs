@@ -8,6 +8,9 @@ using FSO.LotView.Utils.Camera;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
+using Simitone.VR;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Simitone.Client.VR
 {
@@ -40,24 +43,24 @@ namespace Simitone.Client.VR
         /// <summary>Set by the dollhouse while a hand carries what's held: how far above its floor to draw it (world units).</summary>
         public float HeldLift;
         /// <summary>
-        /// Set by the dollhouse: a Sim you've picked up (or just put down, until the game moves them there), and where
-        /// their feet are drawn (world units). Only how they're drawn: the game has them where they were until then.
+        /// Set by the dollhouse: the Sims you've picked up (one in each hand) or just put down (until the game moves them
+        /// there), where their feet are drawn (world units), and whether they dangle from your hand (kicking their legs).
+        /// Only how they're drawn: the game has them where they were until then.
         /// </summary>
-        public FSO.LotView.Components.AvatarComponent LiftedSim;
-        public Vector3 LiftedFeet;
-        /// <summary>Set by the dollhouse: the lifted Sim is dangling from your hand (they kick their legs).</summary>
-        public bool LiftedDangling;
-        private readonly VRSimArms Kicker = new VRSimArms();
+        public readonly List<VRLiftedSim> LiftedSims = new List<VRLiftedSim>();
+        /// <summary>Each dangling Sim's legs (their own: it keeps the game's pose to kick from), and how long they've kicked.</summary>
+        private readonly Dictionary<FSO.LotView.Components.AvatarComponent, (VRSimArms kicker, float time)> Kickers
+            = new Dictionary<FSO.LotView.Components.AvatarComponent, (VRSimArms, float)>();
         /// <summary>Set every update by the bridge: whose giant body you have in the dollhouse (null for none: the controllers).</summary>
         public FSO.LotView.Components.AvatarComponent GiantSim;
         private readonly VRGiant Giant = new VRGiant();
-        private float KickTime;
-        private FSO.LotView.Components.AvatarComponent LiftRestore;
-        private Vector3 LiftRestorePosition;
-        private FSO.LotView.Components.EntityComponent LiftRestoreContainer;
-        private int LiftRestoreSlot;
+        private readonly List<(FSO.LotView.Components.AvatarComponent sim, Vector3 position, FSO.LotView.Components.EntityComponent container, int slot)> LiftRestores
+            = new List<(FSO.LotView.Components.AvatarComponent, Vector3, FSO.LotView.Components.EntityComponent, int)>();
         private FSO.SimAntics.Entities.VMMultitileGroup GlideGroup;
         private Vector3 GlideShown;
+        // just picked up: pulled to where it goes (see VRMath.PullStep), for how long, and whether it's moved yet
+        private bool Pulling, PullMoved;
+        private float PullTime;
         private readonly System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent part, Vector3 position)> GlideRestore
             = new System.Collections.Generic.List<(FSO.LotView.Components.EntityComponent, Vector3)>();
         private readonly System.Collections.Generic.List<FSO.LotView.Components.EntityComponent> HiddenForLid
@@ -219,7 +222,7 @@ namespace Simitone.Client.VR
                 Controllers?.Prepare(device, VRCamera, SimitoneVR.Runtime);
                 ApplyGlide(SimitoneVR.FrameDelta);
                 ApplyLift();
-                if (LiftedSim != null && LiftedDangling) Kicker.Kick(LiftedSim, KickTime += SimitoneVR.FrameDelta);
+                KickLegs(SimitoneVR.FrameDelta);
                 Stereo.Render(cam, targets, State.OutsideColor, VRStereoRenderer.GazePoint(VRCamera), () =>
                 {
                     if (pass++ > 0) State.FramePerDraw = 0;
@@ -291,7 +294,7 @@ namespace Simitone.Client.VR
             cam.SetCustom(moved, projection);
             // what a hand holds below the lid (drawn where the hand is, already) isn't part of it, however high it's held
             HiddenForLid.Clear();
-            if (LiftedSim != null && LiftedSim.Visible) HiddenForLid.Add(LiftedSim);
+            foreach (var lifted in LiftedSims) if (lifted.Sim != null && lifted.Sim.Visible) HiddenForLid.Add(lifted.Sim);
             if (Held != null)
                 foreach (var obj in Held.Objects)
                     if (obj.WorldUI is FSO.LotView.Components.EntityComponent part && part.Visible && obj.Position.Level < floor) HiddenForLid.Add(part);
@@ -331,8 +334,11 @@ namespace Simitone.Client.VR
         /// What you hold in buy/build mode glides from tile to tile instead of jumping: the game puts it on the tile under
         /// the cursor every update, and only for drawing it is shown part of the way there from where it was drawn last,
         /// closing the gap within about a tenth of a second (<see cref="RestoreGlide"/> puts it back after drawing, so
-        /// the game never sees it anywhere else). All its tiles move together; a long jump (a new floor, a new object)
-        /// isn't smoothed.
+        /// the game never sees it anywhere else). All its tiles move together; a long jump (a new floor) isn't smoothed.
+        /// Something you've just picked up is pulled instead (<see cref="VRMath.PullStep"/>): from the tablet's tile you
+        /// chose it on, out to the arc's end, rising as it flies; or, grabbed off the lot with the beam, it hops up and is
+        /// pulled along at a third of the glide's speed the first time you aim it somewhere else. Not in the dollhouse,
+        /// where your hand carries it.
         /// </summary>
         private void ApplyGlide(float dt)
         {
@@ -342,13 +348,31 @@ namespace Simitone.Client.VR
             var basePart = baseObj?.WorldUI;
             if (basePart == null) { GlideGroup = null; return; }
             var target = basePart.Position;
-            if (group != GlideGroup || Vector3.Distance(target, GlideShown) > 6f || Math.Abs(target.Z - GlideShown.Z) > 0.5f)
+            var dollhouse = VRCamera?.InDollhouse ?? false;
+            if (group != GlideGroup)
             {
+                // just picked up: pulled to where it goes, from the tablet if it came from there
                 GlideGroup = group;
                 GlideShown = target;
+                Pulling = !dollhouse;
+                PullTime = 0;
+                PullMoved = false;
+                if (SimitoneVR.TakePull(out var tablet) && Pulling && VRCamera != null)
+                {
+                    var from = (VRCamera.TrackingToWorld(tablet) - VRCamera.CursorTarget) / VRCameraController.TileUnits;
+                    GlideShown = target + new Vector3(from.X, from.Z, from.Y); // (the game's positions: tiles, Z up)
+                }
             }
-            GlideShown = target + (GlideShown - target) * (float)Math.Exp(-dt * 30f);
-            var offset = GlideShown - target + new Vector3(0, 0, HeldLift / VRCameraController.TileUnits); // (in your hand, in the dollhouse)
+            else if (!Pulling && (Vector3.Distance(target, GlideShown) > 6f || Math.Abs(target.Z - GlideShown.Z) > 0.5f))
+                GlideShown = target;
+            var rise = 0f;
+            if (Pulling)
+            {
+                rise = VRMath.PullStep(ref GlideShown, target, ref PullTime, ref PullMoved, dt, out var done);
+                if (done) Pulling = false;
+            }
+            else GlideShown = target + (GlideShown - target) * (float)Math.Exp(-dt * 30f);
+            var offset = GlideShown - target + new Vector3(0, 0, rise + HeldLift / VRCameraController.TileUnits); // (in your hand, in the dollhouse)
             if (offset.LengthSquared() < 1e-6f) return;
             foreach (var obj in group.Objects)
             {
@@ -363,33 +387,51 @@ namespace Simitone.Client.VR
         {
             foreach (var (part, position) in GlideRestore) part.Position = position;
             GlideRestore.Clear();
-            if (LiftRestore != null)
+            for (int i = LiftRestores.Count - 1; i >= 0; i--)
             {
-                LiftRestore.Container = LiftRestoreContainer;
-                LiftRestore.ContainerSlot = LiftRestoreSlot;
-                LiftRestore.Position = LiftRestorePosition;
-                LiftRestore = null;
+                var (sim, position, container, slot) = LiftRestores[i];
+                sim.Container = container;
+                sim.ContainerSlot = slot;
+                sim.Position = position;
             }
+            LiftRestores.Clear();
         }
 
         /// <summary>
-        /// Draws a picked-up Sim where <see cref="LiftedFeet"/> says (out of their seat, if they're in one), until
+        /// Draws each picked-up Sim where <see cref="LiftedSims"/> says (out of their seat, if they're in one), until
         /// <see cref="RestoreGlide"/> puts them back after drawing.
         /// </summary>
         private void ApplyLift()
         {
-            var sim = LiftedSim;
-            if (sim == null || LotBlueprint == null) return;
-            LiftRestore = sim;
-            LiftRestorePosition = sim.StoredPosition;
-            LiftRestoreContainer = sim.Container;
-            LiftRestoreSlot = sim.ContainerSlot;
-            var x = LiftedFeet.X / VRCameraController.TileUnits;
-            var y = LiftedFeet.Z / VRCameraController.TileUnits;
-            // (the game adds the ground's height to a Sim's: take it off, so the feet are where they're meant to be)
-            var z = LiftedFeet.Y / VRCameraController.TileUnits - LotBlueprint.InterpAltitude(new Vector3(x, y, 0));
-            sim.Container = null;
-            sim.Position = new Vector3(x, y, z);
+            if (LotBlueprint == null) return;
+            foreach (var lifted in LiftedSims)
+            {
+                var sim = lifted.Sim;
+                if (sim == null) continue;
+                LiftRestores.Add((sim, sim.StoredPosition, sim.Container, sim.ContainerSlot));
+                var x = lifted.Feet.X / VRCameraController.TileUnits;
+                var y = lifted.Feet.Z / VRCameraController.TileUnits;
+                // (the game adds the ground's height to a Sim's: take it off, so the feet are where they're meant to be)
+                var z = lifted.Feet.Y / VRCameraController.TileUnits - LotBlueprint.InterpAltitude(new Vector3(x, y, 0));
+                sim.Container = null;
+                sim.Position = new Vector3(x, y, z);
+            }
+        }
+
+        /// <summary>Each Sim dangling from a hand kicks their legs (each with their own kick, started when picked up).</summary>
+        private void KickLegs(float dt)
+        {
+            foreach (var lifted in LiftedSims)
+            {
+                if (lifted.Sim == null || !lifted.Dangling) continue;
+                if (!Kickers.TryGetValue(lifted.Sim, out var kick)) kick = (new VRSimArms(), 0f);
+                kick.time += dt;
+                kick.kicker.Kick(lifted.Sim, kick.time);
+                Kickers[lifted.Sim] = kick;
+            }
+            // (those let go of start again next time)
+            foreach (var sim in Kickers.Keys.ToList())
+                if (!LiftedSims.Any(l => l.Sim == sim && l.Dangling)) Kickers.Remove(sim);
         }
 
         /// <summary>The controllers in your hands, when you're not in your Sim's body (where their hands are yours).</summary>
@@ -588,5 +630,15 @@ namespace Simitone.Client.VR
             IconEffect?.Dispose();
             base.Dispose();
         }
+    }
+
+    /// <summary>A Sim the dollhouse has picked up or put down, as the lot draws them (see <see cref="VRLotWorld.LiftedSims"/>).</summary>
+    public sealed class VRLiftedSim
+    {
+        public FSO.LotView.Components.AvatarComponent Sim;
+        /// <summary>Where their feet are drawn (world units).</summary>
+        public Vector3 Feet;
+        /// <summary>Dangling from a hand: they kick their legs.</summary>
+        public bool Dangling;
     }
 }

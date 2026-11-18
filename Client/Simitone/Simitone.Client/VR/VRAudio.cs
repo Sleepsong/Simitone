@@ -6,6 +6,7 @@ using FSO.HIT;
 using FSO.SimAntics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using Simitone.VR;
 
 namespace Simitone.Client.VR
 {
@@ -17,8 +18,10 @@ namespace Simitone.Client.VR
     /// inside OpenAL's reference distance, so OpenAL adds direction only and the game's volume stays as it was.
     ///
     /// With headphones (a headset), OpenAL Soft's HRTF turns that direction into binaural sound
-    /// (<see cref="SetHrtf"/>): you can tell front from back and up from down, not just left from right. Mono sounds
-    /// are placed (most of the game's); stereo ones play as they are.
+    /// (<see cref="SetHrtf"/>): you can tell front from back and up from down, not just left from right. OpenAL only
+    /// places mono sounds, so a stereo one that belongs to a Sim or an object is played as a mono copy (its two sides
+    /// mixed: <see cref="VRSoundMix"/>), made once from the sound's file and kept (<see cref="PlaceableCopy"/>, through
+    /// FreeSO's <see cref="HITThread.PlacedVariant"/>). Other sounds (music, the interface) stay as they are.
     ///
     /// MonoGame doesn't expose its OpenAL device, so it's found by reflection (<c>OpenALSoundController._device</c>,
     /// <c>MonoGame.OpenAL.AL.NativeLibrary</c>); if anything is missing, sound stays as the game plays it.
@@ -53,6 +56,7 @@ namespace Simitone.Client.VR
                 ReleaseAll();
                 return;
             }
+            HITThread.PlacedVariant = PlaceableCopy; //(stereo sounds as mono copies, from the next note they play)
 
             // the listener: your head, in the lot's 3D units
             var listener = hit.Listener;
@@ -90,9 +94,45 @@ namespace Simitone.Client.VR
         /// <summary>Gives every placed sound back to the game's left/right panning.</summary>
         public void ReleaseAll()
         {
+            HITThread.PlacedVariant = null;
             if (Placed.Count == 0 || EmitterField == null) return;
             foreach (var sound in Placed) EmitterField.SetValue(sound, null);
             Placed.Clear();
+        }
+
+        // ------------------------------------------------------------------ stereo sounds, as mono copies
+
+        private static readonly Dictionary<FSO.Files.HIT.Patch, SoundEffect> MonoCopies = new Dictionary<FSO.Files.HIT.Patch, SoundEffect>();
+        private static int CopiesLogged;
+
+        /// <summary>
+        /// A sound that can be placed in 3D: for a stereo one, a mono copy (made once from the game's file and kept); null
+        /// for a mono one, which can be placed as it is, or one whose file can't be read (it plays as it is).
+        /// </summary>
+        public static SoundEffect PlaceableCopy(FSO.Files.HIT.Patch patch, SoundEffect sound)
+        {
+            if (patch == null || sound == null) return null;
+            if (MonoCopies.TryGetValue(patch, out var copy)) return copy;
+            copy = null;
+            try
+            {
+                if (FSO.Content.Content.Get()?.Audio is FSO.Content.TS1.TS1Audio ts1)
+                {
+                    var mono = VRSoundMix.MonoFromStereoWav(ts1.GetSFXData(patch), out var rate);
+                    if (mono != null)
+                    {
+                        copy = new SoundEffect(mono, rate, AudioChannels.Mono) { Name = sound.Name };
+                        if (CopiesLogged++ < 5) SimitoneVR.Log($"3D sound: stereo {patch.Filename} placed as a mono copy");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                copy = null;
+                if (CopiesLogged++ < 5) SimitoneVR.Log("3D sound: couldn't make a mono copy of " + patch.Filename + " (" + e.Message + ")");
+            }
+            MonoCopies[patch] = copy;
+            return copy;
         }
 
         // ------------------------------------------------------------------ HRTF (OpenAL Soft's ALC_SOFT_HRTF)
