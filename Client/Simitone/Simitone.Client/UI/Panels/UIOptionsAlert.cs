@@ -24,7 +24,7 @@ namespace Simitone.Client.UI.Panels
     ///  - Graphics: lighting, AA, 3D mode, display mode, window size, refresh rate.
     ///  - Sound &amp; Controls: music/sound effect/voice/ambience volume, edge scrolling.
     ///  - Controller: the gamepad (on/off, how live mode starts, button symbols, which button confirms, the camera stick's
-    ///    up/down and left/right, the sticks' dead zone, and the stick pointer and its speed).
+    ///    up/down and left/right, the sticks' dead zone, the stick pointer's speed or off, and Button Mapping).
     /// Changes apply immediately where the engine allows it and are saved to config.ini.
     /// Opened from Options > Settings on a lot, and from the "..." button on the neighbourhood.
     /// </summary>
@@ -207,16 +207,21 @@ namespace Simitone.Client.UI.Panels
                 () => PadOptions.Nearest(PadOptions.DeadZones, settings.GamePadDeadZone),
                 (i) => padSet(() => settings.GamePadDeadZone = PadOptions.DeadZones[i]));
 
-            //the stand-in mouse the left stick drives where a screen has no controller support of its own
-            AddRow(pad, "Stick Pointer", OnOff,
-                () => settings.GamePadVirtualCursor ? 1 : 0,
-                (v) => padSet(() => settings.GamePadVirtualCursor = v == 1));
+            //the stand-in mouse the left stick drives where a screen has no controller support of its own: off, or its speed
+            AddStepRow(pad, "Stick Pointer",
+                () => PadOptions.PointerSteps(),
+                () => PadOptions.PointerStep(settings.GamePadVirtualCursor, settings.GamePadCursorSpeed),
+                (i) => padSet(() =>
+                {
+                    settings.GamePadVirtualCursor = i > 0;
+                    if (i > 0) settings.GamePadCursorSpeed = PadOptions.PointerSpeeds[i - 1];
+                }));
 
-            AddStepRow(pad, "Pointer Speed",
-                () => PadOptions.Labels(PadOptions.PointerSpeeds),
-                () => PadOptions.Nearest(PadOptions.PointerSpeeds, settings.GamePadCursorSpeed),
-                (i) => padSet(() => settings.GamePadCursorSpeed = PadOptions.PointerSpeeds[i]),
-                () => settings.GamePadVirtualCursor);
+            //which button does what (gamepad.ini), on its own screen
+            AddRow(pad, "Button Mapping",
+                () => new List<Tuple<string, int>>() { Tuple.Create("Set Buttons", 0) },
+                () => 0,
+                (v) => UIScreen.GlobalShowDialog(new UIPadMappingDialog(), true));
 
             NoteLabel = new UILabel();
             NoteLabel.Alignment = TextAlignment.Center | TextAlignment.Middle;

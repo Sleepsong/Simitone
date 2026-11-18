@@ -126,7 +126,8 @@ namespace Simitone.Client.UI.Model
                     }
                     else
                     {
-                        host.DrawLocalTexture(batch, disc, null, pos, new Vector2(scale), LetterColour(b));
+                        //Xbox's letters on their colours; Nintendo's are plain (the same letters, in other places)
+                        host.DrawLocalTexture(batch, disc, null, pos, new Vector2(scale), (set == PadGlyphSet.Nintendo) ? Ink : LetterColour(b));
                         GlyphText.Color = Color.White;
                         GlyphText.Size = Math.Max(8, (int)(size * 0.5f));
                         host.DrawLocalString(batch, b.ToString(), Vector2.Zero, GlyphText,
