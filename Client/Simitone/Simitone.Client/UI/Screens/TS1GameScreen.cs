@@ -405,6 +405,19 @@ namespace Simitone.Client.UI.Screens
             vm.ResetTickAlign();
         }
 
+        /// <summary>
+        /// Pauses time without the speed change sound, when Simitone is interrupted (on Android: Android Auto closing it
+        /// because the car is moving). False if time wasn't running: paused already, in build, buy or options mode
+        /// (they go back to paused), or waiting on a dialog.
+        /// </summary>
+        public bool PauseQuietly()
+        {
+            if (vm == null || vm.SpeedMultiplier <= 0) return false;
+            vm.SpeedMultiplier = 0;
+            vm.ResetTickAlign();
+            return true;
+        }
+
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
             GameFacade.Game.IsFixedTimeStep = (vm == null || vm.Ready);

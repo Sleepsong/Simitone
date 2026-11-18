@@ -284,7 +284,9 @@ on or off takes effect after a restart) and are saved to `config.ini`.
 
 ## Android Phones
 
-See [ANDROID.md](ANDROID.md) for installing and building the Android version.
+See [ANDROID.md](ANDROID.md) for installing and building the Android version. It also runs on a car's screen
+through Android Auto while the car is parked (phones with Android 15 or later): see
+[Android Auto](ANDROID.md#android-auto-while-parked).
 
 # Building from Source
 

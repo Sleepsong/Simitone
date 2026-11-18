@@ -27,13 +27,20 @@ namespace Simitone.Android
     /// Download/sims (or another folder in Download), and starts the game with FreeSO's mobile settings (the phone
     /// shaders with software depth, no multiple render targets, touch controls). Saves, config.ini and simitone.log
     /// go in Download/Simitone.
+    ///
+    /// With Android Auto (phones with Android 15 or later), the same activity runs on the car's screen while the car
+    /// is parked: the CAR_LAUNCHER category puts it in the car's launcher. It can move between the phone's screen and
+    /// the car's while the game runs, so it handles the display changes itself (density, size, input devices) instead
+    /// of being made again, which the engine's global state doesn't allow. See <see cref="CarScreen"/>.
     /// </summary>
-    [Activity(Label = "Simitone", MainLauncher = true,
+    [Activity(Label = "Simitone", MainLauncher = true, Exported = true,
         Theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen",
         AlwaysRetainTaskState = true, LaunchMode = LaunchMode.SingleInstance,
         ScreenOrientation = ScreenOrientation.SensorLandscape,
         ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden
-            | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.SmallestScreenSize)]
+            | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.SmallestScreenSize
+            | ConfigChanges.Density | ConfigChanges.Navigation | ConfigChanges.Touchscreen)]
+    [IntentFilter(new[] { Intent.ActionMain }, Categories = new[] { CarScreen.LauncherCategory })]
     public class SimitoneActivity : Microsoft.Xna.Framework.AndroidGameActivity
     {
         private static string LogPath;
@@ -46,6 +53,9 @@ namespace Simitone.Android
         private string Downloads; //the phone's Download folder
         private bool WaitingForAccess;
         private bool Started;
+        private int DisplayId; //the display Simitone is on: 0 is the phone's own screen
+        private bool OnCar; //on the car's screen (Android Auto) or another external one
+        private bool SavedForCar; //saved since Simitone was last resumed on the car's screen
 
         public static void Log(string line)
         {
@@ -131,13 +141,19 @@ namespace Simitone.Android
 #pragma warning restore CA1422
             Console.SetOut(new LogWriter(Console.Out));
             Log($"Simitone {PackageManager.GetPackageInfo(PackageName, 0).VersionName} on Android {Build.VERSION.Release} (API {(int)Build.VERSION.SdkInt}), {Build.Manufacturer} {Build.Model}");
+            DisplayId = CarScreen.DisplayId(this);
+            OnCar = DisplayId != CarScreen.PhoneDisplay;
+            if (OnCar) Log($"started on another screen than the phone's (display {DisplayId}): the car's, with Android Auto");
 
-            Status = new TextView(this) { Text = "Preparing Simitone...", Gravity = GravityFlags.Center, TextSize = 18 };
+            Status = new TextView(this) { Text = "Preparing Simitone...", Gravity = GravityFlags.Center, TextSize = TextSizeFor(18) };
             SetContentView(Status);
 
             if (HasFileAccess()) Begin();
             else AskForFileAccess();
         }
+
+        /// <summary>Text size in sp: at least 24 on the car's screen, which is read from further away.</summary>
+        private float TextSizeFor(float size) => OnCar ? Math.Max(24f, size) : size;
 
         /// <summary>Whether Simitone can read the game in Download (and write its saves there).</summary>
         private bool HasFileAccess()
@@ -150,6 +166,18 @@ namespace Simitone.Android
         private void AskForFileAccess()
         {
             WaitingForAccess = true;
+            if (OnCar)
+            {
+                // Android Auto doesn't open other apps' screens (here: the settings page) on the car's screen
+                Status.Text = "Simitone reads The Sims' game files from your phone's Download folder, and needs "
+                    + "\"All files access\" for that.\n\nOpen Simitone on your phone once to allow it, then start it here again.";
+                Status.Gravity = GravityFlags.Center;
+                Status.TextSize = TextSizeFor(18);
+                Status.SetPadding(48, 24, 48, 24);
+                SetContentView(Status);
+                Log("asking for file access (on the car's screen: on the phone)");
+                return;
+            }
             var layout = new LinearLayout(this) { Orientation = Orientation.Vertical };
             layout.SetGravity(GravityFlags.Center);
             layout.SetPadding(64, 32, 64, 32);
@@ -188,14 +216,50 @@ namespace Simitone.Android
         protected override void OnResume()
         {
             base.OnResume();
-            Log("resumed");
+            Log(OnCar ? "resumed (car's screen)" : "resumed");
+            SavedForCar = false;
             RestartIfAccessGranted();
         }
 
         protected override void OnPause()
         {
-            Log("paused");
+            Log(OnCar ? "paused (car's screen)" : "paused");
+            // on the car's screen, being paused can mean the car is about to move, and Android Auto then closes
+            // Simitone: stop time and save first, while MonoGame's game loop still runs (base.OnPause stops it)
+            if (OnCar && Game != null && !SavedForCar)
+            {
+                SavedForCar = true;
+                CarScreen.PauseAndSave("paused on the car's screen");
+            }
             base.OnPause();
+        }
+
+        /// <summary>
+        /// Display changes come here instead of making the activity again (see ConfigurationChanges): with Android Auto,
+        /// Simitone moves to the car's screen when it's opened from the car's launcher while running, and back to the
+        /// phone's when it's opened there.
+        /// </summary>
+        public override void OnConfigurationChanged(global::Android.Content.Res.Configuration newConfig)
+        {
+            base.OnConfigurationChanged(newConfig);
+            var display = CarScreen.DisplayId(this);
+            if (display == DisplayId) return;
+            var wasOnCar = OnCar;
+            DisplayId = display;
+            OnCar = display != CarScreen.PhoneDisplay;
+            Log($"moved to display {display} ({(OnCar ? "the car's screen, with Android Auto" : "the phone's screen")})");
+            HideSystemBars();
+            if (WaitingForAccess && OnCar != wasOnCar) AskForFileAccess(); //(the button on the phone, the note on the car)
+            if (Game == null) return;
+            if (wasOnCar && !OnCar) CarScreen.Pause("left the car's screen");
+            try
+            {
+                CarScreen.MovedTo(Game, OnCar, CarScreen.UIScale(CarScreen.Metrics(this)));
+            }
+            catch (Exception e)
+            {
+                Log("couldn't measure the new screen: " + e.Message);
+            }
         }
 
         public override void OnRequestPermissionsResult(int requestCode, string[] permissions, Permission[] grantResults)
@@ -335,7 +399,7 @@ namespace Simitone.Android
                 + "game's neighbourhood.\n\n"
                 + "Then open Simitone again.";
             Status.Gravity = GravityFlags.CenterVertical | GravityFlags.Left;
-            Status.TextSize = 15;
+            Status.TextSize = TextSizeFor(15);
             Status.SetPadding(48, 24, 48, 24);
         }
 
@@ -391,11 +455,9 @@ namespace Simitone.Android
                 FSOEnvironment.GameThread = Thread.CurrentThread;
                 FSO.Files.ImageLoaderHelpers.BitmapFunction = BitmapReader;
 
-                var metrics = new DisplayMetrics();
-                WindowManager.DefaultDisplay.GetRealMetrics(metrics);
-                var shortSide = Math.Min(metrics.WidthPixels, metrics.HeightPixels);
-                var scale = Math.Max(1f, Math.Min(4f, shortSide / 560f)); //UI at least ~560 px tall
-                Log($"screen {metrics.WidthPixels}x{metrics.HeightPixels} @ {metrics.DensityDpi} dpi, UI scale {scale:0.00}, 3D: {FSOEnvironment.Enable3D}");
+                var metrics = CarScreen.Metrics(this); //(the screen Simitone is on: the phone's, or the car's)
+                var scale = CarScreen.UIScale(metrics); //UI at least ~560 px tall
+                Log($"screen {metrics.WidthPixels}x{metrics.HeightPixels} @ {metrics.DensityDpi} dpi{(OnCar ? " (car)" : "")}, UI scale {scale:0.00}, 3D: {FSOEnvironment.Enable3D}");
 
                 var set = GlobalSettings.Default;
                 set.DPIScaleFactor = scale;
@@ -421,6 +483,7 @@ namespace Simitone.Android
                 Game.Components.Add(new FrameLogger(Game));
                 SetContentView((View)Game.Services.GetService(typeof(View)));
                 Game.Run();
+                if (OnCar) CarScreen.MovedTo(Game, true, scale);
                 Log("game running");
             }
             catch (Exception e)

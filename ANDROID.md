@@ -27,6 +27,74 @@ On phones the Graphics tab shows:
 
 The log says which 2D method is in use: `2D depth: one pass (framebuffer fetch)`, or `two passes (reason)`.
 
+## Android Auto (while parked)
+
+On phones with Android 15 or later, Android Auto runs games on the car's screen while the car is parked. Simitone is
+declared as one, so it appears in the car's app launcher.
+
+- **First run.** Set Simitone up on the phone first: allow **All files access** and put the game in Download, as above.
+  Android Auto can't open the settings page on the car's screen. If access is missing there, Simitone says to allow it
+  on the phone.
+- **Sideloaded installs.** Android Auto only runs apps from Google Play (or ONE store) in a real car, unless
+  **Unknown sources** is on in Android Auto's developer settings. To show those settings, open Android Auto's settings
+  on the phone and tap **Version** ten times.
+- **Moving between screens.** Opening Simitone from the car's launcher while it's running on the phone moves the game
+  to the car's screen, and opening it on the phone moves it back. The game keeps running and the UI is scaled for the
+  screen it's on, as on phones: at least ~560 px tall, so 1x on an 800x480 car screen and about 1.9x on a 1080p one.
+  When the game leaves the car's screen, time is paused.
+- **When the car moves.** Android Auto closes Simitone when the car starts moving. So whenever Simitone is paused on the
+  car's screen, it first pauses time and saves the household, as **Options > Save** does. This happens when the car
+  starts moving, when you switch to another app on the car's screen, or when you leave Simitone with Android Auto's
+  controls. It isn't saved while visiting another lot (downtown, on vacation), where The Sims doesn't save either, or
+  while a lot is loading. Sound stops while Simitone is paused (MonoGame pauses its audio device).
+- **Controls.** Use the car's touch screen. Swipe from the top or bottom edge for Android Auto's back and exit controls.
+
+The log says when Simitone is on the car's screen (`moved to display ...`, `car: ...`), including each save and how long
+it took.
+
+Android Auto support needs no extra packages. It hasn't been tested on a car or the Desktop Head Unit yet (see below).
+Still to do:
+
+- After Android Auto closes Simitone, opening it again starts at the neighbourhood, with the household saved. Google's
+  guidelines ask for it to go back to the lot.
+- Game controllers. If they're supported later, add `<uses-feature android:name="android.hardware.gamepad"
+  android:required="false"/>` to the manifest.
+
+### What makes it work
+
+- `SimitoneActivity` has an extra `MAIN` intent filter with the `android.intent.category.CAR_LAUNCHER` category.
+  Together with `android:appCategory="game"` on `<application>` in `AndroidManifest.xml`, this lists Simitone in
+  Android Auto's launcher. Games are the only parked app category Android Auto supports.
+- The activity handles changes of display, density, screen size, touch screen and navigation itself, so moving between
+  the phone's screen and the car's doesn't make it again. The engine's global state allows one game per run.
+- `CarScreen.cs` tells which display Simitone is on (not `Display.DEFAULT_DISPLAY` means the car's), works out the UI
+  scale, applies it with `SimitoneGame.SetUIScale`, and keeps the game to landscape-left on the car's screen. It also
+  does the pause and save when Simitone is paused there. That runs before MonoGame stops the game loop in `OnPause`,
+  and waits up to 4 s for the game.
+- There's no `distractionOptimized` metadata on any activity, as parked apps mustn't have it. Simitone posts no
+  notifications.
+
+### Testing with the Desktop Head Unit
+
+Google's [Desktop Head Unit](https://developer.android.com/training/cars/testing/dhu) (DHU, the **Android Auto Desktop
+Head Unit Emulator** in the Android SDK's tools) shows Android Auto on a computer. Turn on Android Auto's developer mode
+(see above), choose **Start head unit server** in its menu, connect the phone over USB, then:
+
+```sh
+adb forward tcp:5277 tcp:5277
+cd $ANDROID_SDK/extras/google/auto
+./desktop-head-unit                  # or: ./desktop-head-unit -c some-config.ini
+```
+
+Check the screen sizes Google asks parked apps to handle, with DHU configuration files
+([Android Auto parked apps](https://developer.android.com/training/cars/parked/auto#test-screen-sizes)): 800x480
+(the default), wide 1920x1080 with `marginheight = 596`, and portrait 1920x1080 with `marginwidth = 878`. In the DHU's
+terminal, `restrict all` (or Shift+U) acts as the car starting to move, and `restrict none` (U) as it stopping.
+
+Google reviews Play Store games against the
+[car app quality guidelines](https://developer.android.com/docs/quality-guidelines/car-app-quality?category=game).
+Simitone isn't on the Play Store, but they're a useful checklist.
+
 ## Building
 
 You need:

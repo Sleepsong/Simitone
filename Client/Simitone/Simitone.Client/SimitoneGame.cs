@@ -274,6 +274,22 @@ namespace Simitone.Client
             else ApplyBackBufferSize(bufWidth, bufHeight);
         }
 
+        /// <summary>
+        /// Changes the UI scale while the game runs, and lays the screen out again (on Android: Simitone moved between
+        /// the phone's screen and a car's, which have very different densities). Game thread only. The setting in
+        /// config.ini is left alone: the Android app works the scale out for the screen it's on.
+        /// </summary>
+        public void SetUIScale(float scale)
+        {
+            if (scale <= 0 || Math.Abs(scale - FSOEnvironment.DPIScaleFactor) < 0.001f) return;
+            FSOEnvironment.DPIScaleFactor = scale;
+            var screen = uiLayer?.CurrentUIScreen;
+            if (screen != null) screen.ScaleX = screen.ScaleY = scale; //(dialogs are inside the screen; new screens read the new scale)
+            var bounds = Window.ClientBounds;
+            ApplyBackBufferSize((bounds.Width > 0) ? bounds.Width : GraphicsDevice.PresentationParameters.BackBufferWidth,
+                (bounds.Height > 0) ? bounds.Height : GraphicsDevice.PresentationParameters.BackBufferHeight);
+        }
+
         private void SaveGraphicsModePreference(GlobalGraphicsMode obj)
         {
             GlobalSettings.Default.GlobalGraphicsMode = (int)obj;

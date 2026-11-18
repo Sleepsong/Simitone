@@ -5,6 +5,8 @@
   <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
   <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
   <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+  <!-- appCategory="game": Android Auto runs apps on the car's screen while parked only in the parked categories, and
+       games are the one it supports (with the CAR_LAUNCHER category on SimitoneActivity). See ANDROID.md. -->
   <application android:label="Simitone" android:largeHeap="true" android:hardwareAccelerated="true"
-               android:requestLegacyExternalStorage="true" />
+               android:requestLegacyExternalStorage="true" android:appCategory="game" />
 </manifest>
