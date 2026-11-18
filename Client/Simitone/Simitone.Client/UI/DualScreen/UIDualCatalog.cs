@@ -1,14 +1,19 @@
 using FSO.Client;
 using FSO.Client.UI.Controls;
 using FSO.Client.UI.Framework;
+using FSO.Client.UI.Model;
+using FSO.Common.Rendering.Framework.IO;
 using FSO.Common.Rendering.Framework.Model;
 using FSO.Content;
+using FSO.HIT;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Simitone.Client.UI.Controls;
 using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.LiveSubpanels;
 using Simitone.Client.UI.Screens;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -26,8 +31,13 @@ namespace Simitone.Client.UI.DualScreen
     ///   one screen, sits over the middle of the lot, where the item is placed: with two screens it stays hidden.)
     /// - with an object picked up off the lot: its name, what it sells for, and Sell and Put back (the main screen's
     ///   panel for this stays hidden too). Anything in hand can be put back from here.
+    /// - search: the magnifier after the categories searches every item for the mode (the game's own search, which
+    ///   shows each result's category). The search box takes the categories' place, and a keyboard on this screen
+    ///   (<see cref="UIDualKeyboard"/>) takes the place of the item info and the mode buttons while typing: the
+    ///   second screen's window can't take the keyboard focus, so the main screen's keyboards can't type here. The
+    ///   results show as you type; picking one closes the keyboard, and Close (or another category) ends the search.
     /// The controller uses it too: LT moves the pad between the lot and this catalog (its focus is outlined here), RT
-    /// opens the next category, and the highlighted item's name and price show under the items.
+    /// opens the next category, Y searches, and the highlighted item's name and price show under the items.
     /// </summary>
     public class UIDualCatalog : UIContainer
     {
@@ -58,20 +68,37 @@ namespace Simitone.Client.UI.DualScreen
         private const float BrowseScale = 0.8f; //the items' size, to leave room for the description
         private const int DescLines = 4;
 
+        // ---- search
+        private readonly float ScreenH;
+        private UICatButton SearchButton;
+        private SearchBox SearchBar;
+        private UIBigButton CloseSearchButton;
+        private UIDualKeyboard Keyboard;
+        private const int MaxSearch = 40;
+        /// <summary>The search box shows in place of the categories.</summary>
+        public bool Searching { get; private set; }
+        /// <summary>The keyboard shows in place of the item info and the mode buttons.</summary>
+        public bool KeyboardOpen { get; private set; }
+        public string SearchText { get; private set; } = "";
+        private float ListOpacityBefore = 1f; //the items' opacity before a search (hidden on the subcategory page)
+        private object LastSelection; //what was in hand, to notice something new being picked
+
         /// <param name="top">Where the catalog starts (under the money and clock).</param>
         /// <param name="bottom">How far down it may reach (the mode buttons are below).</param>
-        public UIDualCatalog(TS1GameScreen game, UIMainPanelMode mode, float width, float top, float bottom)
+        /// <param name="screenHeight">The screen's height: the keyboard reaches down over the mode buttons.</param>
+        public UIDualCatalog(TS1GameScreen game, UIMainPanelMode mode, float width, float top, float bottom, float screenHeight)
         {
             Game = game;
             Mode = mode;
             W = width;
             Top = top;
             Bottom = bottom;
+            ScreenH = screenHeight;
             var panel = game.Frontend.MainPanel;
             var cats = (mode == UIMainPanelMode.BUILD) ? panel.BuildCategories : panel.BuyCategories;
 
-            // categories: one row, spread over the width
-            var spacing = W / cats.Count;
+            // categories: one row, spread over the width, with the search button last
+            var spacing = W / (cats.Count + 1);
             for (int i = 0; i < cats.Count; i++)
             {
                 var cat = cats[i];
@@ -83,6 +110,25 @@ namespace Simitone.Client.UI.DualScreen
                 Add(button);
                 Categories.Add((id, button));
             }
+            SearchButton = new UICatButton(MagnifierIcon());
+            SearchButton.Position = new Vector2(spacing * (cats.Count + 0.5f) - 65 / 2f, Top + 5);
+            SearchButton.Tooltip = "Search";
+            SearchButton.OnButtonClick += (b) => OpenSearch();
+            Add(SearchButton);
+
+            // the search box, in the categories' place while searching
+            SearchBar = new SearchBox(this, W - 30 - 120, 44);
+            SearchBar.Position = new Vector2(15, Top + 15);
+            SearchBar.Visible = false;
+            Add(SearchBar);
+            CloseSearchButton = new UIBigButton(false);
+            CloseSearchButton.Caption = "Close";
+            CloseSearchButton.Width = 220;
+            CloseSearchButton.ScaleX = CloseSearchButton.ScaleY = 0.5f; //(110 x 50)
+            CloseSearchButton.Position = new Vector2(W - 125, Top + 12);
+            CloseSearchButton.OnButtonClick += (b) => ExitSearch();
+            CloseSearchButton.Visible = false;
+            Add(CloseSearchButton);
 
             ItemLabel = new UILabel();
             ItemLabel.CaptionStyle = ItemLabel.CaptionStyle.Clone();
@@ -127,6 +173,15 @@ namespace Simitone.Client.UI.DualScreen
             SellButton = SmallButton("Sell", new Vector2(W - 125, RowsBottom + 56));
             SellButton.OnButtonClick += (b) => Game.LotControl?.ObjectHolder?.SellBack(null);
 
+            // the keyboard, over the item info and the mode buttons (last, so it draws on top and gets the touches)
+            var keysTop = RowsBottom + 4;
+            Keyboard = new UIDualKeyboard(W, ScreenH - keysTop - 4);
+            Keyboard.Position = new Vector2(0, keysTop);
+            Keyboard.OnKey = KeyPressed;
+            Keyboard.HasText = () => SearchText.Length > 0;
+            Keyboard.Visible = false;
+            Add(Keyboard);
+
             if (cats.Count > 0) SelectCategory(cats[0].ID);
             Current = this;
         }
@@ -159,6 +214,7 @@ namespace Simitone.Client.UI.DualScreen
 
         public void SelectCategory(int id)
         {
+            if (Searching) ExitSearch(); //(a category ends a search)
             if (id == Category && Browse != null) return;
             Category = id;
             foreach (var (catId, button) in Categories) button.Selected = catId == id;
@@ -168,8 +224,176 @@ namespace Simitone.Client.UI.DualScreen
             Browse = new UIBuyBrowsePanel(Game, (sbyte)id, lotType);
             Browse.Position = new Vector2(0, BrowseTop);
             Browse.ScaleX = Browse.ScaleY = BrowseScale;
-            Add(Browse);
+            if (Keyboard != null) AddBefore(Browse, Keyboard);
+            else Add(Browse);
             Browse.SetHost(W / BrowseScale, Rows);
+        }
+
+        // ---- search
+
+        /// <summary>Shows the search box and the keyboard (again, for a search already showing).</summary>
+        public void OpenSearch()
+        {
+            if (Browse == null) return;
+            Searching = true;
+            KeyboardOpen = true;
+            Keyboard.Layout.Reset();
+            Keyboard.Shift = false;
+        }
+
+        /// <summary>Puts the keyboard away, keeping the results; with nothing typed, that ends the search.</summary>
+        public void CloseKeyboard()
+        {
+            KeyboardOpen = false;
+            if (SearchText.Trim().Length == 0) ExitSearch();
+        }
+
+        /// <summary>Back to the categories, and the items (or subcategories) showing before the search.</summary>
+        public void ExitSearch()
+        {
+            SetSearchText("");
+            Searching = false;
+            KeyboardOpen = false;
+        }
+
+        /// <summary>The pad's controls on the keyboard, while it shows.</summary>
+        public void PadKeyboardUpdate(UpdateState state)
+        {
+            Keyboard.PadUpdate(state);
+        }
+
+        private void KeyPressed(PadKey key)
+        {
+            switch (key.Action)
+            {
+                case PadKeyAction.Backspace:
+                    if (SearchText.Length > 0) SetSearchText(SearchText.Substring(0, SearchText.Length - 1));
+                    break;
+                case PadKeyAction.Done:
+                    CloseKeyboard();
+                    break;
+                default:
+                    var typed = key.Type(Keyboard.Shift);
+                    if (typed != null && SearchText.Length < MaxSearch) SetSearchText(SearchText + typed);
+                    break;
+            }
+        }
+
+        /// <summary>Searches as the text changes: the whole catalog for this mode, by name (the game's own search).</summary>
+        private void SetSearchText(string text)
+        {
+            SearchText = text;
+            var browse = Browse;
+            if (browse == null) return;
+            var term = text.Trim();
+            if (term.Length == 0)
+            {
+                if (browse.Searching)
+                {
+                    browse.ApplyNameFilter("");
+                    browse.CatContainer.Opacity = ListOpacityBefore;
+                }
+                return;
+            }
+            //(from the subcategory page the item list is hidden: it shows for the results)
+            if (!browse.Searching) ListOpacityBefore = browse.CatContainer.Opacity;
+            browse.ApplyNameFilter(term);
+            browse.CatContainer.Opacity = 1f;
+        }
+
+        /// <summary>A magnifier the size of a category icon, white to be tinted like them.</summary>
+        private static Texture2D MagnifierIcon()
+        {
+            if (Magnifier != null && !Magnifier.IsDisposed) return Magnifier;
+            const int size = 65;
+            var data = new Color[size * size];
+            Func<float, float, float, float, float> dist = (x, y, cx, cy) => (float)Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float px = x + 0.5f, py = y + 0.5f;
+                    var lens = Math.Abs(dist(px, py, 28f, 28f) - 12.5f) - 2.6f;
+                    //the handle: distance to the segment from (37,37) to (49,49)
+                    var t = MathHelper.Clamp(((px - 37f) + (py - 37f)) / 24f, 0, 1);
+                    var handle = dist(px, py, 37f + 12f * t, 37f + 12f * t) - 3.6f;
+                    var coverage = MathHelper.Clamp(0.5f - Math.Min(lens, handle), 0, 1);
+                    data[y * size + x] = Color.White * coverage; //premultiplied
+                }
+            }
+            Magnifier = new Texture2D(GameFacade.GraphicsDevice, size, size);
+            Magnifier.SetData(data);
+            return Magnifier;
+        }
+        private static Texture2D Magnifier;
+
+        /// <summary>
+        /// The search box: what's been typed (with a caret while the keyboard shows), a magnifier, and a clear mark.
+        /// Tapping it brings the keyboard back; tapping the clear mark empties it.
+        /// </summary>
+        private class SearchBox : UIElement
+        {
+            private readonly UIDualCatalog Owner;
+            private readonly float BoxW, BoxH;
+            private float Time;
+
+            public SearchBox(UIDualCatalog owner, float width, float height)
+            {
+                Owner = owner;
+                BoxW = width;
+                BoxH = height;
+                ListenForMouse(new Rectangle(0, 0, (int)width, (int)height), (type, state) =>
+                {
+                    if (type != UIMouseEventType.MouseUp) return;
+                    var at = GetMousePosition(state.MouseState);
+                    if (at.X > BoxW - 40 && Owner.SearchText.Length > 0) Owner.SetSearchText("");
+                    if (!Owner.KeyboardOpen) Owner.OpenSearch();
+                    HITVM.Get()?.PlaySoundEvent(UISounds.Click);
+                });
+            }
+
+            public override void Update(UpdateState state)
+            {
+                base.Update(state);
+                Time += (float)state.Time.ElapsedGameTime.TotalSeconds;
+            }
+
+            public override void Draw(UISpriteBatch batch)
+            {
+                if (!Visible) return;
+                var gd = GameFacade.GraphicsDevice;
+                UISearchArt.Ensure();
+                var box = new Rectangle(0, 0, (int)BoxW, (int)BoxH);
+                PadDraw.NineSlice(this, batch, PadGraphics.GetRounded(gd), PadGraphics.RoundedCorner, box,
+                    Owner.KeyboardOpen ? PadDraw.Accent : new Color(222, 230, 242));
+                var inner = box;
+                inner.Inflate(-2, -2);
+                if (Owner.KeyboardOpen) PadDraw.NineSlice(this, batch, PadGraphics.GetRounded(gd), PadGraphics.RoundedCorner, inner, new Color(222, 230, 242));
+                var icon = 1.25f;
+                DrawLocalTexture(batch, UISearchArt.Magnifier, null, new Vector2(12, (BoxH - 16 * icon) / 2), new Vector2(icon), PadDraw.Ink * 0.6f);
+
+                var style = TextStyle.DefaultLabel.Clone();
+                style.Size = 16;
+                var room = BoxW - 44 - 40;
+                string shown;
+                if (Owner.SearchText.Length == 0)
+                {
+                    style.Color = PadDraw.Ink * 0.45f;
+                    shown = Owner.KeyboardOpen ? "" : "Search all items\u2026";
+                }
+                else
+                {
+                    style.Color = PadDraw.Ink;
+                    shown = Owner.SearchText;
+                    //the end of a long search, where the typing is
+                    while (shown.Length > 1 && style.MeasureString("\u2026" + shown).X > room) shown = shown.Substring(1);
+                    if (shown != Owner.SearchText) shown = "\u2026" + shown;
+                }
+                if (Owner.KeyboardOpen && ((int)(Time * 2) % 2 == 0)) shown += "_";
+                DrawLocalString(batch, shown, Vector2.Zero, style, new Rectangle(44, 0, (int)room, (int)BoxH), TextAlignment.Left | TextAlignment.Middle);
+                if (Owner.SearchText.Length > 0)
+                    DrawLocalTexture(batch, UISearchArt.Clear, null, new Vector2(BoxW - 30, (BoxH - 16 * icon) / 2), new Vector2(icon), PadDraw.Ink * 0.6f);
+            }
         }
 
         public override void Update(UpdateState state)
@@ -179,17 +403,25 @@ namespace Simitone.Client.UI.DualScreen
             Time += (float)state.Time.ElapsedGameTime.TotalSeconds;
             string text = "";
             var browse = Browse;
+            var holding = Game.LotControl?.ObjectHolder?.Holding;
+            UpdateSearch(browse, holding);
+            //the items show (or a search's results, from the subcategory page too)
+            var listShown = browse != null && (!browse.ChoosingSub || browse.Searching);
             //the pad's highlight (it browses without picking), else the picked item
             var index = (browse != null && PadFocusShown && Navigator.Focused == browse.CatContainer)
                 ? browse.CatContainer.PadHighlightIndex : -1;
             if (index < 0 && browse != null) index = browse.ItemID;
-            if (browse != null && !browse.ChoosingSub && index >= 0 && browse.FilterCategory != null)
+            if (listShown && index >= 0 && browse.FilterCategory != null)
             {
                 var item = browse.FilterCategory.ElementAtOrDefault(index);
                 if (item != null) text = item.ToString() + ((item.CalcPrice > 0) ? "   §" + item.CalcPrice.ToString("##,#0") : "");
             }
-            else if (browse != null && browse.ChoosingSub) text = "Choose a kind of item";
-            var holding = Game.LotControl?.ObjectHolder?.Holding;
+            else if (browse != null && browse.Searching)
+            {
+                var found = browse.FilterCategory?.Count() ?? 0;
+                text = (found == 0) ? "" : (found == 1) ? "1 item found" : found + " items found"; //(none: the list says so)
+            }
+            else if (browse != null && browse.ChoosingSub) text = "Choose a kind of item, or search";
             string desc = null, ads = null;
             if (holding != null && holding.IsBought)
             {
@@ -203,12 +435,31 @@ namespace Simitone.Client.UI.DualScreen
                 ads = "";
             }
             if (ItemLabel.Caption != text) ItemLabel.Caption = text;
-            BackButton.Visible = holding == null && browse != null && !browse.ChoosingSub;
-            PutBackButton.Visible = holding != null;
-            SellButton.Visible = holding != null && holding.IsBought;
+            //(the keyboard covers these while it shows)
+            var info = !KeyboardOpen;
+            ItemLabel.Visible = DescLabel.Visible = AdLabel.Visible = info;
+            BackButton.Visible = info && holding == null && browse != null && !browse.ChoosingSub && !Searching;
+            PutBackButton.Visible = info && holding != null;
+            SellButton.Visible = info && holding != null && holding.IsBought;
             SellButton.Disabled = !(holding?.CanDelete ?? false);
             if (desc != null) ShowDescription(desc, ads);
-            else UpdateDescription(browse != null && !browse.ChoosingSub && index >= 0 && index == browse.ItemID);
+            else UpdateDescription(listShown && index >= 0 && index == browse.ItemID);
+        }
+
+        /// <summary>The search's part of each update: what shows, and the keyboard going once something is picked.</summary>
+        private void UpdateSearch(UIBuyBrowsePanel browse, UIObjectSelection holding)
+        {
+            var selection = (object)holding?.Group ?? Game.LotControl?.CustomControl;
+            if (selection != null && selection != LastSelection && KeyboardOpen) KeyboardOpen = false; //picked: place it
+            LastSelection = selection;
+            if (Searching && browse != null && browse.Searching && browse.CatContainer.Opacity < 1f)
+                browse.CatContainer.Opacity = 1f; //(a fade back to the subcategories may still be running)
+
+            foreach (var (_, button) in Categories) button.Visible = !Searching;
+            SearchButton.Visible = !Searching;
+            SearchBar.Visible = CloseSearchButton.Visible = Searching;
+            Keyboard.Visible = KeyboardOpen;
+            Keyboard.ShowFocus = KeyboardOpen && PadShown;
         }
 
         /// <summary>
@@ -246,7 +497,7 @@ namespace Simitone.Client.UI.DualScreen
         public override void Draw(UISpriteBatch batch)
         {
             base.Draw(batch);
-            if (!Visible || !PadFocusShown || !Navigator.Focused.WillDraw()) return;
+            if (!Visible || KeyboardOpen || !PadFocusShown || !Navigator.Focused.WillDraw()) return;
             //the pad's focus: Simitone's mint frame, as on the main screen (its scale is this screen's)
             var rect = UIFocusNavigator.GlobalRect(Navigator.Focused);
             var scale = (SecondScreen.Panel?.UIScale ?? 1f);

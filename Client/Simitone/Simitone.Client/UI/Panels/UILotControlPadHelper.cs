@@ -248,6 +248,9 @@ namespace Simitone.Client.UI.Panels
             var dual = UIDualCatalog.Current;
             DualCatalog = (buildMode && SecondScreen.Active && dual != null && dual.Parent != null && dual.Browse != null) ? dual : null;
             if (!(Master.LiveMode || buildMode) || (DualCatalog == null && !panel.PanelActive)) PanelFocus = false;
+            //the second screen's search keyboard, while it shows, has the pad (however it was opened)
+            var dualTyping = DualCatalog != null && DualCatalog.KeyboardOpen;
+            if (dualTyping) PanelFocus = true;
             var optionsNav = !Master.LiveMode && panel.Mode == UIMainPanelMode.OPTIONS && panel.PanelActive;
             var panelNav = optionsNav || PanelFocus;
             if (!panelNav) ClearNavigators(frontend);
@@ -271,7 +274,7 @@ namespace Simitone.Client.UI.Panels
             }
             CategoryMenuNav.Clear();
 
-            if (!Master.PieMenuOpen)
+            if (!Master.PieMenuOpen && !dualTyping) //(typing: the d-pad, Start and the rest are the keyboard's)
             {
                 Chords.Update(new[] { pad.IsDown(PadAction.ShoulderLeft), pad.IsDown(PadAction.ShoulderRight),
                     pad.IsDown(PadAction.TriggerLeft), pad.IsDown(PadAction.TriggerRight) }, now);
@@ -652,13 +655,22 @@ namespace Simitone.Client.UI.Panels
         /// <summary>Prompts while the catalog has the pad.</summary>
         private void SetCatalogPrompts(UISimitoneFrontend frontend)
         {
+            if (DualCatalog != null && DualCatalog.KeyboardOpen)
+            {
+                PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"), PadPrompt.Of(PadAction.Confirm, "Type"),
+                    PadPrompt.Of(PadAction.Cancel, (DualCatalog.SearchText.Length > 0) ? "Delete" : "Close"),
+                    PadPrompt.Of(PadAction.FaceTop, "Space"), PadPrompt.Of(PadAction.FaceLeft, "Shift"),
+                    PadPrompt.Of(PadAction.Start, "Done"));
+                return;
+            }
             var browse = (DualCatalog != null) ? DualCatalog.Browse : frontend.MainPanel.SubPanel as UIBuyBrowsePanel;
             var items = new System.Collections.Generic.List<PadPrompt> { PadPrompt.For(PadStick.DPad, "Browse") };
-            if (browse != null && !browse.ChoosingSub)
+            if (browse != null && (!browse.ChoosingSub || browse.Searching))
                 items.Add(PadPrompt.Of(PadAction.Confirm, (browse.Mode == UICatalogMode.Build) ? "Choose" : "Buy"));
             else items.Add(PadPrompt.Of(PadAction.Confirm, "Open"));
-            items.Add(PadPrompt.Of(PadAction.Cancel, "Back"));
-            if (DualCatalog == null && frontend.MainPanel.VisibleSearchField != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
+            items.Add(PadPrompt.Of(PadAction.Cancel, (DualCatalog?.Searching ?? false) ? "End search" : "Back"));
+            if (DualCatalog != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
+            else if (frontend.MainPanel.VisibleSearchField != null) items.Add(PadPrompt.Of(PadAction.FaceTop, "Search"));
             items.Add(PadPrompt.Of(PadAction.TriggerRight, "Category"));
             items.Add(PadPrompt.Of(PadAction.TriggerLeft, "Lot"));
             PadPrompts.Set(items.ToArray());
@@ -706,9 +718,38 @@ namespace Simitone.Client.UI.Panels
         {
             frontend.PanelNavigator.Clear();
             var browse = DualCatalog.Browse;
+            UIDualCatalog.PadShown = state.LastInputDevice == InputDevice.GamePad;
+            if (DualCatalog.KeyboardOpen)
+            {
+                //typing a search: the keyboard has the pad (A types, B deletes, Y space, X shift, Start done)
+                UIDualCatalog.Navigator.Clear();
+                CatalogEmptyTime = 0;
+                state.PadCaptured = true;
+                DualCatalog.PadKeyboardUpdate(state);
+                return;
+            }
+            //Y: search (the whole catalog for this mode)
+            if (state.Pad.Pressed(PadAction.FaceTop))
+            {
+                DualCatalog.OpenSearch();
+                state.PadCaptured = true;
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                return;
+            }
             if (!UIDualCatalog.Navigator.Update(state, browse))
             {
                 UIDualCatalog.Navigator.Clear();
+                if (DualCatalog.Searching)
+                {
+                    //a search with no results keeps the pad here: Y types again, B ends the search
+                    state.PadCaptured = true;
+                    if (state.Pad.Pressed(PadAction.Cancel))
+                    {
+                        DualCatalog.ExitSearch();
+                        HITVM.Get().PlaySoundEvent(UISounds.Click);
+                    }
+                    return;
+                }
                 CatalogEmptyTime += (float)state.Time.ElapsedGameTime.TotalSeconds;
                 if (CatalogEmptyTime >= CatalogEmptyGrace || state.Pad.Pressed(PadAction.Cancel)) PanelFocus = false;
                 else state.PadCaptured = true;
@@ -716,10 +757,10 @@ namespace Simitone.Client.UI.Panels
             }
             CatalogEmptyTime = 0;
             state.PadCaptured = true;
-            UIDualCatalog.PadShown = state.LastInputDevice == InputDevice.GamePad;
             if (state.Pad.Pressed(PadAction.Cancel))
             {
-                if (!browse.ChoosingSub) browse.Reset(); //items -> subcategories
+                if (DualCatalog.Searching) DualCatalog.ExitSearch(); //results -> what showed before the search
+                else if (!browse.ChoosingSub) browse.Reset(); //items -> subcategories
                 else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }
@@ -731,9 +772,10 @@ namespace Simitone.Client.UI.Panels
         /// </summary>
         private void HandleDualCatalogTriggers()
         {
+            if (DualCatalog.KeyboardOpen) return; //(typing: the keyboard has the pad)
             if (Chords.Tap[PadChords.LT])
             {
-                if (!PanelFocus && UIFocusNavigator.HasFocusable(DualCatalog.Browse)) PanelFocus = true;
+                if (!PanelFocus && (UIFocusNavigator.HasFocusable(DualCatalog.Browse) || DualCatalog.Searching)) PanelFocus = true;
                 else PanelFocus = false;
                 HITVM.Get().PlaySoundEvent(UISounds.Click);
             }

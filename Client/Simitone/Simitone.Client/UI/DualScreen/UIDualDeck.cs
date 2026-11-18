@@ -272,10 +272,13 @@ namespace Simitone.Client.UI.DualScreen
             }
             if (catalogMode && Catalog == null)
             {
-                Catalog = new UIDualCatalog(Game, mode, W, 70, H - 128 * TabScale - 12 - 6);
+                Catalog = new UIDualCatalog(Game, mode, W, 70, H - 128 * TabScale - 12 - 6, H);
                 Add(Catalog);
             }
             LiveGroup.Visible = !catalogMode;
+            //(the catalog's search keyboard covers the mode buttons while it shows)
+            var typing = Catalog?.KeyboardOpen ?? false;
+            foreach (var holder in TabHolders) holder.Visible = !typing;
         }
 
         /// <summary>The second screen leaves the lot: its catalog lets go of what it picked.</summary>

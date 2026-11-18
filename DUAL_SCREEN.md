@@ -7,14 +7,15 @@ This is the first version. It needs testing on a Thor, and `simitone.log` says w
 
 ## What this branch includes
 
-`claude/dual-screen` is the AYN Thor build: the Android port (`claude/android`) with these merged in:
-- the controller port (`claude/intelligent-cray-f9z43d`);
-- remesh packs (`claude/meshreplace`);
-- the TS1 sound fixes (`claude/sound-fixes`);
-- sinks cut into counters in 3D (`claude/sink-basins`);
-- doors in 3D walls following the 2D rule (`claude/door-cutaway`);
-- fast-forward while the household is away (`claude/auto-fast-forward`);
-- travel to the expansion packs' lots (`claude/expansion-travel`).
+`engine/dual-screen` is the AYN Thor build: the Android port (`engine/android`) with these merged in:
+- the controller port (`engine/controller-support`);
+- remesh packs (`prog/meshreplace`);
+- the TS1 sound fixes (`fix/sound-fixes`);
+- sinks cut into counters in 3D (`fix/sink-basins`);
+- doors in 3D walls following the 2D rule (`fix/door-cutaway`);
+- fast-forward while the household is away (`fix/auto-fast-forward`);
+- travel to the expansion packs' lots (`fix/expansion-travel`);
+- upstream's `simitone-forked` as of 12 November 2026 (the catalog index and whole-catalog search among it).
 
 Each has a FreeSO side on `simitone/dual-screen`. The code is the same as the local Android combo build, plus the two
 screens and the bottom screen's window and drawing.
@@ -42,6 +43,13 @@ screens and the bottom screen's window and drawing.
      shows the object's name and what it sells for, with **Sell** and **Put back**; anything in hand can be put back
      from here. The top screen's own catalog and info panels stay hidden in buy and build mode, so nothing covers
      the spot where the item goes.
+
+     **Search**: the magnifier after the categories searches every item for the mode, as you type. The search box
+     takes the categories' place, and a keyboard takes the place of the item info and the mode buttons: tap the
+     keys, or use the controller as on the top screen's keyboard (D-pad to move, A to type, B to delete, Y space, X
+     shift, Start or Done to put it away). Each result says which category it's from. Picking one puts the keyboard
+     away so you can place it; tap the search box to type again, its x to clear it, and **Close** (or a category)
+     to end the search.
    - **Live**, **Buy**, **Build** and **Options** along the bottom. Buy and Build show their catalog here; Options
      opens its panel on the top screen, as the mode button does on a phone. Tap the lit one again to go back to
      Live. In live mode, Live goes back to the needs. Apart from Options, the top screen's panel stays closed,
@@ -57,7 +65,8 @@ screens and the bottom screen's window and drawing.
    bottom screen's catalog: LT moves the controller between the lot and the catalog, where its focus is outlined;
    the D-pad moves over the kinds of item, then over the items (left/right along the rows, up/down between them);
    A opens a kind or picks an item, which puts it in hand on the lot; B goes back to the kinds of item, then to the
-   lot; RT opens the next category. The highlighted item's name and price show under the items. In live mode LT and
+   lot; RT opens the next category; Y searches (B ends the search). The highlighted item's name and price show
+   under the items. In live mode LT and
    RT turn the bottom screen's pages (needs, job, personality, relationships, inventory). Touching the bottom
    screen doesn't take the controls away from the game: its window can't take the focus.
 5. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
@@ -121,8 +130,6 @@ image's top lands at the top, and that the first context is current again afterw
 
 ## Not yet
 
-- The catalog has no search box on the bottom screen yet (with the second screen off, the top screen's catalog has
-  one).
 - Create-a-Sim and the neighbourhood don't use the bottom screen yet.
 - Apart from the catalog, the controller doesn't reach the bottom screen's buttons yet (everything there can also be
   done with the pad, except picking things in the relationships and inventory pages).

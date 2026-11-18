@@ -47,10 +47,14 @@ namespace Simitone.Client.UI.Model
         public int Row { get; private set; }
         public int Index { get; private set; }
         private float Preferred; //column up/down aim for
+        private readonly int LetterRow; //the "q" row
 
-        public PadKeyboardLayout()
+        /// <param name="numberRow">Without it, the keys can be taller in the same space (the second screen's touch
+        /// keyboard, for catalog search).</param>
+        public PadKeyboardLayout(bool numberRow = true)
         {
-            AddCharRow("1234567890", "!@#$%&*()?");
+            if (numberRow) AddCharRow("1234567890", "!@#$%&*()?");
+            LetterRow = Rows.Count;
             AddCharRow("qwertyuiop", "QWERTYUIOP");
             AddCharRow("asdfghjkl'", "ASDFGHJKL\"");
             AddCharRow("zxcvbnm,.-", "ZXCVBNM;:_");
@@ -79,7 +83,7 @@ namespace Simitone.Client.UI.Model
         /// <summary>Back to the first letter key ("q").</summary>
         public void Reset()
         {
-            Row = 1;
+            Row = LetterRow;
             Index = 0;
             Preferred = 0.5f;
         }
