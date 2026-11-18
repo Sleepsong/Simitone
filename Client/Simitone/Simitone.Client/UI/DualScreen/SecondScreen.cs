@@ -1,4 +1,7 @@
 using FSO.Client;
+using FSO.Client.UI.Framework;
+using FSO.Common;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
 
@@ -38,10 +41,66 @@ namespace Simitone.Client.UI.DualScreen
         /// <summary>For the log: called with a line when the second screen starts or stops being used.</summary>
         public static Action<string> Note;
 
+        /// <summary>
+        /// The pad's focus on the second screen, from a main-screen navigator whose focus moved there (see
+        /// <see cref="InstallPadHooks"/>): the second screen draws its outline. With the update it was set in.
+        /// </summary>
+        public static UIFocusNavigator ElsewhereFocus;
+        public static int ElsewhereFocusFrame = -1;
+        public static int Frame;
+
+        /// <summary>Whether an element is on the second screen (its topmost parent is <see cref="Panel"/>).</summary>
+        public static bool IsOnSecondScreen(UIElement element)
+        {
+            var panel = Panel;
+            if (panel == null) return false;
+            for (var e = element; e != null; e = e.Parent)
+            {
+                if (e == panel) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Lets the pad move between the screens: for moving between elements, the second screen sits just below the
+        /// main one, centred and at the same scale, so down from the main screen's lowest element reaches the second
+        /// screen's top. Outlines are drawn on whichever screen the focus is on.
+        /// </summary>
+        private static void InstallPadHooks()
+        {
+            UIFocusNavigator.ToNavSpace = (element, rect) =>
+            {
+                if (!Active || !IsOnSecondScreen(element)) return rect;
+                var main = GameFacade.Screens?.CurrentUIScreen;
+                if (main == null) return rect;
+                //second screen pixels -> its UI units -> main screen UI units, below it -> main screen pixels
+                var bottomScale = Panel.UIScale;
+                var dpi = FSOEnvironment.DPIScaleFactor;
+                var left = (main.ScreenWidth - Panel.LogicalWidth) / 2f;
+                var top = main.ScreenHeight + 8;
+                var x = (left + rect.X / bottomScale) * dpi;
+                var y = (top + rect.Y / bottomScale) * dpi;
+                return new Rectangle((int)x, (int)y, (int)(rect.Width / bottomScale * dpi), (int)(rect.Height / bottomScale * dpi));
+            };
+            UIFocusNavigator.DrawsHere = (element) => !Active || !IsOnSecondScreen(element);
+            UIFocusNavigator.DrawElsewhere = (navigator) =>
+            {
+                ElsewhereFocus = navigator;
+                ElsewhereFocusFrame = Frame;
+            };
+        }
+        private static bool HooksInstalled;
+
         /// <summary>Game thread, every update, before the UI updates.</summary>
         public static void Update()
         {
+            Frame++;
             if (Host == null || GameFacade.Screens == null) return;
+            if (!HooksInstalled)
+            {
+                InstallPadHooks();
+                HooksInstalled = true;
+            }
             var wanted = GlobalSettings.Default.DualScreen;
             Host.Wanted = wanted;
             var ready = wanted && Host.Ready && Host.Width > 0 && Host.Height > 0;

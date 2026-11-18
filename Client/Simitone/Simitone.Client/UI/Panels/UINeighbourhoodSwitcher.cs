@@ -18,6 +18,8 @@ namespace Simitone.Client.UI.Panels
         private UINeighborhoodSelectionPanel Panel;
         private ushort Mode;
         public bool MoveInMode;
+        /// <summary>The neighbourhood shown (4 the main one, 2 Downtown, 3 Vacation Island, 5 Studio Town, 7 Magic Town).</summary>
+        public ushort NeighMode => Mode;
 
         public UINeighbourhoodSwitcher(UINeighborhoodSelectionPanel panel, ushort mode, bool moveIn)
         {

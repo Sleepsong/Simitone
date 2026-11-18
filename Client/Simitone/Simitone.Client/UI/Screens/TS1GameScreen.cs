@@ -27,6 +27,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Simitone.Client.UI.Controls;
+using Simitone.Client.UI.DualScreen;
 using Simitone.Client.UI.Model;
 using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Panels.WorldUI;
@@ -64,6 +65,8 @@ namespace Simitone.Client.UI.Screens
 
         //for TS1 hybrid mode
         public UINeighborhoodSelectionPanel TS1NeighPanel;
+        /// <summary>The neighbourhood map's buttons (hidden while the second screen shows them).</summary>
+        public UINeighbourhoodSwitcher NeighSwitcher;
         private UIScreenPadNavigator NeighPadNav; //gamepad on the neighbourhood map and house panel
 
         /// <summary>Showing the neighbourhood map (rather than a lot).</summary>
@@ -258,6 +261,7 @@ namespace Simitone.Client.UI.Screens
             Content.Get().Neighborhood.AddMissingNeighbors();
             TS1NeighPanel = new UINeighborhoodSelectionPanel(neighborhoodMode);
             var switcher = new UINeighbourhoodSwitcher(TS1NeighPanel, neighborhoodMode, moveInMode);
+            NeighSwitcher = switcher;
             TS1NeighPanel.OnHouseSelect += (house) =>
             {
                 if (MoveInFamily != null)
@@ -325,7 +329,31 @@ namespace Simitone.Client.UI.Screens
             var house = map.LastHS;
             if (house?.Parent != null) return house;
             if (NeighCursorActive) return null; //the virtual cursor has the pad
+            //with two screens, the map's buttons are on the second screen: the pad goes down to them from the map
+            if (SecondScreen.Active && UIDualNeighbourhood.Current != null)
+            {
+                NeighBothScreens.Game = this;
+                return NeighBothScreens;
+            }
             return this;
+        }
+
+        /// <summary>The neighbourhood's pad scope with two screens: the map here, and the second screen's buttons.</summary>
+        private readonly BothScreensScope NeighBothScreens = new BothScreensScope();
+        private class BothScreensScope : UIElement, IPadScope, IPadScopeRoots
+        {
+            public TS1GameScreen Game;
+            public IEnumerable<UIElement> PadRoots
+            {
+                get
+                {
+                    yield return Game;
+                    if (UIDualNeighbourhood.Current != null) yield return UIDualNeighbourhood.Current;
+                }
+            }
+            public UIElement PadDefaultFocus => Game?.PadDefaultFocus;
+            public bool PadCancel() => Game?.PadCancel() ?? false;
+            public override void Draw(UISpriteBatch batch) { }
         }
 
         /// <summary>
@@ -339,6 +367,9 @@ namespace Simitone.Client.UI.Screens
 
         private void UpdateNeighbourhoodPad(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
+            //with two screens, the second screen has the map's buttons and the house panel
+            if (NeighSwitcher != null) NeighSwitcher.Visible = !(SecondScreen.Active && UIDualNeighbourhood.Current != null);
+            ActiveNeighPanel?.KeepHousePanelOnItsScreen();
             //a travel map (from a lot) gets the neighbourhood's navigator while it's up
             var panel = ActiveNeighPanel;
             if (panel != null && NeighPadNav == null) CreateNeighPadNav();
@@ -422,6 +453,7 @@ namespace Simitone.Client.UI.Screens
                 NeighPadNav = null;
             }
             if (switcher != null) Remove(switcher);
+            if (switcher == NeighSwitcher) NeighSwitcher = null;
         }
 
         public void MoveInAndPlay(short house, int family, UIElement switcher)

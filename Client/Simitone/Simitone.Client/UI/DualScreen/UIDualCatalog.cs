@@ -499,17 +499,7 @@ namespace Simitone.Client.UI.DualScreen
             base.Draw(batch);
             if (!Visible || KeyboardOpen || !PadFocusShown || !Navigator.Focused.WillDraw()) return;
             //the pad's focus: Simitone's mint frame, as on the main screen (its scale is this screen's)
-            var rect = UIFocusNavigator.GlobalRect(Navigator.Focused);
-            var scale = (SecondScreen.Panel?.UIScale ?? 1f);
-            var gd = GameFacade.GraphicsDevice;
-            var pad = (int)((PadGraphics.GlowInset + 3) * scale);
-            var frame = rect;
-            frame.Inflate(pad, pad);
-            var pulse = 0.82f + 0.18f * (float)System.Math.Sin(Time * 4f);
-            var shadow = frame;
-            shadow.Inflate((int)(2 * scale), (int)(2 * scale));
-            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, shadow, PadDraw.Ink * 0.45f, scale);
-            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, frame, PadDraw.Accent * pulse, scale);
+            UISecondScreen.DrawPadOutline(batch, UIFocusNavigator.GlobalRect(Navigator.Focused), Time);
         }
 
         /// <summary>Lets go of the catalog (and whatever it had picked), as leaving buy or build mode does.</summary>

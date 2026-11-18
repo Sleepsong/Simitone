@@ -87,30 +87,37 @@ namespace Simitone.Client.UI.Panels
                     btn.Opacity = value;
                     btn.Visible = btn.Opacity > 0;
                 }
-                var screen = UIScreen.Current;
-
-                var scale = Math.Max(2 / 3f, Math.Min(1, screen.ScreenWidth / 1704f));
+                var scale = Math.Max(2 / 3f, Math.Min(1, SW / 1704f));
                 var space = (96 * scale) - 56;
 
                 if (FamilyDisplay != null)
-                    FamilyDisplay.X = (48 + space / 2) - value * screen.ScreenWidth / 2;
+                    FamilyDisplay.X = (48 + space / 2) - value * SW / 2;
 
                 _MoreTween = value;
             }
         }
 
-        public UIHouseSelectPanel(int houseID)
+        /// <summary>
+        /// The size the panel lays out against, as a screen it covers the left half of: the main screen's, or (for
+        /// the second screen) twice that screen's width, so the panel fills it.
+        /// </summary>
+        private readonly int SW, SH;
+
+        /// <param name="layout">Lay out for this size instead of the main screen's (see <see cref="SW"/>).</param>
+        public UIHouseSelectPanel(int houseID, Point? layout = null)
         {
             var screen = GameFacade.Screens.CurrentUIScreen;
-            var extra = Math.Max(0, (screen.ScreenHeight - 640) / 128) * 64;
+            SW = layout?.X ?? screen.ScreenWidth;
+            SH = layout?.Y ?? screen.ScreenHeight;
+            var extra = Math.Max(0, (SH - 640) / 128) * 64;
             HouseID = houseID;
 
-            Diag = new UIDiagonalStripe(new Point(screen.ScreenWidth / 2, screen.ScreenHeight + 16), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg);
+            Diag = new UIDiagonalStripe(new Point(SW / 2, SH + 16), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg);
             Diag.Y = -16;
             Diag.ListenForMouse(Diag.GetBounds(), (e, s) => { });
             Add(Diag);
 
-            TitleStripe = new UIDiagonalStripe(new Point(screen.ScreenWidth / 2, 92 + 8 + 32), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg);
+            TitleStripe = new UIDiagonalStripe(new Point(SW / 2, 92 + 8 + 32), UIDiagonalStripeSide.RIGHT, UIStyle.Current.Bg);
             TitleStripe.StartOff = 8 + 32;
             TitleStripe.Y = -16 + extra;
             Add(TitleStripe);
@@ -148,14 +155,14 @@ namespace Simitone.Client.UI.Panels
             LotDescription.Position = new Vector2(30, 206 + extra);
             InitLabel(LotDescription);
             //LotDescription.CaptionStyle.Size = 15;
-            LotDescription.Size = new Vector2(screen.ScreenWidth/2 - 60, screen.ScreenHeight - 415);
+            LotDescription.Size = new Vector2(SW/2 - 60, SH - 415);
             LotDescription.Wrapped = true;
             LotDescription.Alignment = TextAlignment.Top | TextAlignment.Left;
 
             SecondaryText = new UILabel();
-            SecondaryText.Position = new Vector2(30, screen.ScreenHeight - (165 + extra));
+            SecondaryText.Position = new Vector2(30, SH - (165 + extra));
             InitLabel(SecondaryText);
-            SecondaryText.Size = new Vector2(screen.ScreenWidth / 2 - 60, 29);
+            SecondaryText.Size = new Vector2(SW / 2 - 60, 29);
             SecondaryText.Wrapped = true;
             SecondaryText.Alignment = TextAlignment.Bottom | TextAlignment.Right;
             SecondaryText.CaptionStyle.Color = UIStyle.Current.SecondaryText;
@@ -168,7 +175,7 @@ namespace Simitone.Client.UI.Panels
             {
                 var famUI = new UIHouseFamilyList(family);
 
-                var scale = Math.Max(2 / 3f, Math.Min(1, screen.ScreenWidth / 1704f));
+                var scale = Math.Max(2 / 3f, Math.Min(1, SW / 1704f));
                 famUI.ScaleX = famUI.ScaleY = scale;
                 var space = (96 * scale) - 56;
                 LotDescription.Y += space;
@@ -320,16 +327,16 @@ namespace Simitone.Client.UI.Panels
 
             EnterLot = new UIBigButton(false);
             EnterLot.Caption = (moveIn == null)?"Enter Lot":"Move In";
-            EnterLot.Width = (moveIn == null)? (screen.ScreenWidth / 2 - 293) : (screen.ScreenWidth/2-60);
+            EnterLot.Width = (moveIn == null)? (SW / 2 - 293) : (SW/2-60);
             EnterLot.Disabled = !buttonValid;
-            EnterLot.Position = new Vector2(30, screen.ScreenHeight - (extra + 125));
+            EnterLot.Position = new Vector2(30, SH - (extra + 125));
             EnterLot.OnButtonClick += (b) => { OnSelected?.Invoke(houseID); Kill(); };
             Add(EnterLot);
 
             More = new UIBigButton(true);
             More.Caption = "More";
             More.Width = 208;
-            More.Position = new Vector2(screen.ScreenWidth / 2 - 238, screen.ScreenHeight - (extra + 125));
+            More.Position = new Vector2(SW / 2 - 238, SH - (extra + 125));
             More.OnButtonClick += (btn) => { ShowMore(true); };
             if (moveIn == null) Add(More);
 
@@ -354,7 +361,7 @@ namespace Simitone.Client.UI.Panels
             {
                 var btn = new UIBigButton(i == optionFunctions.Length-1);
                 btn.Caption = optionNames[i];
-                btn.Position = new Vector2(screen.ScreenWidth / 4 - btn.Width / 2, bY);
+                btn.Position = new Vector2(SW / 4 - btn.Width / 2, bY);
                 btn.Disabled = optionFunctions[i] == null;
                 btn.OnButtonClick += optionFunctions[i];
                 Add(btn);
@@ -362,7 +369,7 @@ namespace Simitone.Client.UI.Panels
                 OptionButtons.Add(btn);
             }
 
-            X = screen.ScreenWidth / -2;
+            X = SW / -2;
             GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "X", 0f } }, TweenQuad.EaseOut);
             MoreTween = MoreTween;
         }
@@ -420,8 +427,7 @@ namespace Simitone.Client.UI.Panels
             EnterLot.Disabled = true;
             More.Disabled = true;
             foreach (var btn in OptionButtons) btn.Disabled = true;
-            var screen = GameFacade.Screens.CurrentUIScreen;
-            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "X", (screen.ScreenWidth / -2) - 32 } }, TweenQuad.EaseIn);
+            GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "X", (SW / -2) - 32 } }, TweenQuad.EaseIn);
             GameThread.SetTimeout(() => { Parent.Remove(this); }, 500);
         }
 

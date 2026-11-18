@@ -69,7 +69,19 @@ screens and the bottom screen's window and drawing.
    under the items. In live mode LT and
    RT turn the bottom screen's pages (needs, job, personality, relationships, inventory). Touching the bottom
    screen doesn't take the controls away from the game: its window can't take the focus.
-5. Away from a lot (neighbourhood, Create-a-Sim), the bottom screen shows the title.
+5. In the neighbourhood, the top screen shows just the map, and the bottom screen its name and buttons: **Create a
+   family**, **Options**, **Back to the neighborhood** and the other neighbourhoods (Downtown, Vacation Island,
+   Studio Town, Magic Town). Pick a house on the map and its panel opens on the bottom screen (Enter Lot or Move
+   In, and More for evicting), with the house in the middle of the map.
+6. In Create a Family, the Sim's panel (name, gender, age, skin, personality, bio) is on the bottom screen while
+   making a Sim, with **Back** and **Accept** (**Move in**, **Done**) under it; the families, the new family and
+   the head and body carousels stay on the top screen. Tap a name or the bio, on either screen, and a keyboard
+   comes up on the bottom screen to type it (on Android there was no keyboard for touch before).
+7. With the controller, the two screens are one: down from the top screen's lowest house, or from the Sims, carries
+   on to the bottom screen's buttons and panels, and up comes back, with the focus outlined on whichever screen it
+   is on. A text box on the bottom screen brings up its keyboard for the pad too (A types, B deletes, Y space,
+   X shift, Start done); one on the top screen uses the top screen's pad keyboard, as before.
+8. Away from a lot, the neighbourhood and Create a Family, the bottom screen shows the title.
 
 **Options > Second Screen** (Graphics tab, only on devices with a second screen) turns it off and back on without
 a restart. Off, the bottom screen goes back to whatever was there, and the controls return to the top screen.
@@ -114,6 +126,15 @@ That shows the drawing and layout, but simulated displays don't take touches. To
   - `UIDualDeck` is the lot's controls. It reuses Simitone's own controls: the clock, money, Sim buttons, needs bars
     and mode icons. The UI scale is the phones': the short side is about 560 UI pixels, 1.93 on the Thor.
   - `UISimitoneFrontend` hides the top screen's copies while the second screen is active.
+  - `UIDualNeighbourhood` is the neighbourhood's: its buttons press the map's own (`UINeighbourhoodSwitcher`, hidden on
+    the top screen), and the house panel (`UIHouseSelectPanel`) is laid out for the bottom screen and opened there.
+  - `UIDualCAS` is Create a Family's: it takes the Sim panel (`UISimCASPanel`) from the top screen while it shows,
+    and its Back and Accept press the top screen's.
+  - `UIDualKeyboard` is the bottom screen's keyboard (catalog search, names): the pad keyboard's layout without the
+    number row, for touch and the pad.
+  - The pad moves between the screens through two hooks in FreeSO's `UIFocusNavigator` (`ToNavSpace` and
+    `DrawsHere`): for choosing where a direction goes, the bottom screen's elements count as below the top screen,
+    and an outline on the bottom screen is drawn there.
 - `Simitone.Android/SecondScreenHost.cs`:
   - It watches the displays. It shows the window, which can't take the focus, so the built-in controls and keys stay
     with the game, and it queues the window's touches for the game thread.
@@ -130,7 +151,8 @@ image's top lands at the top, and that the first context is current again afterw
 
 ## Not yet
 
-- Create-a-Sim and the neighbourhood don't use the bottom screen yet.
+- In Create a Family, the families list and the new family's panel are still on the top screen (only the Sim's
+  panel and the buttons are on the bottom).
 - Apart from the catalog, the controller doesn't reach the bottom screen's buttons yet (everything there can also be
   done with the pad, except picking things in the relationships and inventory pages).
 - Swapping the screens, and a phone with a bigger external screen (lot on the TV, controls on the phone).

@@ -7,6 +7,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using Simitone.Client.UI.Model;
+using Simitone.Client.UI.Panels;
 using Simitone.Client.UI.Screens;
 using System;
 
@@ -16,7 +17,9 @@ namespace Simitone.Client.UI.DualScreen
     /// Everything on the second screen. It's one of FreeSO's <see cref="UIExternalContainer"/>s: the UI layer
     /// updates it and draws it into its own texture (not onto the main screen), with its own input, and
     /// <see cref="SecondScreen.Present"/> hands each new image to the platform to show. Its touches come from the
-    /// platform too. On a lot it shows the lot's controls (<see cref="UIDualDeck"/>); elsewhere, a title.
+    /// platform too. On a lot it shows the lot's controls (<see cref="UIDualDeck"/>); in the neighbourhood, its
+    /// buttons and the house panel (<see cref="UIDualNeighbourhood"/>); in Create a Family, the Sim's panel and the
+    /// screen's buttons (<see cref="UIDualCAS"/>); elsewhere, a title.
     /// </summary>
     public class UISecondScreen : UIExternalContainer
     {
@@ -41,6 +44,7 @@ namespace Simitone.Client.UI.DualScreen
 
         private UIElement Content;
         private object ContentFor;
+        private readonly PadOutlineLayer Outline = new PadOutlineLayer();
 
         public UISecondScreen(int pixelWidth, int pixelHeight) : base(1, 1)
         {
@@ -157,19 +161,70 @@ namespace Simitone.Client.UI.DualScreen
             else mouse = Away;
         }
 
-        /// <summary>The lot's controls while a lot is up (made again for each lot), otherwise the title.</summary>
+        /// <summary>
+        /// What the second screen shows for the main screen: a lot's controls (made again for each lot), the
+        /// neighbourhood's (for each visit to it), Create a Family's, or the title.
+        /// </summary>
         private void RefreshContent()
         {
-            var game = GameFacade.Screens?.CurrentUIScreen as TS1GameScreen;
-            object want = (game?.Frontend != null && game.vm != null) ? game.Frontend : null;
+            var screen = GameFacade.Screens?.CurrentUIScreen;
+            var game = screen as TS1GameScreen;
+            object want;
+            if (game?.Frontend != null && game.vm != null) want = game.Frontend;
+            else if (game != null && game.InNeighbourhood) want = game.TS1NeighPanel;
+            else if (screen is TS1CASScreen) want = screen;
+            else want = null;
             if (Content != null && want == ContentFor) return;
             if (Content != null) Remove(Content);
             ContentFor = want;
-            Content = (want != null)
-                ? (UIElement)new UIDualDeck(game, LogicalWidth, LogicalHeight)
-                : new UIDualIdle(LogicalWidth, LogicalHeight);
+            if (want == null) Content = new UIDualIdle(LogicalWidth, LogicalHeight);
+            else if (want is UINeighborhoodSelectionPanel) Content = new UIDualNeighbourhood(game, LogicalWidth, LogicalHeight);
+            else if (want is TS1CASScreen cas) Content = new UIDualCAS(cas, LogicalWidth, LogicalHeight);
+            else Content = new UIDualDeck(game, LogicalWidth, LogicalHeight);
             Add(Content);
+            Add(Outline); //(on top)
             Invalidated = true;
+        }
+
+        /// <summary>
+        /// Simitone's pad focus frame (as the main screen draws it) round a rectangle in this screen's pixels.
+        /// </summary>
+        public static void DrawPadOutline(UISpriteBatch batch, Rectangle rect, float time)
+        {
+            var scale = SecondScreen.Panel?.UIScale ?? 1f;
+            var gd = GameFacade.GraphicsDevice;
+            var pad = (int)((PadGraphics.GlowInset + 3) * scale);
+            var frame = rect;
+            frame.Inflate(pad, pad);
+            var pulse = 0.82f + 0.18f * (float)Math.Sin(time * 4f);
+            var shadow = frame;
+            shadow.Inflate((int)(2 * scale), (int)(2 * scale));
+            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, shadow, PadDraw.Ink * 0.45f, scale);
+            PadDraw.NineSliceScreen(batch, PadGraphics.GetGlow(gd), PadGraphics.GlowCorner, frame, PadDraw.Accent * pulse, scale);
+        }
+
+        /// <summary>
+        /// The focus outline of a main-screen navigator whose focus is on this screen (the neighbourhood's house panel,
+        /// Create a Family's panel), drawn over everything here. See <see cref="SecondScreen.ElsewhereFocus"/>.
+        /// </summary>
+        private class PadOutlineLayer : UIElement
+        {
+            private float Time;
+
+            public override void Update(UpdateState state)
+            {
+                base.Update(state);
+                Time += (float)state.Time.ElapsedGameTime.TotalSeconds;
+            }
+
+            public override void Draw(UISpriteBatch batch)
+            {
+                var nav = SecondScreen.ElsewhereFocus;
+                if (nav == null || SecondScreen.Frame - SecondScreen.ElsewhereFocusFrame > 2) return; //(not drawn lately: gone)
+                var focused = nav.Focused;
+                if (focused == null || !focused.WillDraw() || !SecondScreen.IsOnSecondScreen(focused)) return;
+                DrawPadOutline(batch, UIFocusNavigator.GlobalRect(focused), Time);
+            }
         }
     }
 

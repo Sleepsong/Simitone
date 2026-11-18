@@ -151,6 +151,17 @@ namespace Simitone.Client.UI.Panels
             if (LastHS != null) GameThread.NextUpdate((state) => ReopenHousePanel());
         }
 
+        /// <summary>
+        /// The house panel opens again on the other screen if the second screen came or went while it was open.
+        /// </summary>
+        public void KeepHousePanelOnItsScreen()
+        {
+            if (LastHS?.Parent == null) return;
+            var onSecond = DualScreen.SecondScreen.IsOnSecondScreen(LastHS);
+            var wantSecond = DualScreen.SecondScreen.Active && DualScreen.UIDualNeighbourhood.Current != null;
+            if (onSecond != wantSecond) ReopenHousePanel();
+        }
+
         private void ReopenHousePanel()
         {
             if (LastHS == null) return;
@@ -259,11 +270,24 @@ namespace Simitone.Client.UI.Panels
 
         private void OpenHousePanel(int house)
         {
-            LastHS = new UIHouseSelectPanel(house);
-            GameFacade.Screens.CurrentUIScreen.Add(LastHS);
+            //with two screens, the panel goes on the second screen, which has the neighbourhood's controls: the map
+            //keeps the whole of the main screen, with the house in the middle
+            var host = DualScreen.SecondScreen.Active ? DualScreen.UIDualNeighbourhood.Current : null;
+            if (host != null)
+            {
+                LastHS = new UIHouseSelectPanel(house, host.HousePanelLayout);
+                host.HostHousePanel(LastHS);
+            }
+            else
+            {
+                LastHS = new UIHouseSelectPanel(house);
+                GameFacade.Screens.CurrentUIScreen.Add(LastHS);
+            }
+            //(on one screen the panel covers the left half: the house goes right of the middle)
+            var offset = (host != null) ? 0f : ((Mode == 4) ? 90f : 180f);
             GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
                 { "Zoom", (Mode==4)?3f:1.5f },
-                { "CenterPositionX", HousePositions[house].X - ((Mode==4)?90f:180f) },
+                { "CenterPositionX", HousePositions[house].X - offset },
                 { "CenterPositionY", HousePositions[house].Y } }, TweenQuad.EaseOut);
 
             LastHS.OnClose += ResetZoom;

@@ -69,7 +69,8 @@ namespace Simitone.Client.UI.Screens
             set
             {
                 CameraInterp(value);
-                CASPanel.Position = new Vector2((Cam == null)?10:((ScreenWidth - 500) / 2), 10 - (282 * (1-value)));
+                //(on the second screen, the Sim panel is placed there)
+                if (!CASPanelElsewhere) CASPanel.Position = new Vector2((Cam == null)?10:((ScreenWidth - 500) / 2), 10 - (282 * (1-value)));
                 FamilyPanel.ShowI = 1-Math.Abs(value);
                 FamiliesPanel.TitleI = 1 - Math.Abs(value+1);
 
@@ -99,6 +100,31 @@ namespace Simitone.Client.UI.Screens
         private int? MoveInFamily;
 
         private UICASMode Mode = UICASMode.FamilyEdit;
+        public UICASMode CurrentMode => Mode;
+
+        // ---- two screens (see UIDualCAS)
+        /// <summary>The Sim panel is on the second screen, which places it.</summary>
+        public bool CASPanelElsewhere;
+        /// <summary>The text box with this screen's keyboard focus, as of the last update (the second screen types into it).</summary>
+        public UITextEdit MainTextFocus { get; private set; }
+        /// <summary>Set by the second screen's keyboard (Done): this screen's text box lets go of the focus next update.</summary>
+        public bool ClearMainTextFocus;
+        /// <summary>The pad is the device in use (for the second screen's keyboard focus).</summary>
+        public bool PadInUse { get; private set; }
+
+        /// <summary>The Sim panel back on this screen, where the mode tweens place it.</summary>
+        public void ReclaimCASPanel()
+        {
+            if (CASPanel.Parent != this)
+            {
+                var from = CASPanel.Parent?.GetChildren();
+                if (from != null) lock (from) from.Remove(CASPanel); //(not Remove: the panel isn't gone)
+                AddBefore(CASPanel, FamilyPanel);
+            }
+            CASPanelElsewhere = false;
+            CASPanel.Visible = true;
+            FamilySimInterp = FamilySimInterp;
+        }
 
         public List<CASFamilyMember> WIPFamily = new List<CASFamilyMember>();
         public List<VMAvatar> RepresentFamily = new List<VMAvatar>();
@@ -540,7 +566,7 @@ namespace Simitone.Client.UI.Screens
             BodyPadTarget = new UICASCarouselPadTarget(StepBody);
             BodyPadTarget.Tooltip = "Bodies";
             Add(BodyPadTarget);
-            PadNav = new UIScreenPadNavigator(() => (Dead || !Initialized) ? null : this);
+            PadNav = new UIScreenPadNavigator(() => (Dead || !Initialized || (DualScreen.UIDualCAS.Current?.KeyboardOpen ?? false)) ? null : this);
             PadNav.Prompts = CASPrompts;
             Add(PadNav); //last, so its outline draws over the panels
         }
@@ -566,8 +592,14 @@ namespace Simitone.Client.UI.Screens
                         yield return BodyPadTarget;
                         break;
                 }
-                yield return BackButton;
-                yield return AcceptButton;
+                //(with two screens, Back and Accept are on the second screen)
+                var dual = DualScreen.SecondScreen.Active ? DualScreen.UIDualCAS.Current : null;
+                if (dual != null) yield return dual.PadButtons;
+                else
+                {
+                    yield return BackButton;
+                    yield return AcceptButton;
+                }
             }
         }
 
@@ -608,6 +640,15 @@ namespace Simitone.Client.UI.Screens
         /// </summary>
         private void UpdatePad(UpdateState state)
         {
+            //the second screen's keyboard, typing into a text box there, has the pad while it shows
+            var dualKeys = DualScreen.SecondScreen.Active ? DualScreen.UIDualCAS.Current : null;
+            if (dualKeys != null && dualKeys.KeyboardOpen && PadInUse)
+            {
+                dualKeys.PadKeyboardUpdate(state);
+                state.PadTextEntry = true;
+                state.PadCaptured = true;
+                return;
+            }
             var w = 360;
             var split = (int)(ScreenHeight * 0.625f); //where the mouse switches between the head and body carousels
             //the focus frame goes round the centre Sim's head: a band just above the split, sized with the screen
@@ -862,6 +903,17 @@ namespace Simitone.Client.UI.Screens
         public override void Update(UpdateState state)
         {
             base.Update(state);
+            //two screens: what the second screen needs from this one, and this screen's buttons hidden while it has them
+            PadInUse = state.LastInputDevice == FSO.Common.Rendering.Framework.IO.InputDevice.GamePad;
+            if (ClearMainTextFocus)
+            {
+                ClearMainTextFocus = false;
+                if (state.InputManager?.GetFocus() is UITextEdit) state.InputManager.SetFocus(null);
+            }
+            MainTextFocus = state.InputManager?.GetFocus() as UITextEdit;
+            var dualDeck = DualScreen.SecondScreen.Active ? DualScreen.UIDualCAS.Current : null;
+            BackButton.Visible = AcceptButton.Visible = dualDeck == null;
+            if (CASPanelElsewhere && dualDeck == null) ReclaimCASPanel();
             ModePositions[3].Y = 11;
             ModeTargets[3].Y = 7.896059f;
             if (Dead) return;
