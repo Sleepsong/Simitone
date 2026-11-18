@@ -151,12 +151,10 @@ namespace Simitone.Client.UI.Panels
                 (v) => settings.DualScreen = v == 1);
 
             // the game on the other screen and the controls on this one (the Thor's screens swapped, or a TV or monitor
-            // plugged into a phone: TV mode). Simitone opens on the screen it's given, so this applies at the next start.
+            // plugged into a phone: TV mode), at once
             if (DualScreen.SecondScreen.Host != null)
             AddRow(0, "Swap Screens",
-                () => new List<Tuple<string, int>>() {
-                    Tuple.Create(DualScreen.SecondScreen.Swapped ? "Off (restart)" : "Off", 0),
-                    Tuple.Create(DualScreen.SecondScreen.Swapped ? "On" : "On (restart)", 1) },
+                () => new List<Tuple<string, int>>() { Tuple.Create("Off", 0), Tuple.Create("On", 1) },
                 () => settings.DualScreenSwap ? 1 : 0,
                 (v) => settings.DualScreenSwap = v == 1,
                 () => settings.DualScreen);

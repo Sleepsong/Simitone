@@ -16,14 +16,24 @@ namespace Simitone.Client.UI.DualScreen
     {
         /// <summary>Whether the game wants the second screen (Options, Second Screen). Set every update.</summary>
         bool Wanted { set; }
+        /// <summary>
+        /// Whether the game wants the screens swapped (Options, Swap Screens): the game on the other screen, and the
+        /// controls on the device's own. Set every update; the host swaps while the game runs.
+        /// </summary>
+        bool SwapWanted { set; }
+        /// <summary>The screens are swapped now: <see cref="Width"/> and <see cref="Height"/> are the device's screen's.</summary>
+        bool Swapped { get; }
         /// <summary>A window on the second screen is up and has a surface to draw on.</summary>
         bool Ready { get; }
-        /// <summary>The second screen's drawing surface, in pixels.</summary>
+        /// <summary>The controls' drawing surface (the second screen's, or the device's own while swapped), in pixels.</summary>
         int Width { get; }
         int Height { get; }
         /// <summary>The next touch event on the second screen, in its pixels; false when there are no more.</summary>
         bool NextTouch(out int x, out int y, out bool down);
-        /// <summary>Shows a newly drawn image of the second screen there. Game thread, after the frame is drawn.</summary>
+        /// <summary>
+        /// Game thread, after each frame is drawn: shows a newly drawn image of the controls (null if there's none), and,
+        /// while swapped, the game's frame on the other screen.
+        /// </summary>
         void Present(Texture2D image);
     }
 
@@ -41,10 +51,10 @@ namespace Simitone.Client.UI.DualScreen
         /// <summary>For the log: called with a line when the second screen starts or stops being used.</summary>
         public static Action<string> Note;
         /// <summary>
-        /// Set by the platform: the game is on the other screen this run (Options, Swap Screens: the Thor's bottom
-        /// screen, or a TV or monitor), and the controls are on the device's own screen.
+        /// The screens are swapped (Options, Swap Screens): the game is on the other screen (the Thor's bottom screen, or
+        /// a TV or monitor), and the controls on the device's own. As of the last update.
         /// </summary>
-        public static bool Swapped;
+        public static bool Swapped { get; private set; }
 
         /// <summary>
         /// The pad's focus on the second screen, from a main-screen navigator whose focus moved there (see
@@ -108,6 +118,8 @@ namespace Simitone.Client.UI.DualScreen
             }
             var wanted = GlobalSettings.Default.DualScreen;
             Host.Wanted = wanted;
+            Host.SwapWanted = wanted && GlobalSettings.Default.DualScreenSwap;
+            Swapped = Host.Swapped;
             var ready = wanted && Host.Ready && Host.Width > 0 && Host.Height > 0;
             if (ready)
             {
@@ -130,13 +142,20 @@ namespace Simitone.Client.UI.DualScreen
             }
         }
 
-        /// <summary>Game thread, after the frame is drawn: a newly drawn second screen goes to the host.</summary>
+        /// <summary>
+        /// Game thread, after the frame is drawn: a newly drawn image of the controls goes to the host, which also takes
+        /// the game's frame while the screens are swapped.
+        /// </summary>
         public static void Present()
         {
-            if (Host == null || Panel == null || !Panel.Shown) return;
-            if (!Panel.TakeNewFrame()) return;
-            var image = Panel.Image;
-            if (image != null && !image.IsDisposed) Host.Present(image);
+            if (Host == null) return;
+            Texture2D image = null;
+            if (Panel != null && Panel.Shown && Panel.TakeNewFrame())
+            {
+                image = Panel.Image;
+                if (image != null && image.IsDisposed) image = null;
+            }
+            Host.Present(image);
         }
     }
 }

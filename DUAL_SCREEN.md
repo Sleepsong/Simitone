@@ -104,20 +104,26 @@ on the device's own:
 - on a phone with a TV or monitor plugged in (USB-C or HDMI), the lot on the TV and the controls on the phone:
   **TV mode**. Use a controller for the lot; the phone's screen is the controls, held sideways.
 
-It applies the next time Simitone opens (the option says *restart*): the game can't move between screens once it's
-running. Simitone opens on the device's screen as usual, then opens again on the other screen and closes the first.
-With no other screen on (the TV unplugged), it stays on the device's screen with the controls on it, as on any phone.
+It swaps at once, in the middle of a game, and back again when turned off. Plugging a TV in while it's on puts the
+game there; unplugging it brings the game back to the device's screen, with the controls on it, as on any phone. The
+game is laid out again for the other screen's shape, as when a desktop window is resized: on the Thor's bottom screen
+it's narrower (1240x1080), so wide dialogs have less room. A TV gets the game at the device's screen height (1080 on
+the Thor and most phones), scaled to fit, so a 4K TV doesn't make the phone draw at 4K. A TV has no touch: use the
+controller, and the phone's screen for the controls. The controls stay where the controller reaches them (Y in live
+mode), but with the controller the second screen still counts as *below* the game, even on the Thor swapped, where
+it's above.
 
-How it works: `SimitoneActivity` reads `DualScreenSwap` from `config.ini` before the game starts, and opens
-`SimitoneOtherScreenActivity` (the same game) on the other display with Android's launch-display option, preferring
-a presentation display (the Thor's bottom screen, a TV or monitor), then the largest. `SecondScreenHost` then puts the
-controls on the device's own display, as an activity there (Android only puts presentations on other displays), and
-brings the game's screen back to the front a moment later, so the controller's buttons go to the game. The log
-says `swap screens: opening the game on display N`, then `on display N (screens swapped)` and the controls' window.
+How it works: the game never moves. Simitone's activity stays on the device's screen, so the controller's buttons
+always reach it, but `SecondScreenHost` resizes its view to the other display's shape (at the device's screen
+height, so the UI keeps its size) and covers it with a layer for the controls. After each frame, the game's finished
+image is copied into a texture (in the game's own OpenGL context, putting its texture and framebuffer bindings back)
+and drawn on the window on the other display, which would otherwise show the controls; that window's touches go to
+the game's view, rescaled. The game takes the new size as MonoGame's resize: its buffer size is set to the view's
+before the view changes, so it isn't letterboxed. The log says `screens swapped: the game at WxH on display N`,
+`copying the game's frames`, `first game frame on the other display`, and `screens back the usual way round`.
 
-This needs testing on a Thor and with a phone and a TV. If the controller stops working after the controls open,
-or the game opens on the device's screen anyway, the log says what Android did. A 4K TV draws the game at 4K, which
-may be slow on a phone; a TV set to 1080p is easier on it.
+This needs testing on a Thor and with a phone and a TV. If the other display stays black or shows the controls
+while swapped, the log says why (for example `copying the game's frame failed`).
 
 ## If it doesn't work
 
@@ -176,17 +182,23 @@ That shows the drawing and layout, but simulated displays don't take touches. To
     with the game, and it queues the window's touches for the game thread.
   - After each frame, on the game thread, it makes a small second OpenGL context current on the second screen's
     surface. That context shares the game's textures, so it can draw the texture over the surface and swap. Then
-    the game's context is made current again. The game's own GL state is never touched, and the second screen
-    doesn't wait for its display's refresh.
+    the game's context is made current again. The game's own GL state is never touched (apart from the frame copy
+    while swapped, which puts it back), and the second screen doesn't wait for its display's refresh.
+  - Swapped, it does the same for two surfaces: the game's copied frame on the other display, and the controls on
+    the layer over the game's view (see **Swap screens and TV mode**).
 - **Options > Second Screen** is `DualScreen` in `config.ini` (on by default); **Swap Screens** is `DualScreenSwap`
   (off by default).
 
 `Simitone.Android/tools/second_screen_check.py` runs the same drawing sequence with Mesa's GLES 3 (surfaceless EGL,
 so no screen is needed): `python3 -I second_screen_check.py`. It finds the game context's config by its ID, makes a
 context sharing it, and draws a texture from the first context with these shaders and this quad. It checks the
-image's top lands at the top, and that the first context is current again afterwards.
+image's top lands at the top, and that the first context is current again afterwards. `swap_check.py` does the same
+for swapped screens: it copies a frame out of the first context's own surface (first with `glCopyTexImage2D`, then
+`glCopyTexSubImage2D`) and draws it on a surface twice the size, checking the frame's top lands at the top and that
+the first context's texture and framebuffer bindings are as they were.
 
 ## Not yet
 
 - Swapping the screens and TV mode haven't been tried on a device yet (see above).
+- With the screens swapped on the Thor, the controller still counts the controls as below the game.
 - Pie menus, dialogs and the top screen's keyboard stay with the game's screen.
