@@ -223,6 +223,7 @@ namespace Simitone.Client.UI.DualScreen
                 if (nav == null || SecondScreen.Frame - SecondScreen.ElsewhereFocusFrame > 2) return; //(not drawn lately: gone)
                 var focused = nav.Focused;
                 if (focused == null || !focused.WillDraw() || !SecondScreen.IsOnSecondScreen(focused)) return;
+                if ((focused as IPadOwnFocus)?.PadShowsFocus ?? false) return; //(it shows the focus itself)
                 DrawPadOutline(batch, UIFocusNavigator.GlobalRect(focused), Time);
             }
         }

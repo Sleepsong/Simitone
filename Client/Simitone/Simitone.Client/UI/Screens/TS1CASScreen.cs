@@ -70,7 +70,7 @@ namespace Simitone.Client.UI.Screens
             {
                 CameraInterp(value);
                 //(on the second screen, the Sim panel is placed there)
-                if (!CASPanelElsewhere) CASPanel.Position = new Vector2((Cam == null)?10:((ScreenWidth - 500) / 2), 10 - (282 * (1-value)));
+                if (!PanelsElsewhere) CASPanel.Position = new Vector2((Cam == null)?10:((ScreenWidth - 500) / 2), 10 - (282 * (1-value)));
                 FamilyPanel.ShowI = 1-Math.Abs(value);
                 FamiliesPanel.TitleI = 1 - Math.Abs(value+1);
 
@@ -103,8 +103,8 @@ namespace Simitone.Client.UI.Screens
         public UICASMode CurrentMode => Mode;
 
         // ---- two screens (see UIDualCAS)
-        /// <summary>The Sim panel is on the second screen, which places it.</summary>
-        public bool CASPanelElsewhere;
+        /// <summary>The families, family and Sim panels are on the second screen, which places them.</summary>
+        public bool PanelsElsewhere;
         /// <summary>The text box with this screen's keyboard focus, as of the last update (the second screen types into it).</summary>
         public UITextEdit MainTextFocus { get; private set; }
         /// <summary>Set by the second screen's keyboard (Done): this screen's text box lets go of the focus next update.</summary>
@@ -112,17 +112,25 @@ namespace Simitone.Client.UI.Screens
         /// <summary>The pad is the device in use (for the second screen's keyboard focus).</summary>
         public bool PadInUse { get; private set; }
 
-        /// <summary>The Sim panel back on this screen, where the mode tweens place it.</summary>
-        public void ReclaimCASPanel()
+        /// <summary>The families, family and Sim panels back on this screen, laid out for it, where the mode tweens place them.</summary>
+        public void ReclaimPanels()
         {
-            if (CASPanel.Parent != this)
+            foreach (var panel in new UIElement[] { CASPanel, FamilyPanel, FamiliesPanel })
             {
-                var from = CASPanel.Parent?.GetChildren();
-                if (from != null) lock (from) from.Remove(CASPanel); //(not Remove: the panel isn't gone)
-                AddBefore(CASPanel, FamilyPanel);
+                if (panel.Parent != this)
+                {
+                    var from = panel.Parent?.GetChildren();
+                    if (from != null) lock (from) from.Remove(panel); //(not Remove: the panel isn't gone)
+                    AddBefore(panel, BackButton); //(in the order they were added)
+                }
+                panel.ScaleX = panel.ScaleY = 1;
+                panel.Visible = true;
             }
-            CASPanelElsewhere = false;
-            CASPanel.Visible = true;
+            FamiliesPanel.SetLayout(null);
+            FamilyPanel.SetLayout(null);
+            FamiliesPanel.Position = Vector2.Zero;
+            FamilyPanel.Position = Vector2.Zero;
+            PanelsElsewhere = false;
             FamilySimInterp = FamilySimInterp;
         }
 
@@ -913,7 +921,7 @@ namespace Simitone.Client.UI.Screens
             MainTextFocus = state.InputManager?.GetFocus() as UITextEdit;
             var dualDeck = DualScreen.SecondScreen.Active ? DualScreen.UIDualCAS.Current : null;
             BackButton.Visible = AcceptButton.Visible = dualDeck == null;
-            if (CASPanelElsewhere && dualDeck == null) ReclaimCASPanel();
+            if (PanelsElsewhere && dualDeck == null) ReclaimPanels();
             ModePositions[3].Y = 11;
             ModeTargets[3].Y = 7.896059f;
             if (Dead) return;

@@ -130,9 +130,10 @@ namespace Simitone.Client.UI.Panels
         private const float PitchLimit = 1.2f; //radians up or down from level
         private bool QueueFocus;
         private bool PanelFocus; //live mode: the needs panel has the pad; buy/build: the catalog has it
+        private bool DeckFocus; //live mode with two screens: the pad is on the second screen's controls (Y)
 
         /// <summary>The pad is in one of the lot's menus: the mode menu, the tab fan, the action queue, or a panel.</summary>
-        public bool InMenu => ModeMenuActive || CategoryMenuActive || QueueFocus || PanelFocus;
+        public bool InMenu => ModeMenuActive || CategoryMenuActive || QueueFocus || PanelFocus || DeckFocus;
 
         //buy/build
         private bool BuildConfirmDown; //A went down on the lot (the holder or tool got a mouse down) and hasn't come up
@@ -254,6 +255,7 @@ namespace Simitone.Client.UI.Panels
             var optionsNav = !Master.LiveMode && panel.Mode == UIMainPanelMode.OPTIONS && panel.PanelActive;
             var panelNav = optionsNav || PanelFocus;
             if (!panelNav) ClearNavigators(frontend);
+            if (DeckFocus && (!Master.LiveMode || DualDeck == null)) EndDeckFocus(); //(left live mode, or the second screen went)
 
             var pad = state.Pad;
             var dt = (float)Math.Min(state.Time.ElapsedGameTime.TotalSeconds, 0.1);
@@ -279,7 +281,7 @@ namespace Simitone.Client.UI.Panels
                 Chords.Update(new[] { pad.IsDown(PadAction.ShoulderLeft), pad.IsDown(PadAction.ShoulderRight),
                     pad.IsDown(PadAction.TriggerLeft), pad.IsDown(PadAction.TriggerRight) }, now);
                 if (padInUse) UpdateCamera(pad, dt, screen);
-                HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav);
+                HandleSharedButtons(pad, screen, frontend, dpadFree: !panelNav && !DeckFocus);
                 if (Chords.Combo) //LB+RB+LT+RT held: the cheat box, as the console games had it
                 {
                     frontend.CheatTextbox.OpenForPad(state);
@@ -343,7 +345,9 @@ namespace Simitone.Client.UI.Panels
 
             var wasQueueFocus = QueueFocus;
             var wasPanelFocus = PanelFocus;
+            var wasDeckFocus = DeckFocus;
             if (QueueFocus) UpdateQueueFocus(pad);
+            else if (DeckFocus) UpdateDeckFocus(state, frontend);
             else
             {
                 HandleLiveButtons(pad, frontend, is3D);
@@ -361,6 +365,19 @@ namespace Simitone.Client.UI.Panels
                     }
                     else MoveSelector(pad.LeftStick, dt, now);
                 }
+            }
+            if (DeckFocus || wasDeckFocus) //the d-pad and A belong to the second screen
+            {
+                var deck = DualDeck;
+                var names = UIDualDeck.PageNames;
+                var page = deck?.Page ?? 0;
+                PadPrompts.Set(PadPrompt.For(PadStick.DPad, "Move"),
+                    PadPrompt.Of(PadAction.Confirm, (deck?.PadOnQueue ?? false) ? "Cancel action" : "Select"),
+                    PadPrompt.Of(PadAction.Cancel, "Back to the lot"),
+                    PadPrompt.Of(PadAction.TriggerLeft, "Prev: " + names[(page + names.Length - 1) % names.Length]),
+                    PadPrompt.Of(PadAction.TriggerRight, "Next: " + names[(page + 1) % names.Length]),
+                    PadPrompt.Pair(PadAction.ShoulderLeft, PadAction.ShoulderRight, "Switch Sim"));
+                return;
             }
             if (QueueFocus || PanelFocus || wasPanelFocus) //the stick and A belong to the panel
             {
@@ -461,8 +478,8 @@ namespace Simitone.Client.UI.Panels
             if (FishEye) items.Add(PadPrompt.Of(PadAction.Cancel, "Normal view"));
             else if (direct) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Cursor"));
             else if (is3D) items.Add(PadPrompt.Of(PadAction.FaceLeft, "Direct control"));
-            items.Add(PadPrompt.Of(PadAction.FaceTop, "Actions"));
             var deck = DualDeck;
+            items.Add(PadPrompt.Of(PadAction.FaceTop, (deck != null) ? "Controls" : "Actions")); //(with two screens: that screen's)
             if (deck != null)
             {
                 //the second screen's pages (needs, job, personality, relationships, inventory)
@@ -1097,7 +1114,51 @@ namespace Simitone.Client.UI.Panels
             if (deck != null) HandleDualPageTriggers(deck);
             else HandlePanelTriggers(pad, frontend, canClose: true);
 
-            if (!PanelFocus && pad.Pressed(PadAction.FaceTop) && Master.Queue.FocusLastForPad()) QueueFocus = true;
+            if (!PanelFocus && pad.Pressed(PadAction.FaceTop))
+            {
+                //with two screens, Y goes to that screen's controls (its actions first); otherwise to the actions here
+                if (deck != null)
+                {
+                    DeckFocus = true;
+                    HITVM.Get().PlaySoundEvent(UISounds.Click);
+                }
+                else if (Master.Queue.FocusLastForPad()) QueueFocus = true;
+            }
+        }
+
+        /// <summary>
+        /// The pad on the second screen's controls (live mode): it moves between them there, A presses, B or Y comes back
+        /// to the lot. LT and RT still turn the Sim's pages, and LB and RB still switch Sims.
+        /// </summary>
+        private void UpdateDeckFocus(UpdateState state, UISimitoneFrontend frontend)
+        {
+            var deck = DualDeck;
+            if (deck == null)
+            {
+                EndDeckFocus();
+                return;
+            }
+            if (state.Pad.Pressed(PadAction.FaceTop))
+            {
+                EndDeckFocus();
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                return;
+            }
+            if (Chords.Tap[PadChords.LT]) deck.TurnPage(-1);
+            if (Chords.Tap[PadChords.RT]) deck.TurnPage(1);
+            if (Chords.Tap[PadChords.LB] || Chords.Tap[PadChords.RB])
+            {
+                FollowSim = true;
+                frontend.CycleSim(Chords.Tap[PadChords.LB] ? -1 : 1);
+            }
+            if (!deck.PadUpdate(state)) EndDeckFocus();
+        }
+
+        private void EndDeckFocus()
+        {
+            if (!DeckFocus) return;
+            DeckFocus = false;
+            UIDualDeck.Current?.PadEnd();
         }
 
         /// <summary>The second screen's live controls, while it shows them: the Sim's pages are there.</summary>
@@ -1249,6 +1310,7 @@ namespace Simitone.Client.UI.Panels
 
         private void EndQueueFocus()
         {
+            EndDeckFocus(); //(the second screen's, too)
             if (!QueueFocus) return;
             Master.Queue.ClearPadFocus();
             QueueFocus = false;

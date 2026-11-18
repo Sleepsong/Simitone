@@ -32,7 +32,10 @@ namespace Simitone.Android
     /// game's own GL state is never touched. The second screen doesn't wait for its display's refresh.
     ///
     /// Only used when the other display is no bigger than the one Simitone is on (the Thor: 1240x1080 under
-    /// 1920x1080). Every display, and what happens, goes to simitone.log ("second screen").
+    /// 1920x1080), unless the screens are swapped: Simitone opened on the other display (Options, Swap Screens: see
+    /// <see cref="GameDisplay"/>), and the controls go on the device's own screen (the Thor's top screen, or a phone
+    /// with a TV or monitor plugged in: TV mode), as an activity there (Android only puts presentations on other
+    /// displays). Every display, and what happens, goes to simitone.log ("second screen").
     /// </summary>
     public class SecondScreenHost : Java.Lang.Object, DisplayManager.IDisplayListener, ISurfaceHolderCallback, ISecondScreenHost
     {
@@ -201,12 +204,22 @@ namespace Simitone.Android
             }
         }
 
-        /// <summary>The display to use: another one that's on and no bigger than Simitone's.</summary>
+        /// <summary>
+        /// The display to use: another one that's on and no bigger than Simitone's; or, with Simitone on another
+        /// display than the device's own (the screens swapped), the device's own.
+        /// </summary>
         private AndroidDisplay Choose(out string why)
         {
             why = null;
             var own = OwnDisplay();
             if (own == null) { why = "no display of its own yet"; return null; }
+            if (own.DisplayId != AndroidDisplay.DefaultDisplay)
+            {
+                var home = Displays.GetDisplay(AndroidDisplay.DefaultDisplay);
+                if (home != null && home.IsValid && home.State != DisplayState.Off) return home;
+                why = "the device's own screen is off";
+                return null;
+            }
             var (ow, oh) = RealSize(own);
             var presentation = Displays.GetDisplays(DisplayManager.DisplayCategoryPresentation).Select(x => x.DisplayId).ToHashSet();
             var others = Displays.GetDisplays()
@@ -251,10 +264,65 @@ namespace Simitone.Android
             }
         }
 
+        /// <summary>
+        /// Swap Screens: the display for the game, when Simitone opens on <paramref name="activity"/>'s: another one
+        /// that's on, a presentation display first (the Thor's bottom screen, a TV or monitor), then the largest.
+        /// </summary>
+        public static AndroidDisplay GameDisplay(Activity activity, out string why)
+        {
+            why = null;
+            try
+            {
+                var displays = (DisplayManager)activity.GetSystemService(Context.DisplayService);
+#pragma warning disable CA1422
+                var own = (Build.VERSION.SdkInt >= BuildVersionCodes.R) ? activity.Display : activity.WindowManager.DefaultDisplay;
+#pragma warning restore CA1422
+                var ownId = own?.DisplayId ?? AndroidDisplay.DefaultDisplay;
+                var presentation = displays.GetDisplays(DisplayManager.DisplayCategoryPresentation).Select(x => x.DisplayId).ToHashSet();
+                var best = displays.GetDisplays()
+                    .Where(d => d.DisplayId != ownId && d.IsValid && d.State != DisplayState.Off)
+                    .OrderByDescending(d => presentation.Contains(d.DisplayId))
+                    .ThenByDescending(d => { var (w, h) = RealSize(d); return (long)w * h; })
+                    .FirstOrDefault();
+                if (best == null) why = "no other display on";
+                return best;
+            }
+            catch (Exception e)
+            {
+                why = "couldn't list the displays (" + e.Message + ")";
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Once the controls' activity shows on the device's own screen (or wherever Android put it), the game's
+        /// screen gets the focus back: starting an activity moves the focus to its display, and the controls' window
+        /// can't take it, which would leave the controller's buttons with nowhere to go.
+        /// </summary>
+        public void ControlsActivityShown()
+        {
+            try
+            {
+                var own = OwnDisplay();
+                if (own == null) return;
+                var options = ActivityOptions.MakeBasic();
+                options.SetLaunchDisplayId(own.DisplayId);
+                var intent = new Intent(Activity, Activity.GetType());
+                intent.AddFlags(ActivityFlags.ReorderToFront | ActivityFlags.NoAnimation);
+                Activity.StartActivity(intent, options.ToBundle());
+                Log($"the game's screen (display {own.DisplayId}) to the front again, for the controller");
+            }
+            catch (Exception e)
+            {
+                Log("couldn't bring the game's screen to the front: " + e.Message);
+            }
+        }
+
         private void OpenWindow(AndroidDisplay display)
         {
             var (w, h) = RealSize(display);
-            var forceActivity = File.Exists(Path.Combine(UserDir, ActivityMarker));
+            //(Android only puts presentations on other displays than the device's own)
+            var forceActivity = File.Exists(Path.Combine(UserDir, ActivityMarker)) || display.DisplayId == AndroidDisplay.DefaultDisplay;
             if (!forceActivity)
             {
                 try
@@ -283,7 +351,7 @@ namespace Simitone.Android
                 Activity.StartActivity(intent, options.ToBundle());
                 ShownOn = display.DisplayId;
                 UsingActivity = true;
-                Log($"window on display {display.DisplayId} ({w}x{h}), as an activity" + (forceActivity ? " (" + ActivityMarker + " file)" : ""));
+                Log($"window on display {display.DisplayId} ({w}x{h}), as an activity" + (forceActivity ? " (" + ((display.DisplayId == AndroidDisplay.DefaultDisplay) ? "the device's own screen" : ActivityMarker + " file") + ")" : ""));
             }
             catch (Exception e)
             {
@@ -672,12 +740,14 @@ namespace Simitone.Android
     [Activity(Label = "Simitone", Exported = false, ExcludeFromRecents = true, ResizeableActivity = true,
         TaskAffinity = "com.sleepsong.simitone.secondscreen", LaunchMode = LaunchMode.SingleInstance,
         Theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen",
+        ScreenOrientation = ScreenOrientation.SensorLandscape, //(on a phone's own screen, in TV mode; other displays ignore it)
         ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden
             | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.SmallestScreenSize)]
     public class SecondScreenActivity : Activity
     {
         public const string DisplayExtra = "display";
         public static SecondScreenActivity Current;
+        private bool GaveFocusBack;
 
         protected override void OnCreate(Bundle savedInstanceState)
         {
@@ -699,6 +769,15 @@ namespace Simitone.Android
             if (SecondScreenHost.Current != null) SecondScreenHost.Current.Attach(view);
             else Finish();
             SetContentView(SecondScreenHost.EdgeToEdge(Window, view));
+        }
+
+        protected override void OnResume()
+        {
+            base.OnResume();
+            //(once: the game's screen takes the focus back for the controller, a moment after this opened)
+            if (GaveFocusBack || Current != this) return;
+            GaveFocusBack = true;
+            new Handler(Looper.MainLooper).PostDelayed(() => SecondScreenHost.Current?.ControlsActivityShown(), 300);
         }
 
         protected override void OnDestroy()

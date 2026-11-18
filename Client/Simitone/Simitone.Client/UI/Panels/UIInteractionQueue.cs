@@ -182,27 +182,32 @@ namespace Simitone.Client.UI.Panels
             return QueueItems.Where(x => !x.UI.Dead).OrderBy(x => x.QueuePosition).ToList();
         }
 
+        /// <summary>Whether there's an action the pad could focus.</summary>
+        public bool HasPadItems => QueueItems.Any(x => !x.UI.Dead);
+
         /// <summary>Starts gamepad focus on the most recently queued action. Returns false if nothing is queued.</summary>
-        public bool FocusLastForPad()
+        public bool FocusLastForPad(bool sound = true)
         {
             PadFocused = PadOrder().LastOrDefault();
-            if (PadFocused != null) HITVM.Get().PlaySoundEvent(UISounds.Click);
+            if (PadFocused != null && sound) HITVM.Get().PlaySoundEvent(UISounds.Click);
             return PadFocused != null;
         }
 
-        /// <summary>Moves gamepad focus left (-1) or right (+1) along the queue, stopping at the ends.</summary>
-        public void MovePadFocus(int direction)
+        /// <summary>Moves gamepad focus left (-1) or right (+1) along the queue, stopping at the ends. False if it didn't move.</summary>
+        public bool MovePadFocus(int direction)
         {
             var order = PadOrder();
             if (order.Count == 0)
             {
                 PadFocused = null;
-                return;
+                return false;
             }
             var index = order.IndexOf(PadFocused);
             var next = order[(index < 0) ? 0 : Math.Max(0, Math.Min(order.Count - 1, index + direction))];
-            if (next != PadFocused) HITVM.Get().PlaySoundEvent(UISounds.Click);
+            var moved = next != PadFocused;
+            if (moved) HITVM.Get().PlaySoundEvent(UISounds.Click);
             PadFocused = next;
+            return moved;
         }
 
         /// <summary>Cancels the focused action, exactly as clicking it does.</summary>

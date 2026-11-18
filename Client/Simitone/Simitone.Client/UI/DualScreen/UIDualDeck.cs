@@ -38,8 +38,11 @@ namespace Simitone.Client.UI.DualScreen
     ///   on the main screen (as its mode button does). Tapping the lit one again goes back to Live. From those, Live
     ///   goes back to live mode; in live mode it goes back to the needs.
     /// The main screen hides its own copies of these while the second screen shows them (UISimitoneFrontend).
+    /// The pad reaches all of this from live mode: Y moves it here (to the actions, or the page's name if there are
+    /// none), the d-pad moves between the controls, A presses one, LT and RT still turn the pages, and B or Y goes
+    /// back to the lot (see <see cref="PadUpdate"/>, run by UILotControlPadHelper).
     /// </summary>
-    public class UIDualDeck : UIContainer
+    public class UIDualDeck : UIContainer, IPadScope
     {
         private readonly TS1GameScreen Game;
         private readonly float W, H;
@@ -72,6 +75,7 @@ namespace Simitone.Client.UI.DualScreen
         private const float FamilyY = 102, FamilyScale = 0.8f;
         private const float PageTabsY = 158, PageTop = 186, PageBottom = 360;
         private UIInteractionQueue Queue;
+        private QueuePadTarget QueueTarget;
         private const float QueueScale = 0.75f;
         private static readonly VMMotive[] MotiveOrder =
         {
@@ -170,6 +174,10 @@ namespace Simitone.Client.UI.DualScreen
             Queue.ScaleX = Queue.ScaleY = QueueScale;
             Queue.Position = new Vector2(15, 404 - 73 * QueueScale);
             LiveGroup.Add(Queue);
+            //(for the pad: the actions are one stop, left and right moving along them)
+            QueueTarget = new QueuePadTarget(Queue, new Rectangle(0, 0, (int)(W - 30), (int)(106 * QueueScale)));
+            QueueTarget.Position = new Vector2(15, 404 - 53 * QueueScale);
+            LiveGroup.Add(QueueTarget);
 
             // --- modes, along the bottom
             for (int i = 0; i < 4; i++)
@@ -187,6 +195,58 @@ namespace Simitone.Client.UI.DualScreen
             }
             ShowPage(0);
             Current = this;
+        }
+
+        // ---- the pad (from the lot: see UILotControlPadHelper)
+
+        /// <summary>Moves the pad between this screen's controls while it's here.</summary>
+        public readonly UIFocusNavigator PadNavigator = new UIFocusNavigator();
+        private bool PadExit;
+
+        /// <summary>The pad's focus is on the actions (A cancels the one it's on).</summary>
+        public bool PadOnQueue => PadNavigator.Focused == QueueTarget && QueueTarget != null;
+
+        /// <summary>
+        /// One update of the pad here: the d-pad moves, A presses, B asks to go back. False when the pad should go back
+        /// to the lot (B, or nothing to move to). Its outline is drawn here, by the second screen.
+        /// </summary>
+        public bool PadUpdate(UpdateState state)
+        {
+            PadExit = false;
+            if (!PadNavigator.Update(state, this))
+            {
+                PadEnd();
+                return false;
+            }
+            //on the actions: the queue's own ring shows which one
+            if (PadOnQueue)
+            {
+                if (!Queue.HasPadFocus) Queue.FocusLastForPad(sound: false);
+            }
+            else Queue.ClearPadFocus();
+            SecondScreen.ElsewhereFocus = PadNavigator;
+            SecondScreen.ElsewhereFocusFrame = SecondScreen.Frame;
+            return !PadExit;
+        }
+
+        /// <summary>The pad went back to the lot.</summary>
+        public void PadEnd()
+        {
+            PadNavigator.Clear();
+            Queue.ClearPadFocus();
+            if (Clock.Expand) Clock.SetExpanded(false);
+        }
+
+        /// <summary>First the actions, if there are any; otherwise the name of the page showing.</summary>
+        public UIElement PadDefaultFocus => (QueueTarget.PadFocusable) ? (UIElement)QueueTarget : PageTabs[Page];
+
+        public bool PadCancel()
+        {
+            //B: the clock's speed buttons close first, as tapping away from them does
+            if (Clock.Expand) Clock.SetExpanded(false);
+            else PadExit = true;
+            HITVM.Get().PlaySoundEvent(UISounds.Click);
+            return true;
         }
 
         // ---- the Sim's pages
@@ -445,8 +505,42 @@ namespace Simitone.Client.UI.DualScreen
             frontend.ModeSwitcher?.EndSwitch(panel.Mode);
         }
 
+        /// <summary>
+        /// The actions, as one stop for the pad: left and right move along them (and on past the ends), A cancels the one
+        /// the queue's ring is on. The queue shows the focus itself.
+        /// </summary>
+        private class QueuePadTarget : UIElement, IPadNavigable, IPadOwnFocus
+        {
+            private readonly UIInteractionQueue Queue;
+            private readonly Rectangle Bounds;
+
+            public QueuePadTarget(UIInteractionQueue queue, Rectangle bounds)
+            {
+                Queue = queue;
+                Bounds = bounds;
+            }
+
+            public bool PadFocusable => Queue.Visible && Queue.HasPadItems;
+            public Rectangle PadBounds => Bounds;
+            public bool PadShowsFocus => Queue.HasPadFocus;
+
+            public bool PadMove(PadDirection direction)
+            {
+                if (direction == PadDirection.Left) return Queue.MovePadFocus(-1);
+                if (direction == PadDirection.Right) return Queue.MovePadFocus(1);
+                return false;
+            }
+
+            public void PadActivate()
+            {
+                Queue.CancelPadFocused();
+            }
+
+            public override void Draw(UISpriteBatch batch) { }
+        }
+
         /// <summary>A page's name in the row under the family: tap it to show the page; the one showing is underlined.</summary>
-        private class PageTab : UIElement
+        private class PageTab : UIElement, IPadNavigable
         {
             public bool Selected;
             public Action OnClick;
@@ -473,6 +567,16 @@ namespace Simitone.Client.UI.DualScreen
                         OnClick?.Invoke();
                     }
                 });
+            }
+
+            public bool PadFocusable => Visible;
+            public Rectangle PadBounds => new Rectangle(0, 0, (int)TabW, (int)TabH);
+            public bool PadMove(PadDirection direction) => false;
+
+            public void PadActivate()
+            {
+                HITVM.Get().PlaySoundEvent(UISounds.Click);
+                OnClick?.Invoke();
             }
 
             public override void Draw(UISpriteBatch batch)

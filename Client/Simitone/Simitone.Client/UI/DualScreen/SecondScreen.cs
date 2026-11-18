@@ -40,6 +40,11 @@ namespace Simitone.Client.UI.DualScreen
         public static bool Active => Panel != null && Panel.Shown;
         /// <summary>For the log: called with a line when the second screen starts or stops being used.</summary>
         public static Action<string> Note;
+        /// <summary>
+        /// Set by the platform: the game is on the other screen this run (Options, Swap Screens: the Thor's bottom
+        /// screen, or a TV or monitor), and the controls are on the device's own screen.
+        /// </summary>
+        public static bool Swapped;
 
         /// <summary>
         /// The pad's focus on the second screen, from a main-screen navigator whose focus moved there (see

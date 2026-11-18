@@ -36,17 +36,34 @@ namespace Simitone.Client.UI.Panels.CAS
 
         public int Selection;
         public float TitleI { get; set; }
+
+        /// <summary>
+        /// The size this lays out for, when not the screen's (on a second screen: see UIDualCAS). SetLayout changes it.
+        /// </summary>
+        private Point? Layout;
+        private int SW => Layout?.X ?? UIScreen.Current.ScreenWidth;
+        private int SH => Layout?.Y ?? UIScreen.Current.ScreenHeight;
+        /// <summary>The list in the middle, unless that would put it under the buttons on the right (a narrow layout).</summary>
+        private float ListX => Math.Max(0, Math.Min((SW - 810) / 2, SW - 150 - 810));
+
+        /// <summary>Lays out for a size other than the screen's (null: the screen's again).</summary>
+        public void SetLayout(Point? layout)
+        {
+            if (layout == Layout) return;
+            Layout = layout;
+            GameResized();
+        }
         
         public UIFamiliesCASPanel()
         {
             var gd = GameFacade.GraphicsDevice;
             var ui = Content.Get().CustomUI;
-            var sh = UIScreen.Current.ScreenHeight;
-            var sw = UIScreen.Current.ScreenWidth;
+            var sh = SH;
+            var sw = SW;
             FamilyList = new UITouchScroll(FamilyLength, FamilyProvider);
             FamilyList.VerticalMode = true;
             FamilyList.Size = new Vector2(810, sh);
-            FamilyList.X = (sw - 810) / 2;
+            FamilyList.X = ListX;
             FamilyList.ItemWidth = 180;
             FamilyList.Margin = 90;
             FamilyList.DrawBounds = false;
@@ -87,10 +104,10 @@ namespace Simitone.Client.UI.Panels.CAS
 
         public override void GameResized()
         {
-            var sh = UIScreen.Current.ScreenHeight;
-            var sw = UIScreen.Current.ScreenWidth;
+            var sh = SH;
+            var sw = SW;
             FamilyList.Size = new Vector2(810, sh);
-            FamilyList.X = (sw - 810) / 2;
+            FamilyList.X = ListX;
             FamilyList.Reset();
             Title.Size = new Vector2(sw, 60);
             DeleteButton.Position = new Vector2(sw - 140, sh - 260);
@@ -120,14 +137,14 @@ namespace Simitone.Client.UI.Panels.CAS
         {
             var y = TitleI * 100 - 85;
             Title.Y = y;
-            NewButton.X = UIScreen.Current.ScreenWidth - 140 * TitleI;
+            NewButton.X = SW - 140 * TitleI;
             DeleteButton.X = NewButton.X;
 
             FamilyList.Opacity = TitleI;
             FamilyList.Visible = FamilyList.Opacity > 0;
             Title.Visible = false;
             base.Draw(batch);
-            DrawLocalTexture(batch, WhitePx, null, new Vector2(0, y), new Vector2(UIScreen.Current.ScreenWidth, 60), UIStyle.Current.Bg);
+            DrawLocalTexture(batch, WhitePx, null, new Vector2(0, y), new Vector2(SW, 60), UIStyle.Current.Bg);
             Title.Visible = true;
             Title.Draw(batch);
         }

@@ -23,7 +23,8 @@ screens and the bottom screen's window and drawing.
 ## Using it
 
 1. Open Simitone on the **top** screen. In AYN's launcher you can long-press Simitone and set *Screen Launch* to
-   *Top Screen*. Simitone only uses a second screen that's no bigger than the one it's on.
+   *Top Screen*. Simitone only uses a second screen that's no bigger than the one it's on (unless the screens are
+   swapped: see **Swap screens and TV mode** below).
 2. On a lot, the bottom screen shows:
    - along the top: the money, the floor (down, its name, up), the cutaway button and the clock. Tap the clock for
      the speed buttons. Each tap of the cutaway button goes to the next wall view: cut away, walls up, roof, walls
@@ -32,8 +33,7 @@ screens and the bottom screen's window and drawing.
    - in live mode: the family (tap a Sim to control them; the one you control is outlined), then the controlled
      Sim's pages: **Needs** (two columns, as in the original game), **Job**, **Personality**, **Relationships** and
      **Inventory**. Tap a page's name to show it, or turn the pages with the controller's LT and RT. Under them, the
-     Sim's actions: the running one large, then the queued ones. Tap one to cancel it. The top screen only shows its
-     own action queue while the controller is using it (Y).
+     Sim's actions: the running one large, then the queued ones. Tap one to cancel it.
    - in buy and build mode: the catalog. Its categories run along the top (buy: seating, surfaces, appliances and
      so on; build: walls, floors and roofs; outdoors; doors, windows and more), the open one lit. Under them, the
      category's kinds of item, then its items, in two rows: drag them sideways to scroll. Tap an item to buy it
@@ -59,24 +59,34 @@ screens and the bottom screen's window and drawing.
    tool buttons) hide while the controller is in use, and come back when you touch the top screen.
    Pie menus, dialogs and the keyboard stay on the top screen.
 4. The Thor's built-in controls work the lot on the top screen, as with any controller (the controller port,
-   `claude/intelligent-cray-f9z43d`, is merged in; its controls are listed in `UILotControlPadHelper`). What they
+   `engine/controller-support`, is merged in; its controls are listed in `UILotControlPadHelper`). What they
    change shows on the bottom screen too: the mode (Select), the speed (D-pad left/right), the walls (L3) and the
    Sim (LB/RB). Holding Select opens the mode menu on the top screen. In buy and build mode the controller uses the
    bottom screen's catalog: LT moves the controller between the lot and the catalog, where its focus is outlined;
    the D-pad moves over the kinds of item, then over the items (left/right along the rows, up/down between them);
    A opens a kind or picks an item, which puts it in hand on the lot; B goes back to the kinds of item, then to the
    lot; RT opens the next category; Y searches (B ends the search). The highlighted item's name and price show
-   under the items. In live mode LT and
-   RT turn the bottom screen's pages (needs, job, personality, relationships, inventory). Touching the bottom
-   screen doesn't take the controls away from the game: its window can't take the focus.
+   under the items. In live mode LT and RT turn the bottom screen's pages (needs, job, personality, relationships,
+   inventory), and **Y** moves the controller to the bottom screen's controls, starting on the Sim's actions (or
+   the page's name, with none queued). There the D-pad moves between everything on the bottom screen (the floor,
+   cutaway and clock buttons, the family, the pages' names, what's on the page, the actions and the mode buttons),
+   outlined, and A presses it: on the actions, left and right move along them and A cancels one; on the clock, A
+   opens the speeds and picks one. LT and RT still turn the pages and LB and RB still switch Sims. B (or Y) goes
+   back to the lot (on the clock's speeds, B closes them first). Touching the bottom screen doesn't take the
+   controls away from the game: its window can't take the focus.
 5. In the neighbourhood, the top screen shows just the map, and the bottom screen its name and buttons: **Create a
    family**, **Options**, **Back to the neighborhood** and the other neighbourhoods (Downtown, Vacation Island,
    Studio Town, Magic Town). Pick a house on the map and its panel opens on the bottom screen (Enter Lot or Move
    In, and More for evicting), with the house in the middle of the map.
-6. In Create a Family, the Sim's panel (name, gender, age, skin, personality, bio) is on the bottom screen while
-   making a Sim, with **Back** and **Accept** (**Move in**, **Done**) under it; the families, the new family and
-   the head and body carousels stay on the top screen. Tap a name or the bio, on either screen, and a keyboard
-   comes up on the bottom screen to type it (on Android there was no keyboard for touch before).
+6. In Create a Family, the top screen shows just the lot and the Sims, and the bottom screen each step's panel,
+   with **Back** and **Accept** (**Move in**, **Done**) under it:
+   - choosing a family: the families (tap one to pick it), with **New family** and **Delete** beside them;
+   - a new family: its last name along the top and its Sims along the bottom (+ adds one; tap one to edit or
+     delete them), the family standing in the house on the top screen;
+   - making a Sim: the Sim's panel (name, gender, age, skin, personality, bio). The head and body carousels stay
+     on the top screen, in the 3D view.
+   They slide in and out on the bottom screen as they do on the top one. Tap a name or the bio, on either screen,
+   and a keyboard comes up on the bottom screen to type it (on Android there was no keyboard for touch before).
 7. With the controller, the two screens are one: down from the top screen's lowest house, or from the Sims, carries
    on to the bottom screen's buttons and panels, and up comes back, with the focus outlined on whichever screen it
    is on. A text box on the bottom screen brings up its keyboard for the pad too (A types, B deletes, Y space,
@@ -85,6 +95,29 @@ screens and the bottom screen's window and drawing.
 
 **Options > Second Screen** (Graphics tab, only on devices with a second screen) turns it off and back on without
 a restart. Off, the bottom screen goes back to whatever was there, and the controls return to the top screen.
+
+## Swap screens and TV mode
+
+**Options > Swap Screens** (Graphics tab, under Second Screen) puts the game on the other screen and the controls
+on the device's own:
+- on the Thor, the lot on the bottom screen and the controls on the top one;
+- on a phone with a TV or monitor plugged in (USB-C or HDMI), the lot on the TV and the controls on the phone:
+  **TV mode**. Use a controller for the lot; the phone's screen is the controls, held sideways.
+
+It applies the next time Simitone opens (the option says *restart*): the game can't move between screens once it's
+running. Simitone opens on the device's screen as usual, then opens again on the other screen and closes the first.
+With no other screen on (the TV unplugged), it stays on the device's screen with the controls on it, as on any phone.
+
+How it works: `SimitoneActivity` reads `DualScreenSwap` from `config.ini` before the game starts, and opens
+`SimitoneOtherScreenActivity` (the same game) on the other display with Android's launch-display option, preferring
+a presentation display (the Thor's bottom screen, a TV or monitor), then the largest. `SecondScreenHost` then puts the
+controls on the device's own display, as an activity there (Android only puts presentations on other displays), and
+brings the game's screen back to the front a moment later, so the controller's buttons go to the game. The log
+says `swap screens: opening the game on display N`, then `on display N (screens swapped)` and the controls' window.
+
+This needs testing on a Thor and with a phone and a TV. If the controller stops working after the controls open,
+or the game opens on the device's screen anyway, the log says what Android did. A 4K TV draws the game at 4K, which
+may be slow on a phone; a TV set to 1080p is easier on it.
 
 ## If it doesn't work
 
@@ -128,8 +161,11 @@ That shows the drawing and layout, but simulated displays don't take touches. To
   - `UISimitoneFrontend` hides the top screen's copies while the second screen is active.
   - `UIDualNeighbourhood` is the neighbourhood's: its buttons press the map's own (`UINeighbourhoodSwitcher`, hidden on
     the top screen), and the house panel (`UIHouseSelectPanel`) is laid out for the bottom screen and opened there.
-  - `UIDualCAS` is Create a Family's: it takes the Sim panel (`UISimCASPanel`) from the top screen while it shows,
-    and its Back and Accept press the top screen's.
+  - `UIDualCAS` is Create a Family's: it takes the families, family and Sim panels (`UIFamiliesCASPanel`,
+    `UIFamilyCASPanel`, `UISimCASPanel`) from the top screen while it shows, the first two laid out for the bottom
+    screen (`SetLayout`) and scaled to fit, and its Back and Accept press the top screen's.
+  - In live mode, `UIDualDeck` is a pad scope of its own: `UILotControlPadHelper` runs its navigator while the pad is
+    there (Y), its page names are pad targets, and its action queue is one target that moves along the actions.
   - `UIDualKeyboard` is the bottom screen's keyboard (catalog search, names): the pad keyboard's layout without the
     number row, for touch and the pad.
   - The pad moves between the screens through two hooks in FreeSO's `UIFocusNavigator` (`ToNavSpace` and
@@ -142,7 +178,8 @@ That shows the drawing and layout, but simulated displays don't take touches. To
     surface. That context shares the game's textures, so it can draw the texture over the surface and swap. Then
     the game's context is made current again. The game's own GL state is never touched, and the second screen
     doesn't wait for its display's refresh.
-- **Options > Second Screen** is `DualScreen` in `config.ini` (on by default).
+- **Options > Second Screen** is `DualScreen` in `config.ini` (on by default); **Swap Screens** is `DualScreenSwap`
+  (off by default).
 
 `Simitone.Android/tools/second_screen_check.py` runs the same drawing sequence with Mesa's GLES 3 (surfaceless EGL,
 so no screen is needed): `python3 -I second_screen_check.py`. It finds the game context's config by its ID, makes a
@@ -151,8 +188,5 @@ image's top lands at the top, and that the first context is current again afterw
 
 ## Not yet
 
-- In Create a Family, the families list and the new family's panel are still on the top screen (only the Sim's
-  panel and the buttons are on the bottom).
-- Apart from the catalog, the controller doesn't reach the bottom screen's buttons yet (everything there can also be
-  done with the pad, except picking things in the relationships and inventory pages).
-- Swapping the screens, and a phone with a bigger external screen (lot on the TV, controls on the phone).
+- Swapping the screens and TV mode haven't been tried on a device yet (see above).
+- Pie menus, dialogs and the top screen's keyboard stay with the game's screen.

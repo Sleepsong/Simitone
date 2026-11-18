@@ -11,10 +11,13 @@ using Simitone.Client.UI.Screens;
 namespace Simitone.Client.UI.DualScreen
 {
     /// <summary>
-    /// Create a Family's controls on the second screen, so the main screen shows the Sims and the families:
-    /// - what's being done (the families, a new family, a new Sim);
-    /// - in Sim edit, the Sim's panel (name, gender, age, skin, personality, bio: <see cref="Panels.CAS.UISimCASPanel"/>,
-    ///   moved here from the main screen; the head and body carousels stay there, in the 3D view);
+    /// Create a Family's controls on the second screen, so the main screen shows just the lot and the Sims. Each
+    /// mode's panel is moved here from the main screen, laid out for this one (and slides in and out as it does there):
+    /// - picking a family: the families (<see cref="Panels.CAS.UIFamiliesCASPanel"/>), with New family and Delete;
+    /// - a new family: its last name and its Sims (<see cref="Panels.CAS.UIFamilyCASPanel"/>), the family standing on
+    ///   the main screen;
+    /// - a new Sim: the Sim's panel (name, gender, age, skin, personality, bio: <see cref="Panels.CAS.UISimCASPanel"/>;
+    ///   the head and body carousels stay on the main screen, in the 3D view);
     /// - Back and Accept (Move in, Done), which press the main screen's own (hidden there while this shows);
     /// - a keyboard (<see cref="UIDualKeyboard"/>) whenever a name or the bio is being typed, on either screen: tap
     ///   the text box, then the keys (the main screen's pad keyboard serves the pad there instead).
@@ -34,6 +37,10 @@ namespace Simitone.Client.UI.DualScreen
         private readonly UIDualKeyboard Keyboard;
         private const float ButtonScale = 0.7f;
         private const float PanelTop = 58;
+        /// <summary>The height of the row of Back and Accept, at the bottom (the panels stay above it).</summary>
+        private const float ButtonRow = 95;
+        /// <summary>The widths the families and family panels need (their lists are 810 wide, and the buttons beside).</summary>
+        private const float FamiliesWidth = 960, FamilyWidth = 860;
 
         /// <summary>The keyboard is showing, typing into <see cref="Target"/>.</summary>
         public bool KeyboardOpen { get; private set; }
@@ -95,17 +102,19 @@ namespace Simitone.Client.UI.DualScreen
         {
             Input = state.InputManager;
             var mode = Cas.CurrentMode;
-            TakeSimPanel(mode);
+            TakePanels(mode);
 
+            //(the families and family panels have titles of their own)
             switch (mode)
             {
                 case UICASMode.FamilySelect:
-                    Title.Caption = "Families";
-                    Hint.Caption = "Pick a family on the top screen and move them in, or make a new one.";
+                    Title.Caption = "";
+                    Hint.Caption = "";
                     break;
                 case UICASMode.FamilyEdit:
-                    Title.Caption = "Create a Family";
-                    Hint.Caption = "Add Sims to the family and give it a name on the top screen, then Done.";
+                    Title.Caption = "";
+                    Hint.Caption = "Add Sims with +, and tap one to edit or delete them. Name the family above, then Done. The family stands on the top screen.";
+                    Hint.Y = 125;
                     break;
                 default:
                     Title.Caption = "Create a Sim";
@@ -128,19 +137,41 @@ namespace Simitone.Client.UI.DualScreen
             mirror.Disabled = original.Disabled;
         }
 
-        /// <summary>The Sim panel here (in Sim edit) instead of on the main screen, under the title.</summary>
-        private void TakeSimPanel(UICASMode mode)
+        /// <summary>
+        /// The families, family and Sim panels here instead of on the main screen (in the order they're there), the
+        /// first two scaled down to fit and laid out for the space above Back and Accept; the Sim panel under the title,
+        /// in Sim edit.
+        /// </summary>
+        private void TakePanels(UICASMode mode)
         {
-            var panel = Cas.CASPanel;
-            if (panel.Parent != this)
-            {
-                var from = panel.Parent?.GetChildren();
-                if (from != null) lock (from) from.Remove(panel); //(not Remove: the panel isn't gone)
-                AddBefore(panel, PadButtons);
-                Cas.CASPanelElsewhere = true;
-            }
-            panel.Position = new Vector2((W - 500) / 2, PanelTop);
-            panel.Visible = mode == UICASMode.SimEdit;
+            Take(Cas.CASPanel);
+            Take(Cas.FamilyPanel);
+            Take(Cas.FamiliesPanel);
+            Cas.PanelsElsewhere = true;
+
+            var families = Cas.FamiliesPanel;
+            var scale = System.Math.Min(1f, W / FamiliesWidth);
+            families.ScaleX = families.ScaleY = scale;
+            families.Position = Vector2.Zero;
+            families.SetLayout(new Point((int)(W / scale), (int)((H - ButtonRow) / scale)));
+
+            var family = Cas.FamilyPanel;
+            scale = System.Math.Min(1f, W / FamilyWidth);
+            family.ScaleX = family.ScaleY = scale;
+            family.Position = Vector2.Zero;
+            family.SetLayout(new Point((int)(W / scale), (int)((H - ButtonRow) / scale)));
+
+            var sim = Cas.CASPanel;
+            sim.Position = new Vector2((W - 500) / 2, PanelTop);
+            sim.Visible = mode == UICASMode.SimEdit;
+        }
+
+        private void Take(UIElement panel)
+        {
+            if (panel.Parent == this) return;
+            var from = panel.Parent?.GetChildren();
+            if (from != null) lock (from) from.Remove(panel); //(not Remove: the panel isn't gone)
+            AddBefore(panel, PadButtons);
         }
 
         // ---- keyboard
@@ -207,13 +238,8 @@ namespace Simitone.Client.UI.DualScreen
         public override void Removed()
         {
             if (Current == this) Current = null;
-            //the Sim panel goes back to the main screen (not removed with this)
-            var panel = Cas.CASPanel;
-            if (panel.Parent == this)
-            {
-                lock (GetChildren()) GetChildren().Remove(panel);
-                Cas.ReclaimCASPanel();
-            }
+            //the panels go back to the main screen (not removed with this)
+            if (Cas.PanelsElsewhere) Cas.ReclaimPanels();
             base.Removed();
         }
     }

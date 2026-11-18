@@ -29,6 +29,24 @@ namespace Simitone.Client.UI.Panels.CAS
 
         public Action<bool, int> ModifySim;
 
+        /// <summary>
+        /// The size this lays out for, when not the screen's (on a second screen: see UIDualCAS). SetLayout changes it.
+        /// </summary>
+        private Point? Layout;
+        private int SW => Layout?.X ?? UIScreen.Current.ScreenWidth;
+        private int SH => Layout?.Y ?? UIScreen.Current.ScreenHeight;
+
+        /// <summary>Lays out for a size other than the screen's (null: the screen's again).</summary>
+        public void SetLayout(Point? layout)
+        {
+            if (layout == Layout) return;
+            Layout = layout;
+            SecondNameTitle.Size = new Vector2(SW, 25);
+            NameStripe.Position = new Vector2(SW, 30);
+            GameResized();
+            ShowI = ShowI;
+        }
+
         private float _ShowI;
         public float ShowI
         {
@@ -42,13 +60,13 @@ namespace Simitone.Client.UI.Panels.CAS
                 ListStripe.Visible = value > 0;
                 NameStripe.Visible = value > 0;
                 SecondNameTitle.Visible = value > 0;
-                NameStripe.X = (1 - value) * UIScreen.Current.ScreenWidth;
+                NameStripe.X = (1 - value) * SW;
                 NameStripe.Y = 30;
-                NameStripe.BodySize = new Point((int)(value * UIScreen.Current.ScreenWidth), NameStripe.BodySize.Y);
-                ListStripe.BodySize = new Point((int)(value * UIScreen.Current.ScreenWidth), ListStripe.BodySize.Y);
-                AvatarList.X = (1-value) * (-UIScreen.Current.ScreenWidth);
-                SecondNameTitle.X = (1 - value) * (UIScreen.Current.ScreenWidth);
-                SecondName.X = (1 - value) * (UIScreen.Current.ScreenWidth);
+                NameStripe.BodySize = new Point((int)(value * SW), NameStripe.BodySize.Y);
+                ListStripe.BodySize = new Point((int)(value * SW), ListStripe.BodySize.Y);
+                AvatarList.X = (1-value) * (-SW);
+                SecondNameTitle.X = (1 - value) * (SW);
+                SecondName.X = (1 - value) * (SW);
                 _ShowI = value;
             }
         }
@@ -101,7 +119,7 @@ namespace Simitone.Client.UI.Panels.CAS
             ListStripe.Position = new Vector2(0, UIScreen.Current.ScreenHeight - 145);
             Add(ListStripe);
 
-            AvatarList = new UIAvatarListPanel(avatar);
+            AvatarList = new UIAvatarListPanel(avatar, () => SW);
             AvatarList.Y = UIScreen.Current.ScreenHeight - 145;
             AvatarList.OnSelection += AvatarList_OnSelection;
             Add(AvatarList);
@@ -130,8 +148,8 @@ namespace Simitone.Client.UI.Panels.CAS
                 ModifySim?.Invoke(false, -1);
             } else
             {
-                AvatarOptions.X = AvatarOptions.X = UIScreen.Current.ScreenWidth / 2 - (Avatars.Count()) * 50 + obj * 100 - 44;
-                AvatarOptions.Y = UIScreen.Current.ScreenHeight - 145;
+                AvatarOptions.X = SW / 2 - (Avatars.Count()) * 50 + obj * 100 - 44;
+                AvatarOptions.Y = SH - 145;
                 if (AvatarOptions.CategoryExpand < 1 || ActiveSelection == -1 || ActiveSelection == obj)
                     AvatarOptions.Open();
             }
@@ -141,14 +159,14 @@ namespace Simitone.Client.UI.Panels.CAS
         public override void GameResized()
         {
             base.GameResized();
-            AvatarList.Y = UIScreen.Current.ScreenHeight - 145;
-            ListStripe.Position = new Vector2(0, UIScreen.Current.ScreenHeight - 145);
-            SecondName.SetSize(UIScreen.Current.ScreenWidth, 60);
+            AvatarList.Y = SH - 145;
+            ListStripe.Position = new Vector2(0, SH - 145);
+            SecondName.SetSize(SW, 60);
 
             if (ActiveSelection > -1)
             {
-                AvatarOptions.X = UIScreen.Current.ScreenWidth / 2 - (Avatars.Count()) * 50 + ActiveSelection*100 - 44;
-                AvatarOptions.Y = UIScreen.Current.ScreenHeight - 145;
+                AvatarOptions.X = SW / 2 - (Avatars.Count()) * 50 + ActiveSelection*100 - 44;
+                AvatarOptions.Y = SH - 145;
             }
 
             AvatarList.InitAvatarList();
@@ -164,9 +182,12 @@ namespace Simitone.Client.UI.Panels.CAS
         /// <summary>The "add a member" button at the end of the list.</summary>
         public UIElement AddButton => Btns.LastOrDefault();
         public event Action<int> OnSelection;
-        public UIAvatarListPanel(List<VMAvatar> avatar)
+        /// <summary>The width the list is centred in (the family panel's layout).</summary>
+        private Func<int> Width;
+        public UIAvatarListPanel(List<VMAvatar> avatar, Func<int> width = null)
         {
             Avatars = avatar;
+            Width = width ?? (() => UIScreen.Current.ScreenWidth);
 
             InitAvatarList();
         }
@@ -181,7 +202,7 @@ namespace Simitone.Client.UI.Panels.CAS
             Btns.Clear();
 
             i = 0;
-            var baseX = UIScreen.Current.ScreenWidth/2 - (Avatars.Count()) * 50;
+            var baseX = Width()/2 - (Avatars.Count()) * 50;
             foreach (var fam in Avatars)
             {
                 var btn = new UIAvatarSelectButton(UIIconCache.GetObject(fam));

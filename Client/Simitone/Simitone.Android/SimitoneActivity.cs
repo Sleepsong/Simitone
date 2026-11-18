@@ -47,6 +47,13 @@ namespace Simitone.Android
         private string Downloads; //the phone's Download folder
         private bool WaitingForAccess;
         private bool Started;
+        private static bool ConsoleLogged; //(once per run: the swapped screens' activity starts it all again)
+
+        /// <summary>
+        /// This is the activity opened on the other display (Options, Swap Screens): it runs the game wherever it was
+        /// opened, and never opens another.
+        /// </summary>
+        protected virtual bool OpenedOnOtherScreen => false;
 
         public static void Log(string line)
         {
@@ -131,7 +138,8 @@ namespace Simitone.Android
 #pragma warning disable CA1422 // (the public Download folder's path: still the way to get it for file access)
             Downloads = global::Android.OS.Environment.GetExternalStoragePublicDirectory(global::Android.OS.Environment.DirectoryDownloads).AbsolutePath;
 #pragma warning restore CA1422
-            Console.SetOut(new LogWriter(Console.Out));
+            if (!ConsoleLogged) Console.SetOut(new LogWriter(Console.Out));
+            ConsoleLogged = true;
             Log($"Simitone {PackageManager.GetPackageInfo(PackageName, 0).VersionName} on Android {Build.VERSION.Release} (API {(int)Build.VERSION.SdkInt}), {Build.Manufacturer} {Build.Model}");
 
             Status = new TextView(this) { Text = "Preparing Simitone...", Gravity = GravityFlags.Center, TextSize = 18 };
@@ -255,6 +263,7 @@ namespace Simitone.Android
             Log("file access: yes. Download folder: " + Downloads);
             Status.Text = "Preparing Simitone...";
             SetContentView(Status);
+            if (OpenOnOtherScreen(userDir)) return;
 
             // (all here in OnCreate, before the screen is resumed: see RestartIfAccessGranted)
             string game;
@@ -401,7 +410,11 @@ namespace Simitone.Android
                 FSO.Files.ImageLoaderHelpers.BitmapFunction = BitmapReader;
 
                 var metrics = new DisplayMetrics();
-                WindowManager.DefaultDisplay.GetRealMetrics(metrics);
+                var display = OwnDisplay();
+                display.GetRealMetrics(metrics);
+                //swapped: the game on the other display (the Thor's bottom screen, a TV or monitor), the controls on the device's own
+                Simitone.Client.UI.DualScreen.SecondScreen.Swapped = display.DisplayId != Display.DefaultDisplay;
+                Log($"on display {display.DisplayId}" + (Simitone.Client.UI.DualScreen.SecondScreen.Swapped ? " (screens swapped)" : ""));
                 var shortSide = Math.Min(metrics.WidthPixels, metrics.HeightPixels);
                 var scale = Math.Max(1f, Math.Min(4f, shortSide / 560f)); //UI at least ~560 px tall
                 Log($"screen {metrics.WidthPixels}x{metrics.HeightPixels} @ {metrics.DensityDpi} dpi, UI scale {scale:0.00}, 3D: {FSOEnvironment.Enable3D}");
@@ -442,6 +455,67 @@ namespace Simitone.Android
                 Status.Text = "Simitone couldn't start:\n" + e.Message + "\n\nSee Download/Simitone/simitone.log";
                 SetContentView(Status);
             }
+        }
+
+        private Display OwnDisplay()
+        {
+#pragma warning disable CA1422
+            return ((Build.VERSION.SdkInt >= BuildVersionCodes.R) ? Display : null) ?? WindowManager.DefaultDisplay;
+#pragma warning restore CA1422
+        }
+
+        /// <summary>
+        /// Options, Swap Screens: Simitone opens again on the other display (the Thor's bottom screen, or a TV or
+        /// monitor plugged into a phone: TV mode), as <see cref="SimitoneOtherScreenActivity"/>, and this one closes.
+        /// The game can't move between displays once it's running, so this is done before it starts. With no other
+        /// display on, the game stays here. Returns true if it went.
+        /// </summary>
+        private bool OpenOnOtherScreen(string userDir)
+        {
+            if (OpenedOnOtherScreen) return false;
+            if (!IniBool(userDir, "DualScreenSwap", false) || !IniBool(userDir, "DualScreen", true)) return false;
+            var target = SecondScreenHost.GameDisplay(this, out var why);
+            if (target == null)
+            {
+                Log("swap screens: " + why + ", so the game stays on this screen");
+                return false;
+            }
+            try
+            {
+                var options = ActivityOptions.MakeBasic();
+                options.SetLaunchDisplayId(target.DisplayId);
+                var intent = new Intent(this, typeof(SimitoneOtherScreenActivity));
+                intent.AddFlags(ActivityFlags.NewTask);
+                StartActivity(intent, options.ToBundle());
+                Log($"swap screens: opening the game on display {target.DisplayId} (\"{target.Name}\"); the controls come here");
+                Status.Text = "Opening Simitone on the other screen...";
+                Finish();
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log("swap screens: couldn't open the game on display " + target.DisplayId + " (" + e.Message + "), so it stays here");
+                return false;
+            }
+        }
+
+        /// <summary>A true/false setting from config.ini (read directly: the game's settings aren't loaded yet).</summary>
+        private static bool IniBool(string userDir, string key, bool fallback)
+        {
+            try
+            {
+                var path = Path.Combine(userDir, "config.ini");
+                if (!File.Exists(path)) return fallback;
+                foreach (var line in File.ReadLines(path))
+                {
+                    var clean = line.Trim();
+                    var split = clean.IndexOf('=');
+                    if (split <= 0 || clean.Substring(0, split).Trim() != key) continue;
+                    return bool.TryParse(clean.Substring(split + 1).Trim(), out var value) ? value : fallback;
+                }
+            }
+            catch (Exception) { }
+            return fallback;
         }
 
         /// <summary>Image decoding (as Simitone's desktop build does it): RGBA pixels with ImageSharp.</summary>
@@ -516,5 +590,21 @@ namespace Simitone.Android
             }
             public override void WriteLine(string value) { Log(Line.ToString() + value); Line.Clear(); }
         }
+    }
+
+    /// <summary>
+    /// Simitone with the screens swapped (Options, Swap Screens): the same game, opened by <see cref="SimitoneActivity"/>
+    /// on the other display (the Thor's bottom screen, or a TV or monitor plugged into a phone: TV mode), with the
+    /// controls on the device's own screen (see SecondScreenHost). A separate activity, as the first can only run once.
+    /// </summary>
+    [Activity(Label = "Simitone", Exported = false, ResizeableActivity = true,
+        Theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen",
+        AlwaysRetainTaskState = true, LaunchMode = LaunchMode.SingleInstance, TaskAffinity = "com.sleepsong.simitone.swapped",
+        ScreenOrientation = ScreenOrientation.SensorLandscape,
+        ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.Keyboard | ConfigChanges.KeyboardHidden
+            | ConfigChanges.ScreenSize | ConfigChanges.ScreenLayout | ConfigChanges.UiMode | ConfigChanges.SmallestScreenSize)]
+    public class SimitoneOtherScreenActivity : SimitoneActivity
+    {
+        protected override bool OpenedOnOtherScreen => true;
     }
 }
