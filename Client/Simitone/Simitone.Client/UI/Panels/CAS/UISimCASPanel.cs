@@ -293,6 +293,8 @@ namespace Simitone.Client.UI.Panels.CAS
 
         public override void Draw(UISpriteBatch batch)
         {
+            //(hidden, not slid off the screen: on a second screen it stays in place, and its backgrounds showed there)
+            if (!Visible) return;
             //draw backgrounds
             var px = TextureGenerator.GetPxWhite(GameFacade.GraphicsDevice);
             DrawLocalTexture(batch, px, null, new Vector2(90, 0), new Vector2(410, 70), UIStyle.Current.Bg);

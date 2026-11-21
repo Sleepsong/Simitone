@@ -702,13 +702,13 @@ namespace Simitone.Android
                     if (gameFrame)
                     {
                         switched = true;
-                        if (DrawOn(Other, CopyTexture, CopyQuad) && ++GameFramesShown == 1)
+                        if (DrawOn(Other, CopyTexture, true) && ++GameFramesShown == 1)
                             Log($"first game frame on the other display ({CopyW}x{CopyH} to {Other.W}x{Other.H})");
                     }
                     if (texture != 0)
                     {
                         switched = true;
-                        if (DrawOn(controls, texture, Quad) && controls.Shown == 1)
+                        if (DrawOn(controls, texture, false) && controls.Shown == 1)
                             Log($"first image shown on {(controls == Layer ? "this screen" : "the other display")} ({image.Width}x{image.Height})");
                     }
                 }
@@ -746,7 +746,8 @@ namespace Simitone.Android
         }
 
         /// <summary>Under Lock, with the blit context made current on the output: draws a texture over it and swaps.</summary>
-        private bool DrawOn(Output output, int texture, Java.Nio.FloatBuffer quad)
+        /// <param name="copy">The texture is a copy of a window's framebuffer (bottom row first), not one of the game's images.</param>
+        private bool DrawOn(Output output, int texture, bool copy)
         {
             if (!EGL14.EglMakeCurrent(EglDisplay, output.Egl, output.Egl, BlitContext))
             {
@@ -755,8 +756,9 @@ namespace Simitone.Android
                 return false;
             }
             if (output.Shown == 0) EGL14.EglSwapInterval(EglDisplay, 0); //(don't wait for that display's refresh)
-            if (Program == 0) MakeProgram();
-            Blit(texture, quad, output.W, output.H);
+            if (Program == 0 || Quad == null || CopyQuad == null) MakeProgram();
+            //(the quads are made with the program: picked here, after it, or the first draw had none)
+            Blit(texture, copy ? CopyQuad : Quad, output.W, output.H);
             EGL14.EglSwapBuffers(EglDisplay, output.Egl);
             output.Shown++;
             return true;
