@@ -100,6 +100,12 @@ namespace Simitone.Client.Network.Coop
             if (simi != null && simi.Version > 0x3E) simi.Version = 0x3E;
         }
 
+        private static bool HostHasObject(uint guid)
+        {
+            var objects = FSO.Content.Content.Get().WorldObjects;
+            lock (objects.Entries) return objects.Entries.ContainsKey(guid);
+        }
+
         private void RequestFreshSync()
         {
             if (TicksSinceFreshSync < FRESH_SYNC_COOLDOWN) return;
@@ -150,6 +156,13 @@ namespace Simitone.Client.Network.Coop
                 //and if a guest still loses sync, do the same again and send everyone a state taken right after,
                 //rather than leave them out of step until the base driver next gets round to it (up to 30 seconds)
                 else if (cmd is VMRequestResyncCmd && CoopProtocol.IsGuestID(cmd.ActorUID)) RequestFreshSync();
+            }
+
+            if (cmd is VMNetBuyObjectCmd buy && CoopProtocol.IsGuestID(cmd.ActorUID) && !HostHasObject(buy.GUID))
+            {
+                //something from the guest's own downloads. Guests are sent the host's objects, not the other way
+                //round, so it would appear on the guest's lot and nowhere else.
+                return;
             }
 
             if (cmd is VMNetChangeControlCmd control)

@@ -59,6 +59,8 @@ namespace Simitone.Client.UI.Screens
         public CoopClient CoopGuest; //we are playing on someone else's lot
         public bool IsCoopGuest { get { return CoopGuest != null; } }
         private bool GuestLotShown; //the guest's lot UI is added once the first lot state has arrived
+        private UILabel CoopStatusLabel; //what a joining guest is waiting for
+        private UILabel CoopStatusShadow;
         public uint VisualBudget { get; set; }
 
         //for TS1 hybrid mode
@@ -238,6 +240,7 @@ namespace Simitone.Client.UI.Screens
             var switcher = new UINeighbourhoodSwitcher(TS1NeighPanel, neighborhoodMode, moveInMode);
             TS1NeighPanel.OnHouseSelect += (house) =>
             {
+                if (IsCoopGuest) return; //joining someone else's game: the lot comes from them
                 if (MoveInFamily != null)
                 {
                     //move them in first
@@ -273,11 +276,26 @@ namespace Simitone.Client.UI.Screens
         public void JoinCoop(string address, UIElement switcher)
         {
             var guest = new CoopClient();
-            guest.GameObjects = CoopCompat.LocalObjects;
+            //the host's objects are compared with ours, and the ones we lack are fetched into the cache
+            guest.LocalContent = CoopContentScanner.BuildLocalAsync();
+            guest.CacheDir = CoopContentScanner.ObjectCacheDir;
+            guest.ApplyContent = CoopContentScanner.Apply;
+            var lastPercent = -1;
+            guest.OnContentProgress += (done, total, filesLeft) =>
+            {
+                var percent = (total == 0) ? 100 : (int)(done * 100 / total);
+                if (done == 0) Console.WriteLine("COOP fetching " + filesLeft + " object files from the host (" + FormatSize(total) + ")");
+                else if (percent / 10 != lastPercent / 10) Console.WriteLine("COOP fetched " + percent + "%");
+                lastPercent = percent;
+                SetCoopStatus("Fetching the host's objects: " + FormatSize(done) + " of " + FormatSize(total) + " (" + filesLeft + " files to go)");
+            };
             CoopGuest = guest;
+            SetCoopStatus("Joining " + address + "...");
             guest.OnWelcome += () =>
             {
-                Console.WriteLine("COOP joined as player " + guest.PlayerID);
+                Console.WriteLine("COOP joined as player " + guest.PlayerID +
+                    ((guest.ContentFilesFetched > 0) ? " after fetching " + guest.ContentFilesFetched + " object files" : ""));
+                SetCoopStatus(null);
                 Remove(TS1NeighPanel);
                 if (switcher != null) Remove(switcher);
                 ActiveFamily = null;
@@ -292,9 +310,11 @@ namespace Simitone.Client.UI.Screens
             guest.OnClosed += (reason) =>
             {
                 Console.WriteLine("COOP session ended: " + reason);
+                SetCoopStatus(null);
                 var inLot = vm != null;
                 CoopGuest = null;
                 if (inLot) ExitLot();
+                else CoopContentScanner.Restore(); //never reached a lot, but may already be using the host's objects
                 UIMobileAlert alert = null;
                 alert = new UIMobileAlert(new UIAlertOptions()
                 {
@@ -309,6 +329,50 @@ namespace Simitone.Client.UI.Screens
         }
 
         /// <summary>
+        /// Shows a line of text over the neighbourhood while a guest is joining, or removes it (null).
+        /// </summary>
+        private void SetCoopStatus(string text)
+        {
+            if (text == null)
+            {
+                if (CoopStatusLabel == null) return;
+                Remove(CoopStatusShadow);
+                Remove(CoopStatusLabel);
+                CoopStatusLabel = null;
+                CoopStatusShadow = null;
+                return;
+            }
+            if (CoopStatusLabel == null)
+            {
+                CoopStatusLabel = new UILabel();
+                CoopStatusLabel.Alignment = TextAlignment.Middle | TextAlignment.Center;
+                CoopStatusLabel.CaptionStyle = CoopStatusLabel.CaptionStyle.Clone();
+                CoopStatusLabel.CaptionStyle.Size = 19;
+                CoopStatusLabel.CaptionStyle.Color = Color.White;
+
+                CoopStatusShadow = new UILabel();
+                CoopStatusShadow.Alignment = TextAlignment.Middle | TextAlignment.Center;
+                CoopStatusShadow.CaptionStyle = CoopStatusLabel.CaptionStyle.Clone();
+                CoopStatusShadow.CaptionStyle.Color = Color.Black * 0.6f;
+
+                Add(CoopStatusShadow);
+                Add(CoopStatusLabel);
+            }
+            CoopStatusLabel.Size = new Vector2(ScreenWidth, 48);
+            CoopStatusLabel.Position = new Vector2(0, 24);
+            CoopStatusShadow.Size = CoopStatusLabel.Size;
+            CoopStatusShadow.Position = CoopStatusLabel.Position + new Vector2(2);
+            CoopStatusLabel.Caption = text;
+            CoopStatusShadow.Caption = text;
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            if (bytes < 1024 * 1024) return Math.Max(1, bytes / 1024) + " KB";
+            return (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
+        }
+
+        /// <summary>
         /// Opens this game to guests (once), and makes the given lot driver the one they play on.
         /// </summary>
         private void HostCoop(CoopServerDriver driver)
@@ -316,7 +380,12 @@ namespace Simitone.Client.UI.Screens
             if (CoopSession == null)
             {
                 var session = new CoopHost();
-                session.GameObjects = CoopCompat.LocalObjects();
+                //what guests compare their own objects with, and fetch what they lack from
+                session.Content = CoopContentScanner.BuildLocalAsync();
+                session.OnContentRequest += (name, files, bytes) =>
+                {
+                    Console.WriteLine("COOP sending " + files + " object files (" + FormatSize(bytes) + ") to " + (name == "" ? "a guest" : name));
+                };
                 try
                 {
                     session.Start(CoopOptions.HostPort);
@@ -1234,6 +1303,7 @@ namespace Simitone.Client.UI.Screens
             }
             CleanupLastWorld();
             CoopWorld.Restore(); //a guest that had the host's neighbourhood loaded gets its own back
+            CoopContentScanner.Restore(); //and its own objects
             NeighSelection(CurrentNeighborhoodMode);
             Downtown = false;
             SavedLot = null;

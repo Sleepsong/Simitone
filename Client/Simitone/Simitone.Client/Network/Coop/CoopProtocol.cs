@@ -16,13 +16,16 @@ namespace Simitone.Client.Network.Coop
         Hello = 1,        //int32 protocol version, string player name
         Command = 2,      //a serialized VMNetCommand
         SpeedRequest = 3, //byte speed (0 pause, 1-3 as on the clock)
+        ContentRequest = 4, //int32 n, int32[n] indices into the host's manifest of object files to send
+        Ready = 5,        //empty: the guest has what it needs and can be given the lot
 
         //host -> guest
-        Welcome = 16,     //uint32 the guest's player ID in the VM, string host game version, int32 n, uint32[n] the host's object GUIDs
+        Welcome = 16,     //uint32 the guest's player ID in the VM, string host game version, int32 n, byte[n] a packed CoopManifest
         Reject = 17,      //string reason
         Tick = 18,        //byte n, int16[n] game speed for each tick (n is 0 when unknown), then a serialized VMNetTickList
         Direct = 19,      //a serialized VMNetCommand, run immediately by this guest only
         Players = 21,     //int32 n, uint32[n] the player IDs of everyone in the session, the host's first
+        ContentFile = 22, //int32 index into the host's manifest, then that file's bytes
         World = 20,       //a packed CoopWorld: the host's neighbourhood as of the lot state in the Tick frame that follows
 
         //never sent: queued locally when a connection ends. payload is a UTF8 reason, possibly empty
@@ -38,7 +41,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 5;
+        public const int Version = 6;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 
@@ -68,8 +71,12 @@ namespace Simitone.Client.Network.Coop
         private readonly ConcurrentQueue<CoopFrame> Incoming;
         private readonly BlockingCollection<byte[]> Outgoing = new BlockingCollection<byte[]>();
         private int ClosedFlag;
+        private long QueuedByteCount;
 
         public bool Closed { get { return ClosedFlag != 0; } }
+
+        /// <summary>Bytes handed to Send that have not been written to the socket yet.</summary>
+        public long QueuedBytes { get { return Interlocked.Read(ref QueuedByteCount); } }
 
         public CoopConnection(TcpClient socket, ConcurrentQueue<CoopFrame> incoming)
         {
@@ -100,6 +107,7 @@ namespace Simitone.Client.Network.Coop
             frame[4] = (byte)kind;
             if (headerLen > 0) Buffer.BlockCopy(header, 0, frame, 5, headerLen);
             if (bodyLen > 0) Buffer.BlockCopy(body, 0, frame, 5 + headerLen, bodyLen);
+            Interlocked.Add(ref QueuedByteCount, frame.Length);
             try { Outgoing.Add(frame); }
             catch (InvalidOperationException) { } //closed meanwhile
         }
@@ -162,6 +170,7 @@ namespace Simitone.Client.Network.Coop
                 foreach (var frame in Outgoing.GetConsumingEnumerable())
                 {
                     Stream.Write(frame, 0, frame.Length);
+                    Interlocked.Add(ref QueuedByteCount, -frame.Length);
                 }
             }
             catch (Exception)

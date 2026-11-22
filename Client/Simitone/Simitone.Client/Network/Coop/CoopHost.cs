@@ -6,6 +6,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Simitone.Client.Network.Coop
 {
@@ -13,28 +14,57 @@ namespace Simitone.Client.Network.Coop
     /// The host's side of a co-op session: accepts guests and relays between them and the lot's driver.
     /// The session outlives any one lot - when the host moves to another lot, <see cref="Attach"/> hands
     /// the connected guests to the new lot's driver and they are sent its state.
-    /// Everything except accepting connections happens on the game thread, in <see cref="Update"/>.
+    /// Everything except accepting connections and sending object files happens on the game thread, in <see cref="Update"/>.
+    ///
+    /// A guest joins in steps: it says Hello, is sent a Welcome with this game's object files listed, asks
+    /// for the files it lacks (ContentRequest), and says Ready once it has them. Only then is it given the lot.
     /// </summary>
     public class CoopHost
     {
         public int Port { get; private set; }
+
+        /// <summary>The guests that are playing. Guests still fetching objects are not counted.</summary>
         public int GuestCount { get { return Guests.Count; } }
 
-        /// <summary>This game's version and objects, which each guest compares with its own. See <see cref="CoopCompat"/>.</summary>
+        /// <summary>This game's version, which each guest compares with its own.</summary>
         public string GameVersion = SimitoneVersion.Current;
-        public uint[] GameObjects = new uint[0];
+
+        /// <summary>
+        /// This game's object files, which each guest compares with its own and fetches what it lacks from.
+        /// Guests that arrive before it is ready wait for it.
+        /// </summary>
+        public Task<CoopManifest> Content = Task.FromResult(new CoopManifest());
+
+        /// <summary>How many object files have been sent to guests.</summary>
+        public int ContentFilesSent { get { return SentCount; } }
 
         /// <summary>A guest asked for a game speed (0 pause, 1-3 as on the clock).</summary>
         public event Action<int> OnSpeedRequest;
         /// <summary>A guest joined (true) or left (false). The string is their name.</summary>
         public event Action<string, bool> OnGuestChange;
+        /// <summary>A guest is being sent this many object files, of this many bytes. The string is their name.</summary>
+        public event Action<string, int, long> OnContentRequest;
+
+        private class GuestState
+        {
+            public VMNetClient Client;
+            public bool Ready;           //has its objects and is in Guests
+            public bool AskedForContent; //one request per guest
+        }
+
+        //a guest is only sent more object files while less than this is waiting to go out to it
+        private const long MaxQueuedContent = 8 * 1024 * 1024;
 
         private TcpListener Listener;
         private volatile bool Running;
         private readonly ConcurrentQueue<CoopFrame> Incoming = new ConcurrentQueue<CoopFrame>();
         private readonly List<VMNetClient> Guests = new List<VMNetClient>();
+        private readonly List<CoopConnection> Connections = new List<CoopConnection>(); //every guest that got as far as Hello
+        private readonly List<KeyValuePair<CoopConnection, byte[]>> WaitingHellos = new List<KeyValuePair<CoopConnection, byte[]>>();
+        private byte[] PackedContent;
         private CoopServerDriver Driver;
         private uint NextGuestID = CoopProtocol.FirstGuestID;
+        private int SentCount;
 
         public void Start(int port)
         {
@@ -66,7 +96,10 @@ namespace Simitone.Client.Network.Coop
             Running = false;
             try { Listener?.Stop(); } catch { }
             Attach(null);
-            foreach (var guest in Guests) ((CoopConnection)guest.NetHandle).Close();
+            foreach (var conn in Connections.ToArray()) conn.Close();
+            foreach (var waiting in WaitingHellos) waiting.Key.Close();
+            Connections.Clear();
+            WaitingHellos.Clear();
             Guests.Clear();
         }
 
@@ -100,14 +133,42 @@ namespace Simitone.Client.Network.Coop
 
         public void Update()
         {
+            if (WaitingHellos.Count > 0 && Content.IsCompleted)
+            {
+                var waiting = WaitingHellos.ToArray();
+                WaitingHellos.Clear();
+                foreach (var hello in waiting)
+                {
+                    if (!hello.Key.Closed) HandleHello(hello.Key, hello.Value);
+                }
+            }
+
             while (Incoming.TryDequeue(out var frame))
             {
                 var conn = frame.Connection;
-                var guest = conn.Tag as VMNetClient;
+                var state = conn.Tag as GuestState;
+                var guest = (state != null && state.Ready) ? state.Client : null;
                 switch (frame.Kind)
                 {
                     case CoopFrameKind.Hello:
-                        if (guest == null) HandleHello(conn, frame.Data);
+                        if (state == null) HandleHello(conn, frame.Data);
+                        break;
+                    case CoopFrameKind.ContentRequest:
+                        if (state != null && !state.Ready && !state.AskedForContent)
+                        {
+                            state.AskedForContent = true;
+                            HandleContentRequest(conn, state, frame.Data);
+                        }
+                        break;
+                    case CoopFrameKind.Ready:
+                        if (state != null && !state.Ready)
+                        {
+                            state.Ready = true;
+                            Guests.Add(state.Client);
+                            SendPlayers();
+                            if (Driver != null) AddToDriver(state.Client);
+                            OnGuestChange?.Invoke(state.Client.AvatarState.Name, true);
+                        }
                         break;
                     case CoopFrameKind.Command:
                         if (guest != null && Driver != null)
@@ -118,6 +179,7 @@ namespace Simitone.Client.Network.Coop
                             OnSpeedRequest?.Invoke(frame.Data[0]);
                         break;
                     case CoopFrameKind.Closed:
+                        Connections.Remove(conn);
                         if (guest != null && Guests.Remove(guest))
                         {
                             if (Driver != null)
@@ -156,6 +218,18 @@ namespace Simitone.Client.Network.Coop
                 Reject(conn, "This game's co-op version (" + version + ") does not match the host's (" + CoopProtocol.Version + ").");
                 return;
             }
+            if (!Content.IsCompleted)
+            {
+                //still fingerprinting our objects. Update comes back to this guest when that is done
+                WaitingHellos.Add(new KeyValuePair<CoopConnection, byte[]>(conn, data));
+                return;
+            }
+            if (Content.IsFaulted || Content.IsCanceled)
+            {
+                Reject(conn, "The host could not read its own game's objects, so nobody can join it.");
+                return;
+            }
+            if (PackedContent == null) PackedContent = Content.Result.Pack();
             if (name.Length > 32) name = name.Substring(0, 32);
 
             var id = NextGuestID++;
@@ -166,13 +240,60 @@ namespace Simitone.Client.Network.Coop
                 NetHandle = conn,
                 AvatarState = new VMNetAvatarPersistState { Name = name, PersistID = id }
             };
-            conn.Tag = guest;
-            Guests.Add(guest);
+            conn.Tag = new GuestState { Client = guest };
+            Connections.Add(conn);
 
-            conn.Send(CoopFrameKind.Welcome, CoopCompat.PackWelcome(id, GameVersion, GameObjects));
-            SendPlayers();
-            if (Driver != null) AddToDriver(guest);
-            OnGuestChange?.Invoke(name, true);
+            //the guest answers with ContentRequest and then Ready, or leaves if it cannot play here
+            conn.Send(CoopFrameKind.Welcome, CoopCompat.PackWelcome(id, GameVersion, PackedContent));
+        }
+
+        private void HandleContentRequest(CoopConnection conn, GuestState state, byte[] data)
+        {
+            var files = Content.Result.Files;
+            var wanted = new List<CoopContentFile>();
+            var indices = new List<int>();
+            long total = 0;
+            try
+            {
+                if (data.Length < 4) throw new InvalidDataException();
+                var count = BitConverter.ToInt32(data, 0);
+                if (count < 0 || count > files.Count || data.Length != 4 + count * 4) throw new InvalidDataException();
+                var seen = new HashSet<int>();
+                for (int i = 0; i < count; i++)
+                {
+                    var index = BitConverter.ToInt32(data, 4 + i * 4);
+                    if (index < 0 || index >= files.Count || !seen.Add(index)) throw new InvalidDataException();
+                    indices.Add(index);
+                    wanted.Add(files[index]);
+                    total += files[index].Size;
+                }
+            }
+            catch (Exception)
+            {
+                conn.Close();
+                return;
+            }
+            OnContentRequest?.Invoke(state.Client.AvatarState.Name, wanted.Count, total);
+
+            //files are read and queued on their own thread, no faster than the guest's connection takes them
+            new Thread(() =>
+            {
+                try
+                {
+                    for (int i = 0; i < wanted.Count; i++)
+                    {
+                        while (conn.QueuedBytes > MaxQueuedContent && !conn.Closed) Thread.Sleep(5);
+                        if (conn.Closed || !Running) return;
+                        conn.Send(CoopFrameKind.ContentFile, BitConverter.GetBytes(indices[i]), wanted[i].ReadBytes());
+                        Interlocked.Increment(ref SentCount);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Reject(conn, "The host could not send one of its objects.\n\n" + e.Message);
+                }
+            })
+            { IsBackground = true, Name = "Coop content" }.Start();
         }
 
         /// <summary>
