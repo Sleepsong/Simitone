@@ -4,7 +4,7 @@ namespace Simitone.Client.Network.Coop
 {
     /// <summary>
     /// Co-op is experimental and has no menus yet. It is switched on with environment variables:
-    ///   SIMITONE_COOP_HOST=1            host: let others join whichever house is being played (default port 37565)
+    ///   SIMITONE_COOP_HOST=1            host: let others join this game, from the neighbourhood screen on (default port 37565)
     ///   SIMITONE_COOP_HOST=40000        host on this port instead
     ///   SIMITONE_COOP_JOIN=192.168.1.5  guest: join this host instead of showing the neighbourhood
     ///   SIMITONE_COOP_JOIN=host:40000   guest: join on this port
@@ -19,6 +19,9 @@ namespace Simitone.Client.Network.Coop
         public static bool GuestsControlSpeed = false;
 
         private static string JoinAddress;
+
+        /// <summary>True until the host to join has been taken with <see cref="TakeJoin"/>.</summary>
+        public static bool JoinPending { get { return JoinAddress != null; } }
 
         static CoopOptions()
         {

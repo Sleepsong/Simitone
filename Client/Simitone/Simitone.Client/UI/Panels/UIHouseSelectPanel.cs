@@ -80,7 +80,8 @@ namespace Simitone.Client.UI.Panels
             }
         }
 
-        public UIHouseSelectPanel(int houseID)
+        /// <param name="viewOnly">Shows the house another player is looking at (co-op): nothing can be chosen here.</param>
+        public UIHouseSelectPanel(int houseID, bool viewOnly = false)
         {
             var screen = GameFacade.Screens.CurrentUIScreen;
             var extra = Math.Max(0, (screen.ScreenHeight - 640) / 128) * 64;
@@ -302,7 +303,7 @@ namespace Simitone.Client.UI.Panels
             EnterLot = new UIBigButton(false);
             EnterLot.Caption = (moveIn == null)?"Enter Lot":"Move In";
             EnterLot.Width = (moveIn == null)? (screen.ScreenWidth / 2 - 293) : (screen.ScreenWidth/2-60);
-            EnterLot.Disabled = !buttonValid;
+            EnterLot.Disabled = !buttonValid || viewOnly;
             EnterLot.Position = new Vector2(30, screen.ScreenHeight - (extra + 125));
             EnterLot.OnButtonClick += (b) => { OnSelected?.Invoke(houseID); Kill(); };
             Add(EnterLot);
@@ -312,7 +313,7 @@ namespace Simitone.Client.UI.Panels
             More.Width = 208;
             More.Position = new Vector2(screen.ScreenWidth / 2 - 238, screen.ScreenHeight - (extra + 125));
             More.OnButtonClick += (btn) => { ShowMore(true); };
-            if (moveIn == null) Add(More);
+            if (moveIn == null && !viewOnly) Add(More);
 
             var optionFunctions = new ButtonClickDelegate[]
             {

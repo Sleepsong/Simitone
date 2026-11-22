@@ -19,7 +19,8 @@ namespace Simitone.Client.Network.Coop
     /// </summary>
     public class CoopClient
     {
-        public readonly CoopClientDriver Driver = new CoopClientDriver();
+        /// <summary>The driver for the lot being played. A new one is made for each lot visit (<see cref="ResetDriver"/>).</summary>
+        public CoopClientDriver Driver { get; private set; }
 
         /// <summary>This guest's player ID in the VM. 0 until the host has welcomed us.</summary>
         public uint PlayerID { get; private set; }
@@ -38,6 +39,12 @@ namespace Simitone.Client.Network.Coop
         public event Action<string> OnClosed;
         /// <summary>A command the host sent to this guest alone (a serialized VMNetCommand).</summary>
         public event Action<byte[]> OnDirect;
+        /// <summary>The host's neighbourhood as it is now (a packed CoopWorld), for the neighbourhood screen.</summary>
+        public event Action<byte[]> OnLobby;
+        /// <summary>Where the host is: the scene, the area shown, the house being viewed (0 none), the family being moved in (-1 none).</summary>
+        public event Action<CoopScene, ushort, int, int> OnScene;
+        /// <summary>A house file we asked for: its name, and the frame data with where in it the file starts and how long it is (0: keep ours).</summary>
+        public event Action<string, byte[], int, int> OnHouseFile;
 
         private readonly ConcurrentQueue<CoopFrame> Incoming = new ConcurrentQueue<CoopFrame>();
         private volatile CoopConnection Connection;
@@ -72,12 +79,41 @@ namespace Simitone.Client.Network.Coop
 
         public CoopClient()
         {
-            Driver.OnClientCommand += (data) => Connection?.Send(CoopFrameKind.Command, data);
-            Driver.OnShutdown += (reason) =>
+            ResetDriver();
+        }
+
+        /// <summary>
+        /// Starts a fresh driver, for the next lot the host takes us to. The session carries on.
+        /// </summary>
+        public void ResetDriver()
+        {
+            var driver = new CoopClientDriver();
+            driver.OnClientCommand += (data) => Connection?.Send(CoopFrameKind.Command, data);
+            driver.OnShutdown += (reason) =>
             {
-                if (reason == FSO.SimAntics.NetPlay.VMCloseNetReason.LeaveLot) Disconnect();
-                else PendingEnd = Driver.CloseString ?? "The game lost sync with the host.";
+                //closing a lot shuts its driver down too. That is not the end of the session: the host may
+                //just be back at the neighbourhood. Only trouble reading the host's data is.
+                if (driver != Driver || reason == FSO.SimAntics.NetPlay.VMCloseNetReason.LeaveLot) return;
+                PendingEnd = driver.CloseString ?? "The game lost sync with the host.";
             };
+            Driver = driver;
+        }
+
+        /// <summary>
+        /// Asks the host for house files by name. They arrive one by one through <see cref="OnHouseFile"/>.
+        /// </summary>
+        public void RequestHouses(ICollection<string> names)
+        {
+            if (names.Count == 0) return;
+            using (var stream = new MemoryStream())
+            {
+                using (var writer = new BinaryWriter(stream))
+                {
+                    writer.Write(names.Count);
+                    foreach (var name in names) writer.Write(name);
+                }
+                Connection?.Send(CoopFrameKind.HouseRequest, stream.ToArray());
+            }
         }
 
         /// <summary>
@@ -108,6 +144,11 @@ namespace Simitone.Client.Network.Coop
                     socket.Connect(host, port);
                     var conn = new CoopConnection(socket, Incoming);
                     Connection = conn; //before Hello, so the reply always finds it
+                    if (Ended)
+                    {
+                        conn.Close(); //we left while the connection was being made
+                        return;
+                    }
                     using (var stream = new MemoryStream())
                     {
                         using (var writer = new BinaryWriter(stream))
@@ -140,6 +181,12 @@ namespace Simitone.Client.Network.Coop
         {
             Ended = true;
             Connection?.Close();
+        }
+
+        /// <summary>Ends the session over something that went wrong on this side. OnClosed is fired with the reason.</summary>
+        public void Fail(string reason)
+        {
+            End(reason);
         }
 
         public void Update()
@@ -197,6 +244,32 @@ namespace Simitone.Client.Network.Coop
                     case CoopFrameKind.World:
                         if (PlayerID != 0) PendingWorld = frame.Data;
                         break;
+                    case CoopFrameKind.Lobby:
+                        if (PlayerID != 0) OnLobby?.Invoke(frame.Data);
+                        break;
+                    case CoopFrameKind.Scene:
+                        if (PlayerID != 0 && frame.Data.Length == 11)
+                        {
+                            OnScene?.Invoke((CoopScene)frame.Data[0], BitConverter.ToUInt16(frame.Data, 1),
+                                BitConverter.ToInt32(frame.Data, 3), BitConverter.ToInt32(frame.Data, 7));
+                        }
+                        break;
+                    case CoopFrameKind.HouseFile:
+                        if (PlayerID == 0) break;
+                        try
+                        {
+                            string houseName;
+                            int start;
+                            using (var stream = new MemoryStream(frame.Data))
+                            using (var reader = new BinaryReader(stream))
+                            {
+                                houseName = reader.ReadString();
+                                start = (int)stream.Position;
+                            }
+                            OnHouseFile?.Invoke(houseName, frame.Data, start, frame.Data.Length - start);
+                        }
+                        catch (Exception) { } //not worth ending the session over a picture
+                        break;
                     case CoopFrameKind.Direct:
                         if (PlayerID != 0) OnDirect?.Invoke(frame.Data);
                         break;
@@ -206,7 +279,7 @@ namespace Simitone.Client.Network.Coop
                         break;
                 }
                 //files being fetched are checked and saved here, so leave time to draw the progress
-                if (ContentAwaited.Count > 0 && timer.ElapsedMilliseconds > 12) break;
+                if ((ContentAwaited.Count > 0 || frame.Kind == CoopFrameKind.HouseFile) && timer.ElapsedMilliseconds > 12) break;
             }
         }
 

@@ -128,7 +128,7 @@ namespace Simitone.Client.Network.Coop
         {
             try
             {
-                SyncWorld = CoopWorld.Capture(vm).Pack();
+                SyncWorld = CoopWorld.Capture().Pack();
             }
             catch (System.Exception e)
             {

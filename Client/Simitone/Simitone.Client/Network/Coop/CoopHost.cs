@@ -17,7 +17,8 @@ namespace Simitone.Client.Network.Coop
     /// Everything except accepting connections and sending object files happens on the game thread, in <see cref="Update"/>.
     ///
     /// A guest joins in steps: it says Hello, is sent a Welcome with this game's object files listed, asks
-    /// for the files it lacks (ContentRequest), and says Ready once it has them. Only then is it given the lot.
+    /// for the files it lacks (ContentRequest), and says Ready once it has them. Only then is it told where the
+    /// host is (<see cref="Greeting"/>) and, if that is on a lot, given the lot.
     /// </summary>
     public class CoopHost
     {
@@ -37,6 +38,17 @@ namespace Simitone.Client.Network.Coop
 
         /// <summary>How many object files have been sent to guests.</summary>
         public int ContentFilesSent { get { return SentCount; } }
+
+        /// <summary>
+        /// The frames to send a guest the moment it is ready, before anything about a lot: where the host is, and
+        /// its neighbourhood if that is what it is looking at.
+        /// </summary>
+        public Func<List<KeyValuePair<CoopFrameKind, byte[]>>> Greeting;
+
+        /// <summary>
+        /// Reads one of this game's house files by name, for guests that ask for it. Called off the game thread.
+        /// </summary>
+        public Func<string, byte[]> ReadHouse;
 
         /// <summary>A guest asked for a game speed (0 pause, 1-3 as on the clock).</summary>
         public event Action<int> OnSpeedRequest;
@@ -166,9 +178,17 @@ namespace Simitone.Client.Network.Coop
                             state.Ready = true;
                             Guests.Add(state.Client);
                             SendPlayers();
+                            var greeting = Greeting?.Invoke();
+                            if (greeting != null)
+                            {
+                                foreach (var item in greeting) conn.Send(item.Key, item.Value);
+                            }
                             if (Driver != null) AddToDriver(state.Client);
                             OnGuestChange?.Invoke(state.Client.AvatarState.Name, true);
                         }
+                        break;
+                    case CoopFrameKind.HouseRequest:
+                        if (guest != null) HandleHouseRequest(conn, frame.Data);
                         break;
                     case CoopFrameKind.Command:
                         if (guest != null && Driver != null)
@@ -294,6 +314,72 @@ namespace Simitone.Client.Network.Coop
                 }
             })
             { IsBackground = true, Name = "Coop content" }.Start();
+        }
+
+        private void HandleHouseRequest(CoopConnection conn, byte[] data)
+        {
+            var names = new List<string>();
+            try
+            {
+                using (var reader = new BinaryReader(new MemoryStream(data)))
+                {
+                    var count = reader.ReadInt32();
+                    if (count < 0 || count > 512) throw new InvalidDataException();
+                    for (int i = 0; i < count; i++)
+                    {
+                        var name = reader.ReadString();
+                        if (!CoopWorld.IsHouseName(name)) throw new InvalidDataException();
+                        names.Add(name);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                conn.Close();
+                return;
+            }
+            var read = ReadHouse;
+            if (read == null || names.Count == 0) return;
+
+            new Thread(() =>
+            {
+                foreach (var name in names)
+                {
+                    while (conn.QueuedBytes > MaxQueuedContent && !conn.Closed) Thread.Sleep(5);
+                    if (conn.Closed || !Running) return;
+                    byte[] header;
+                    byte[] bytes;
+                    try
+                    {
+                        bytes = read(name);
+                        using (var stream = new MemoryStream())
+                        {
+                            using (var writer = new BinaryWriter(stream)) writer.Write(name);
+                            header = stream.ToArray();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        //gone or being saved. An empty file tells the guest to keep what it has
+                        using (var stream = new MemoryStream())
+                        {
+                            using (var writer = new BinaryWriter(stream)) writer.Write(name);
+                            header = stream.ToArray();
+                        }
+                        bytes = null;
+                    }
+                    conn.Send(CoopFrameKind.HouseFile, header, bytes);
+                }
+            })
+            { IsBackground = true, Name = "Coop houses" }.Start();
+        }
+
+        /// <summary>
+        /// Sends a frame to every guest that is playing.
+        /// </summary>
+        public void SendToGuests(CoopFrameKind kind, byte[] data)
+        {
+            foreach (var guest in Guests) ((CoopConnection)guest.NetHandle).Send(kind, data);
         }
 
         /// <summary>

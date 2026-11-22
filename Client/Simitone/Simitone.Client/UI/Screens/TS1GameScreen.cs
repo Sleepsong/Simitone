@@ -54,13 +54,18 @@ namespace Simitone.Client.UI.Screens
         public VMNetDriver Driver;
         public UISimitoneBg Bg;
 
-        //co-op play (experimental, see CoopOptions). At most one of these is set.
-        public CoopHost CoopSession; //we are hosting
-        public CoopClient CoopGuest; //we are playing on someone else's lot
-        public bool IsCoopGuest { get { return CoopGuest != null; } }
+        //co-op play (experimental, see CoopOptions). The session itself lives in CoopManager, because it
+        //outlasts this screen. At most one of these is set.
+        public CoopHost CoopSession { get { return CoopManager.Host; } } //we are hosting
+        public CoopClient CoopGuest { get { return CoopManager.Guest; } } //we are following someone else's game
+        public bool IsCoopGuest { get { return CoopManager.IsGuest; } }
         private bool GuestLotShown; //the guest's lot UI is added once the first lot state has arrived
-        private UILabel CoopStatusLabel; //what a joining guest is waiting for
+        private UILabel CoopStatusLabel; //what a guest is waiting for
         private UILabel CoopStatusShadow;
+        private string CoopStatusShown;
+        private UIMobileAlert CoopLeaveAlert;
+        private UINeighbourhoodSwitcher TS1NeighSwitcher;
+        private ushort GuestNeighArea; //the area the guest's view of the host's neighbourhood shows
         public uint VisualBudget { get; set; }
 
         //for TS1 hybrid mode
@@ -213,6 +218,7 @@ namespace Simitone.Client.UI.Screens
 
             if (Content.Get().TS1)
             {
+                CoopManager.Startup(); //hosting, if asked for, starts here: before any lot can load
                 NeighSelection(mode);
 
                 // Check for updates from GitHub releases
@@ -224,6 +230,7 @@ namespace Simitone.Client.UI.Screens
         public void StartMoveIn(int familyID)
         {
             MoveInFamily = familyID;
+            CoopManager.SetMoveIn(familyID);
         }
 
         public void NeighSelection(NeighSelectionMode mode)
@@ -238,6 +245,10 @@ namespace Simitone.Client.UI.Screens
             Content.Get().Neighborhood.AddMissingNeighbors();
             TS1NeighPanel = new UINeighborhoodSelectionPanel(neighborhoodMode);
             var switcher = new UINeighbourhoodSwitcher(TS1NeighPanel, neighborhoodMode, moveInMode);
+            TS1NeighSwitcher = switcher;
+            //guests are shown the area and the house the host is looking at
+            TS1NeighPanel.OnAreaChange += (area) => CoopManager.ShowArea(area);
+            TS1NeighPanel.OnHouseView += (house) => CoopManager.ViewHouse(house);
             TS1NeighPanel.OnHouseSelect += (house) =>
             {
                 if (IsCoopGuest) return; //joining someone else's game: the lot comes from them
@@ -266,73 +277,119 @@ namespace Simitone.Client.UI.Screens
             };
             Add(TS1NeighPanel);
             Add(switcher);
+            BringCoopStatusToFront();
+            CoopManager.ShowNeighbourhood(neighborhoodMode, MoveInFamily);
             if (TestMode.TakeLot(out var testLot)) PlayHouse(testLot, switcher);
-            else if (CoopOptions.TakeJoin(out var coopAddress)) JoinCoop(coopAddress, switcher);
+            else if (CoopOptions.TakeJoin(out var coopAddress)) CoopManager.Join(coopAddress, this);
         }
 
         /// <summary>
-        /// Joins another player's game as a guest. The lot arrives from the host instead of being loaded here.
+        /// Takes the neighbourhood view off the screen, if it is on it.
         /// </summary>
-        public void JoinCoop(string address, UIElement switcher)
+        private void RemoveNeighbourhood(bool closeHouse)
         {
-            var guest = new CoopClient();
-            //the host's objects are compared with ours, and the ones we lack are fetched into the cache
-            guest.LocalContent = CoopContentScanner.BuildLocalAsync();
-            guest.CacheDir = CoopContentScanner.ObjectCacheDir;
-            guest.ApplyContent = CoopContentScanner.Apply;
-            var lastPercent = -1;
-            guest.OnContentProgress += (done, total, filesLeft) =>
+            if (TS1NeighPanel != null)
             {
-                var percent = (total == 0) ? 100 : (int)(done * 100 / total);
-                if (done == 0) Console.WriteLine("COOP fetching " + filesLeft + " object files from the host (" + FormatSize(total) + ")");
-                else if (percent / 10 != lastPercent / 10) Console.WriteLine("COOP fetched " + percent + "%");
-                lastPercent = percent;
-                SetCoopStatus("Fetching the host's objects: " + FormatSize(done) + " of " + FormatSize(total) + " (" + filesLeft + " files to go)");
-            };
-            CoopGuest = guest;
-            SetCoopStatus("Joining " + address + "...");
-            guest.OnWelcome += () =>
-            {
-                Console.WriteLine("COOP joined as player " + guest.PlayerID +
-                    ((guest.ContentFilesFetched > 0) ? " after fetching " + guest.ContentFilesFetched + " object files" : ""));
-                SetCoopStatus(null);
-                Remove(TS1NeighPanel);
-                if (switcher != null) Remove(switcher);
-                ActiveFamily = null;
-                GuestLotShown = false;
-                InitializeLot();
-                vm.MyUID = guest.PlayerID;
-            };
-            guest.OnDirect += (data) =>
-            {
-                if (vm != null) guest.Driver.HandleDirect(vm, data);
-            };
-            guest.OnClosed += (reason) =>
-            {
-                Console.WriteLine("COOP session ended: " + reason);
-                SetCoopStatus(null);
-                var inLot = vm != null;
-                CoopGuest = null;
-                if (inLot) ExitLot();
-                else CoopContentScanner.Restore(); //never reached a lot, but may already be using the host's objects
-                UIMobileAlert alert = null;
-                alert = new UIMobileAlert(new UIAlertOptions()
+                if (closeHouse && TS1NeighPanel.LastHS != null)
                 {
-                    Title = "Co-op",
-                    Message = reason,
-                    Buttons = UIAlertButton.Ok((b) => alert.Close())
-                });
-                UIScreen.GlobalShowDialog(alert, true);
-            };
-            Console.WriteLine("COOP joining " + address);
-            guest.Connect(address, GlobalSettings.Default.LastUser ?? "");
+                    TS1NeighPanel.LastHS.Kill();
+                    TS1NeighPanel.LastHS = null;
+                }
+                Remove(TS1NeighPanel);
+                TS1NeighPanel = null;
+            }
+            if (TS1NeighSwitcher != null)
+            {
+                Remove(TS1NeighSwitcher);
+                TS1NeighSwitcher = null;
+            }
+        }
+
+        #region Following a host (co-op guest). Driven by CoopManager.
+
+        /// <summary>
+        /// Nothing of the host's to show right now: just the background, and the status line saying why.
+        /// </summary>
+        public void GuestHideNeighbourhood()
+        {
+            RemoveNeighbourhood(true);
+            MoveInFamily = null;
+            Bg.Visible = true;
         }
 
         /// <summary>
-        /// Shows a line of text over the neighbourhood while a guest is joining, or removes it (null).
+        /// Shows the host's neighbourhood (which has been loaded in place of ours) as the host sees it: the same
+        /// area, with the same house's details open. It cannot be clicked; the host is the one choosing.
+        /// </summary>
+        public void GuestShowNeighbourhood(ushort area, int house, int moveInFamily, bool rebuild)
+        {
+            MoveInFamily = (moveInFamily < 0) ? (int?)null : moveInFamily; //the house details read differently when moving in
+            if (TS1NeighPanel == null || rebuild)
+            {
+                RemoveNeighbourhood(true);
+                TS1NeighPanel = new UINeighborhoodSelectionPanel(area) { ViewOnly = true };
+                GuestNeighArea = area;
+                Add(TS1NeighPanel);
+                BringCoopStatusToFront();
+            }
+            else if (GuestNeighArea != area)
+            {
+                TS1NeighPanel.ShowHouse(0);
+                TS1NeighPanel.PopulateScreen(area);
+                GuestNeighArea = area;
+            }
+            TS1NeighPanel.ShowHouse(house);
+        }
+
+        /// <summary>
+        /// The host is on a lot: get ready to be sent it. It appears once its state arrives (see VMRefreshed).
+        /// </summary>
+        public void GuestEnterLot()
+        {
+            RemoveNeighbourhood(true);
+            MoveInFamily = null;
+            ActiveFamily = null;
+            GuestLotShown = false;
+            CoopGuest.ResetDriver();
+            InitializeLot();
+            vm.MyUID = CoopGuest.PlayerID;
+        }
+
+        /// <summary>
+        /// The host left its lot for the neighbourhood or Create-a-Family. The session carries on.
+        /// </summary>
+        public void GuestLeaveLot()
+        {
+            CleanupLastWorld();
+            Downtown = false;
+            SavedLot = null;
+            Bg.Visible = true;
+        }
+
+        /// <summary>
+        /// The session we had joined is over: back to our own neighbourhood and our own objects.
+        /// </summary>
+        public void CoopEnded()
+        {
+            if (vm != null) CleanupLastWorld();
+            RemoveNeighbourhood(true);
+            MoveInFamily = null;
+            Downtown = false;
+            SavedLot = null;
+            CoopWorld.Restore();
+            CoopContentScanner.Restore();
+            NeighSelection(4);
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Shows a line of text at the top of the screen telling a guest what it is waiting for, or removes it (null).
         /// </summary>
         private void SetCoopStatus(string text)
         {
+            if (text == CoopStatusShown) return;
+            CoopStatusShown = text;
             if (text == null)
             {
                 if (CoopStatusLabel == null) return;
@@ -366,47 +423,13 @@ namespace Simitone.Client.UI.Screens
             CoopStatusShadow.Caption = text;
         }
 
-        private static string FormatSize(long bytes)
+        private void BringCoopStatusToFront()
         {
-            if (bytes < 1024 * 1024) return Math.Max(1, bytes / 1024) + " KB";
-            return (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
-        }
-
-        /// <summary>
-        /// Opens this game to guests (once), and makes the given lot driver the one they play on.
-        /// </summary>
-        private void HostCoop(CoopServerDriver driver)
-        {
-            if (CoopSession == null)
-            {
-                var session = new CoopHost();
-                //what guests compare their own objects with, and fetch what they lack from
-                session.Content = CoopContentScanner.BuildLocalAsync();
-                session.OnContentRequest += (name, files, bytes) =>
-                {
-                    Console.WriteLine("COOP sending " + files + " object files (" + FormatSize(bytes) + ") to " + (name == "" ? "a guest" : name));
-                };
-                try
-                {
-                    session.Start(CoopOptions.HostPort);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine("COOP could not host on port " + CoopOptions.HostPort + ": " + e.Message);
-                    return;
-                }
-                session.OnSpeedRequest += (speed) =>
-                {
-                    if (CoopOptions.GuestsControlSpeed) ChangeSpeedTo(speed);
-                };
-                session.OnGuestChange += (name, joined) =>
-                {
-                    Console.WriteLine("COOP " + (name == "" ? "a guest" : name) + (joined ? " joined" : " left") + " (" + session.GuestCount + " connected)");
-                };
-                CoopSession = session;
-                Console.WriteLine("COOP hosting on port " + CoopOptions.HostPort);
-            }
-            CoopSession.Attach(driver);
+            if (CoopStatusLabel == null) return;
+            Remove(CoopStatusShadow);
+            Remove(CoopStatusLabel);
+            Add(CoopStatusShadow);
+            Add(CoopStatusLabel);
         }
 
         /// <summary>
@@ -453,7 +476,7 @@ namespace Simitone.Client.UI.Screens
         /// <summary>
         /// True while we host and at least one guest is playing. Build and buy mode then leave the game running.
         /// </summary>
-        public bool HasCoopGuests { get { return CoopSession != null && CoopSession.GuestCount > 0; } }
+        public bool HasCoopGuests { get { return CoopManager.HasGuests; } }
 
         public void PlayHouse(short house, UIElement switcher)
         {
@@ -462,6 +485,8 @@ namespace Simitone.Client.UI.Screens
             InitializeLot(Content.Get().Neighborhood.GetHousePath(house), false);// "UserData/Houses/House21.iff"
             Remove(TS1NeighPanel);
             if (switcher != null) Remove(switcher);
+            TS1NeighPanel = null;
+            TS1NeighSwitcher = null;
         }
 
         public void MoveInAndPlay(short house, int family, UIElement switcher)
@@ -479,6 +504,7 @@ namespace Simitone.Client.UI.Screens
             family.ValueInArch = 0;
             Content.Get().Neighborhood.MoveOut(houseID);
             TS1NeighPanel.SelectHouse(houseID);
+            CoopManager.NeighbourhoodChanged();
         }
 
         public override void GameResized()
@@ -608,8 +634,21 @@ namespace Simitone.Client.UI.Screens
 
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
-            CoopSession?.Update();
-            CoopGuest?.Update();
+            SetCoopStatus(CoopManager.Status);
+            //a guest that is not on a lot yet (watching the host's neighbourhood, or waiting) has no buttons of
+            //its own, so Escape offers the way out
+            if (IsCoopGuest && (vm == null || !GuestLotShown) && CoopLeaveAlert == null && state.NewKeys.Contains(Keys.Escape))
+            {
+                CoopLeaveAlert = new UIMobileAlert(new UIAlertOptions()
+                {
+                    Title = "Co-op",
+                    Message = "Leave the host's game and go back to your own neighbourhood?",
+                    Buttons = UIAlertButton.YesNo(
+                        (b) => { CoopLeaveAlert.Close(); CoopLeaveAlert = null; CoopManager.Leave(); },
+                        (b) => { CoopLeaveAlert.Close(); CoopLeaveAlert = null; })
+                });
+                GlobalShowDialog(CoopLeaveAlert, true);
+            }
             //away from home the family is only activated once the lot is running, after the state we were sent
             if (IsCoopGuest && vm != null) ActiveFamily = vm.TS1State?.CurrentFamily;
 
@@ -778,7 +817,7 @@ namespace Simitone.Client.UI.Screens
         public void CleanupLastWorld()
         {
             if (vm == null) return;
-            CoopSession?.Attach(null); //guests wait for the next lot
+            CoopManager.LeaveLot(); //guests are told where we go next when we get there
 
             //clear our cache too, if the setting lets us do that
             TimedReferenceController.Clear();
@@ -824,11 +863,11 @@ namespace Simitone.Client.UI.Screens
 
             var globalLink = new VMTS1GlobalLinkStub();
             if (IsCoopGuest) Driver = CoopGuest.Driver;
-            else if (CoopOptions.HostPort > 0)
+            else if (CoopManager.Host != null)
             {
                 var coopDriver = new CoopServerDriver(globalLink);
                 Driver = coopDriver;
-                HostCoop(coopDriver);
+                CoopManager.EnterLot(coopDriver);
             }
             else Driver = new VMServerDriver(globalLink);
 
@@ -1144,6 +1183,7 @@ namespace Simitone.Client.UI.Screens
                 if (!GuestLotShown)
                 {
                     GuestLotShown = true;
+                    CoopManager.GuestLotShown();
                     this.AddAt(0, LotControl);
                     GameFacade.Cursor.SetCursor(CursorType.Normal);
                     ZoomLevel = 1;
@@ -1296,10 +1336,10 @@ namespace Simitone.Client.UI.Screens
 
         public void ExitLot()
         {
-            if (CoopGuest != null)
+            if (IsCoopGuest)
             {
-                CoopGuest.Disconnect();
-                CoopGuest = null;
+                CoopManager.Leave(); //ends in CoopEnded, which brings our own neighbourhood back
+                return;
             }
             CleanupLastWorld();
             CoopWorld.Restore(); //a guest that had the host's neighbourhood loaded gets its own back

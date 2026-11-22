@@ -391,6 +391,9 @@ namespace Simitone.Client
 
             if (HITVM.Get() != null) HITVM.Get().Tick();
 
+            //the co-op session, if there is one, runs whichever screen is showing
+            Network.Coop.CoopManager.Update();
+
             base.Update(gameTime);
             GameThread.UpdateExecuting = false;
         }

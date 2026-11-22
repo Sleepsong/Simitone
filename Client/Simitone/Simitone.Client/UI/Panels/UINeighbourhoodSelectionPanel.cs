@@ -82,6 +82,14 @@ namespace Simitone.Client.UI.Panels
 
         public TS1Provider Provider;
         public event Action<int> OnHouseSelect;
+        /// <summary>A house's details were opened (its number) or closed (0).</summary>
+        public event Action<int> OnHouseView;
+        /// <summary>The view switched to another area: the neighbourhood, downtown, vacation island...</summary>
+        public event Action<ushort> OnAreaChange;
+        /// <summary>
+        /// Shows what another player is looking at (co-op): clicks do nothing, and <see cref="ShowHouse"/> drives it.
+        /// </summary>
+        public bool ViewOnly;
         public HITSound BgSound;
         public Dictionary<int, Vector2> HousePositions;
 
@@ -165,7 +173,7 @@ namespace Simitone.Client.UI.Panels
             Add(bg);
             bg.ListenForMouse((evt, state) =>
             {
-                if (evt == UIMouseEventType.MouseDown) ResetZoom();
+                if (evt == UIMouseEventType.MouseDown && !ViewOnly) ResetZoom();
             });
 
             HousePositions = new Dictionary<int, Vector2>();
@@ -180,7 +188,7 @@ namespace Simitone.Client.UI.Panels
                 var loc = locations.GetString(i).Split(',');
                 var num = int.Parse(loc[0].TrimStart());
                 if (num == 99) continue;
-                var button = new UINeighborhoodHouseButton(num, SelectHouse, config.Scale);
+                var button = new UINeighborhoodHouseButton(num, HouseClicked, config.Scale);
                 button.Position = new Vector2(int.Parse(loc[1].TrimStart()), int.Parse(loc[2].TrimStart()));
                 HousePositions[num] = button.Position;
                 buttons.Add(button);
@@ -207,6 +215,7 @@ namespace Simitone.Client.UI.Panels
             Zoom = Zoom;
             CenterPositionX = CenterPositionX;
             CenterPositionY = CenterPositionY;
+            OnAreaChange?.Invoke(mode);
             //SimitoneNeighOBJExporter.SaveOBJ(Path.Combine(FSOEnvironment.UserDir, "NeighModel" + mode + "/"), locations);
         }
 
@@ -216,6 +225,22 @@ namespace Simitone.Client.UI.Panels
             LastHS.Kill();
             LastHS = null;
             GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() { { "Zoom", 1f }, { "CenterPositionX", 400 }, { "CenterPositionY", 300 } }, TweenQuad.EaseOut);
+            OnHouseView?.Invoke(0);
+        }
+
+        private void HouseClicked(int house)
+        {
+            if (ViewOnly) return;
+            SelectHouse(house);
+        }
+
+        /// <summary>
+        /// Opens the details of the house another player is looking at, or closes them (0).
+        /// </summary>
+        public void ShowHouse(int house)
+        {
+            if (house <= 0) ResetZoom();
+            else if ((LastHS == null || LastHS.HouseID != house) && HousePositions != null && HousePositions.ContainsKey(house)) OpenHouse(house);
         }
 
         public UIHouseSelectPanel LastHS;
@@ -226,10 +251,14 @@ namespace Simitone.Client.UI.Panels
             {
                 ResetZoom();
             }
-            else
+            else OpenHouse(house);
+        }
+
+        private void OpenHouse(int house)
+        {
             {
                 LastHS?.Kill();
-                LastHS = new UIHouseSelectPanel(house);
+                LastHS = new UIHouseSelectPanel(house, ViewOnly);
                 GameFacade.Screens.CurrentUIScreen.Add(LastHS);
                 GameFacade.Screens.Tween.To(this, 0.5f, new Dictionary<string, float>() {
                     { "Zoom", (Mode==4)?3f:1.5f },
@@ -241,6 +270,7 @@ namespace Simitone.Client.UI.Panels
                     OnHouseSelect?.Invoke(h);
                     //HITVM.Get().PlaySoundEvent("bkground_fade");
                 };
+                OnHouseView?.Invoke(house);
             }
         }
 

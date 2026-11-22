@@ -434,6 +434,9 @@ namespace Simitone.Client.UI.Screens
 
         public TS1CASScreen()
         {
+            //guests of a co-op session are told the host is in here, and wait
+            Simitone.Client.Network.Coop.CoopManager.EnterCreateFamily();
+
             var ui = Content.Get().CustomUI;
             var gd = GameFacade.GraphicsDevice;
 

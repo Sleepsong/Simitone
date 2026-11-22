@@ -18,6 +18,7 @@ namespace Simitone.Client.Network.Coop
         SpeedRequest = 3, //byte speed (0 pause, 1-3 as on the clock)
         ContentRequest = 4, //int32 n, int32[n] indices into the host's manifest of object files to send
         Ready = 5,        //empty: the guest has what it needs and can be given the lot
+        HouseRequest = 6, //int32 n, string[n] names of house files to send
 
         //host -> guest
         Welcome = 16,     //uint32 the guest's player ID in the VM, string host game version, int32 n, byte[n] a packed CoopManifest
@@ -26,10 +27,24 @@ namespace Simitone.Client.Network.Coop
         Direct = 19,      //a serialized VMNetCommand, run immediately by this guest only
         Players = 21,     //int32 n, uint32[n] the player IDs of everyone in the session, the host's first
         ContentFile = 22, //int32 index into the host's manifest, then that file's bytes
+        Lobby = 23,       //a packed CoopWorld: the host's neighbourhood as it is now, for the neighbourhood screen
+        Scene = 24,       //byte CoopScene where the host is, uint16 area, int32 house being viewed (0 none), int32 family being moved in (-1 none)
+        HouseFile = 25,   //string name, then that house file's bytes
         World = 20,       //a packed CoopWorld: the host's neighbourhood as of the lot state in the Tick frame that follows
 
         //never sent: queued locally when a connection ends. payload is a UTF8 reason, possibly empty
         Closed = 255
+    }
+
+    /// <summary>
+    /// Which part of the game the host is in. Guests follow.
+    /// </summary>
+    public enum CoopScene : byte
+    {
+        None = 0,
+        Neighbourhood = 1, //choosing a house. The area and the house being looked at say where
+        Lot = 2,           //playing a lot: its state and ticks follow
+        CreateFamily = 3   //in Create-a-Family
     }
 
     public struct CoopFrame
@@ -41,7 +56,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 6;
+        public const int Version = 7;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 

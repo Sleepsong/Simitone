@@ -29,6 +29,14 @@ namespace Simitone.Client.Network.Coop
         /// <summary>The active members (FAMI.RuntimeSubset) of each family that has any. Not part of the neighbourhood file.</summary>
         public Dictionary<ushort, uint[]> ActiveMembers = new Dictionary<ushort, uint[]>();
 
+        /// <summary>
+        /// The host's house files by name ("House07.iff"), with a fingerprint of each. The neighbourhood screen and
+        /// the lot pickers take their pictures from these. They are large and seldom change, so they are not sent
+        /// here: a guest asks for the ones it does not already have a matching copy of.
+        /// </summary>
+        public Dictionary<string, byte[]> Houses = new Dictionary<string, byte[]>();
+        private const int MaxHouses = 512;
+
         public const ushort NoFamily = 65535;
         private const int MaxFiles = 4096;
         private const int MaxUnpackedSize = 256 * 1024 * 1024;
@@ -67,6 +75,12 @@ namespace Simitone.Client.Network.Coop
                         writer.Write(family.Key);
                         writer.Write(family.Value.Length);
                         foreach (var guid in family.Value) writer.Write(guid);
+                    }
+                    writer.Write(Houses.Count);
+                    foreach (var house in Houses)
+                    {
+                        writer.Write(house.Key);
+                        writer.Write(house.Value, 0, CoopContent.HashSize);
                     }
                 }
                 return output.ToArray();
@@ -107,6 +121,15 @@ namespace Simitone.Client.Network.Coop
                     for (int i = 0; i < members; i++) guids[i] = reader.ReadUInt32();
                     world.ActiveMembers[id] = guids;
                 }
+                var houses = reader.ReadInt32();
+                if (houses < 0 || houses > MaxHouses) throw new InvalidDataException("Bad house count " + houses);
+                for (int i = 0; i < houses; i++)
+                {
+                    var name = reader.ReadString();
+                    var hash = reader.ReadBytes(CoopContent.HashSize);
+                    if (!IsHouseName(name) || hash.Length != CoopContent.HashSize) throw new InvalidDataException("Unexpected house " + name);
+                    world.Houses[name] = hash;
+                }
             }
             if (!world.Files.ContainsKey("Neighborhood.iff") || StaticFiles.Any(x => !world.Files.ContainsKey(x)))
                 throw new InvalidDataException("The neighbourhood is incomplete");
@@ -125,6 +148,38 @@ namespace Simitone.Client.Network.Coop
             var name = path.Substring(prefix.Length, path.Length - prefix.Length - 4);
             if (name.Length == 0 || name.Length > 64) return false;
             return name.All(c => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == ' ');
+        }
+
+        /// <summary>
+        /// House files are named by the game: "House" and the lot number. Guests write them to disk and hosts read
+        /// them on request, both by name, so nothing else is accepted.
+        /// </summary>
+        public static bool IsHouseName(string name)
+        {
+            if (name == null || name.Length < 11 || name.Length > 12) return false;
+            if (!name.StartsWith("House") || !name.EndsWith(".iff")) return false;
+            for (int i = 5; i < name.Length - 4; i++)
+            {
+                if (name[i] < '0' || name[i] > '9') return false;
+            }
+            return true;
+        }
+
+        //fingerprints of house files on disk, kept while the file's size and date stay the same
+        private static Dictionary<string, KeyValuePair<string, byte[]>> HashCache = new Dictionary<string, KeyValuePair<string, byte[]>>();
+
+        private static byte[] HashCached(string path)
+        {
+            var info = new FileInfo(path);
+            var stamp = info.Length + "|" + info.LastWriteTimeUtc.Ticks;
+            lock (HashCache)
+            {
+                if (HashCache.TryGetValue(path, out var cached) && cached.Key == stamp) return cached.Value;
+            }
+            var data = File.ReadAllBytes(path);
+            var hash = CoopContent.HashOf(data, 0, data.Length);
+            lock (HashCache) HashCache[path] = new KeyValuePair<string, byte[]>(stamp, hash);
+            return hash;
         }
 
         #endregion
@@ -152,7 +207,7 @@ namespace Simitone.Client.Network.Coop
         /// <summary>
         /// Captures the host's neighbourhood as it is in memory right now (which is ahead of what is saved on disk).
         /// </summary>
-        public static CoopWorld Capture(VM vm)
+        public static CoopWorld Capture()
         {
             var content = Content.Get();
             var neigh = content.Neighborhood;
@@ -194,7 +249,30 @@ namespace Simitone.Client.Network.Coop
                 if (family.RuntimeSubset != null && family.RuntimeSubset.Length > 0)
                     world.ActiveMembers[family.ChunkID] = family.RuntimeSubset;
             }
+
+            var houseDir = Path.Combine(neigh.UserPath, "Houses");
+            if (Directory.Exists(houseDir))
+            {
+                foreach (var filename in Directory.EnumerateFiles(houseDir, "House*.iff"))
+                {
+                    var name = Path.GetFileName(filename);
+                    try
+                    {
+                        if (IsHouseName(name)) world.Houses[name] = HashCached(filename);
+                    }
+                    catch (Exception) { } //being written right now: the guest keeps the copy it has
+                }
+            }
             return world;
+        }
+
+        /// <summary>
+        /// The bytes of one of this game's house files, for a guest that asked for it. Safe to call off the game thread.
+        /// </summary>
+        public static byte[] ReadHouse(string name)
+        {
+            if (!IsHouseName(name)) throw new InvalidDataException("Not a house file: " + name);
+            return File.ReadAllBytes(Path.Combine(Content.Get().Neighborhood.UserPath, "Houses", name));
         }
 
         #endregion
@@ -203,7 +281,48 @@ namespace Simitone.Client.Network.Coop
 
         /// <summary>True while this game has the host's neighbourhood loaded instead of its own.</summary>
         public static bool Applied { get; private set; }
+        /// <summary>The host's neighbourhood that is loaded, if one is.</summary>
+        public static CoopWorld AppliedWorld { get { return Current; } }
         private static CoopWorld Current;
+
+        /// <summary>The folder a guest keeps the host's neighbourhood in. Its own is never written to.</summary>
+        public static string GuestRoot { get { return Path.Combine(FSOEnvironment.UserDir, "UserData" + (GuestSlot + 1) + "/"); } }
+
+        /// <summary>
+        /// The host's house files this guest does not have a matching copy of yet.
+        /// </summary>
+        public List<string> MissingHouses()
+        {
+            var missing = new List<string>();
+            foreach (var house in Houses)
+            {
+                var path = Path.Combine(GuestRoot, "Houses", house.Key);
+                try
+                {
+                    if (File.Exists(path) && CoopContent.HashEquals(HashCached(path), house.Value)) continue;
+                }
+                catch (Exception) { }
+                missing.Add(house.Key);
+            }
+            return missing;
+        }
+
+        /// <summary>
+        /// Saves a house file fetched from the host into the guest's copy of its neighbourhood.
+        /// </summary>
+        public static void SaveHouse(string name, byte[] data, int offset, int count)
+        {
+            if (!IsHouseName(name)) throw new InvalidDataException("Not a house file: " + name);
+            var dir = Path.Combine(GuestRoot, "Houses");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, name);
+            var temp = path + ".part";
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(data, offset, count);
+            }
+            File.Move(temp, path, true);
+        }
         private static FSO.Content.TS1.TS1GameState OwnGameState; //the guest's own, put back by Restore
 
         /// <summary>
@@ -211,7 +330,7 @@ namespace Simitone.Client.Network.Coop
         /// </summary>
         public void Apply()
         {
-            var root = Path.Combine(FSOEnvironment.UserDir, "UserData" + (GuestSlot + 1) + "/");
+            var root = GuestRoot;
             Directory.CreateDirectory(Path.Combine(root, "Houses"));
             var charDir = Path.Combine(root, "Characters");
             Directory.CreateDirectory(charDir);
@@ -228,8 +347,9 @@ namespace Simitone.Client.Network.Coop
                 if (!Files.ContainsKey("Characters/" + Path.GetFileName(existing))) File.Delete(existing);
             }
 
-            //the lot pickers (downtown, vacation...) read house files for their pictures and names. The host's
-            //are not sent, so stand in this game's own; nothing in the simulation depends on them.
+            //the neighbourhood screen and the lot pickers read house files for their pictures. The host's are
+            //fetched separately (see Houses); until they arrive this game's own stand in, so there is always a
+            //file to read. Nothing in the simulation depends on them.
             var ownHouses = Path.Combine(FSOEnvironment.UserDir, "UserData/Houses");
             if (Directory.Exists(ownHouses))
             {
