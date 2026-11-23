@@ -60,6 +60,8 @@ namespace Simitone.Client.Network.Coop
         public event Action<uint, byte[]> OnCasEdit;
         /// <summary>A guest (by player ID) gave control of Create-a-Family back.</summary>
         public event Action<uint> OnCasRelease;
+        /// <summary>A guest (by player ID) moved its mouse over the neighbourhood: where to, and whether it is on it at all.</summary>
+        public event Action<uint, float, float, bool> OnPointer;
 
         private class GuestState
         {
@@ -199,6 +201,10 @@ namespace Simitone.Client.Network.Coop
                         break;
                     case CoopFrameKind.CasRelease:
                         if (guest != null) OnCasRelease?.Invoke(guest.PersistID);
+                        break;
+                    case CoopFrameKind.Pointer:
+                        if (guest != null && frame.Data.Length == 9)
+                            OnPointer?.Invoke(guest.PersistID, BitConverter.ToSingle(frame.Data, 0), BitConverter.ToSingle(frame.Data, 4), frame.Data[8] != 0);
                         break;
                     case CoopFrameKind.Command:
                         if (guest != null && Driver != null)

@@ -64,6 +64,7 @@ namespace Simitone.Client.UI.Screens
         private UILabel CoopStatusShadow;
         private string CoopStatusShown;
         private UIMobileAlert CoopLeaveAlert;
+        private UICoopPointers CoopPointers; //the other players' mouse pointers, while the neighbourhood is showing
         private UINeighbourhoodSwitcher TS1NeighSwitcher;
         private ushort GuestNeighArea; //the area the guest's view of the host's neighbourhood shows
         public uint VisualBudget { get; set; }
@@ -283,6 +284,45 @@ namespace Simitone.Client.UI.Screens
             CoopManager.ShowNeighbourhood(neighborhoodMode, MoveInFamily);
             if (TestMode.TakeLot(out var testLot)) PlayHouse(testLot, switcher);
             else if (CoopOptions.TakeJoin(out var coopAddress)) CoopManager.Join(coopAddress, this);
+        }
+
+        /// <summary>
+        /// While the neighbourhood is showing in a co-op session, every player sees the others' mouse pointers on
+        /// it. This tells the others where ours is, and keeps theirs drawn on top.
+        /// </summary>
+        private void UpdateCoopPointers(FSO.Common.Rendering.Framework.Model.UpdateState state)
+        {
+            if (TS1NeighPanel == null || vm != null || !CoopManager.InSession)
+            {
+                if (CoopPointers != null)
+                {
+                    Remove(CoopPointers);
+                    CoopPointers = null;
+                }
+                CoopManager.ReportPointer(0, 0, false);
+                return;
+            }
+
+            if (CoopPointers == null)
+            {
+                CoopPointers = new UICoopPointers();
+                Add(CoopPointers);
+            }
+            else
+            {
+                //a house's details open over the neighbourhood: keep the pointers above them
+                var children = GetChildren();
+                if (children.Count > 0 && children[children.Count - 1] != CoopPointers)
+                {
+                    Remove(CoopPointers);
+                    Add(CoopPointers);
+                }
+            }
+            CoopPointers.Panel = TS1NeighPanel;
+
+            //our mouse, in the coordinates of the neighbourhood picture
+            var place = TS1NeighPanel.GlobalPoint(state.MouseState.Position.ToVector2());
+            CoopManager.ReportPointer(place.X, place.Y, true);
         }
 
         /// <summary>
@@ -637,6 +677,7 @@ namespace Simitone.Client.UI.Screens
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
             SetCoopStatus(CoopManager.Status);
+            UpdateCoopPointers(state);
             //a guest that is not on a lot yet (watching the host's neighbourhood, or waiting) has no buttons of
             //its own, so Escape offers the way out
             if (IsCoopGuest && (vm == null || !GuestLotShown) && CoopLeaveAlert == null && state.NewKeys.Contains(Keys.Escape))

@@ -47,6 +47,8 @@ namespace Simitone.Client.Network.Coop
         public event Action<uint, byte[]> OnCas;
         /// <summary>Something the host wants this player told.</summary>
         public event Action<string> OnNotice;
+        /// <summary>Another player (by ID) moved its mouse over the neighbourhood: where to, and whether it is on it at all.</summary>
+        public event Action<uint, float, float, bool> OnPointer;
         /// <summary>A house file we asked for: its name, and the frame data with where in it the file starts and how long it is (0: keep ours).</summary>
         public event Action<string, byte[], int, int> OnHouseFile;
 
@@ -107,6 +109,16 @@ namespace Simitone.Client.Network.Coop
         public void SendCasEdit(byte[] family)
         {
             Connection?.Send(CoopFrameKind.CasEdit, family);
+        }
+
+        /// <summary>Tells the others where this player's mouse is on the neighbourhood picture, or that it is not on it.</summary>
+        public void SendPointer(float x, float y, bool shown)
+        {
+            var data = new byte[9];
+            BitConverter.TryWriteBytes(new Span<byte>(data, 0, 4), x);
+            BitConverter.TryWriteBytes(new Span<byte>(data, 4, 4), y);
+            data[8] = (byte)(shown ? 1 : 0);
+            Connection?.Send(CoopFrameKind.Pointer, data);
         }
 
         /// <summary>Create-a-Family: gives control back to the host.</summary>
@@ -276,6 +288,13 @@ namespace Simitone.Client.Network.Coop
                             var family = new byte[frame.Data.Length - 4];
                             Buffer.BlockCopy(frame.Data, 4, family, 0, family.Length);
                             OnCas?.Invoke(BitConverter.ToUInt32(frame.Data, 0), family);
+                        }
+                        break;
+                    case CoopFrameKind.Pointers:
+                        if (PlayerID != 0 && frame.Data.Length == 13)
+                        {
+                            OnPointer?.Invoke(BitConverter.ToUInt32(frame.Data, 0), BitConverter.ToSingle(frame.Data, 4),
+                                BitConverter.ToSingle(frame.Data, 8), frame.Data[12] != 0);
                         }
                         break;
                     case CoopFrameKind.Notice:

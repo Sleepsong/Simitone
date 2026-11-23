@@ -121,7 +121,9 @@ namespace Simitone.Client.Network.Coop
                 {
                     SetCasHolder(CoopProtocol.HostPlayerID); //they left holding control of Create-a-Family
                 }
+                if (!joined) DropPointers(session);
             };
+            session.OnPointer += HostPointer;
             session.OnCasEdit += HostCasEdit;
             session.OnCasRelease += (guestID) =>
             {
@@ -137,6 +139,7 @@ namespace Simitone.Client.Network.Coop
             if (Host == null) return;
             Host.Shutdown();
             Host = null;
+            Pointers.Clear();
             Console.WriteLine("COOP stopped hosting");
         }
 
@@ -243,6 +246,7 @@ namespace Simitone.Client.Network.Coop
         {
             Scene = CoopScene.Lot;
             SceneHouse = 0;
+            ReportPointer(0, 0, false);
             if (Host == null) return;
             SendScene();
             Host.Attach(driver);
@@ -259,12 +263,108 @@ namespace Simitone.Client.Network.Coop
             if (Guest != null) return; //a guest's own Create-a-Family screen, following the host's
             Scene = CoopScene.CreateFamily;
             SceneHouse = 0;
+            ReportPointer(0, 0, false);
             //a new family is started, with the host in control
             CasHolder = CoopProtocol.HostPlayerID;
             CasFamily = new CoopCasState().Pack();
             CasVersion++;
             SendScene();
             if (HasGuests) Host.SendToGuests(CoopFrameKind.Cas, PackCas());
+        }
+
+        #endregion
+
+        #region Pointers on the neighbourhood
+
+        /// <summary>
+        /// Another player's mouse pointer on the neighbourhood screen. Its position is in the coordinates of the
+        /// neighbourhood picture itself, so it is over the same house on every screen whatever its size or zoom.
+        /// </summary>
+        public class Pointer
+        {
+            public uint Player;
+            public string Name;
+            public float X;
+            public float Y;
+        }
+
+        /// <summary>The other players' pointers that are on the neighbourhood right now, by player ID.</summary>
+        public static readonly Dictionary<uint, Pointer> Pointers = new Dictionary<uint, Pointer>();
+
+        private static float PointerX, PointerY;
+        private static bool PointerShown;
+        private static int PointerWait;
+
+        /// <summary>
+        /// Called every frame by the neighbourhood screen with where this player's mouse is on the picture, or
+        /// that it is not on it (another screen is showing). The others are told when it moves, about thirty
+        /// times a second at most.
+        /// </summary>
+        public static void ReportPointer(float x, float y, bool shown)
+        {
+            if (!InSession || (Guest != null && Guest.PlayerID == 0))
+            {
+                PointerShown = false;
+                return;
+            }
+            if (shown == PointerShown && (!shown || (Math.Abs(x - PointerX) < 0.5f && Math.Abs(y - PointerY) < 0.5f))) return;
+            if (shown && PointerShown && ++PointerWait < 2) return;
+            PointerWait = 0;
+            PointerX = x;
+            PointerY = y;
+            PointerShown = shown;
+            if (Host != null)
+            {
+                if (HasGuests) Host.SendToGuests(CoopFrameKind.Pointers, PackPointer(CoopProtocol.HostPlayerID, x, y, shown));
+            }
+            else Guest.SendPointer(x, y, shown);
+        }
+
+        private static byte[] PackPointer(uint player, float x, float y, bool shown)
+        {
+            var data = new byte[13];
+            BitConverter.TryWriteBytes(new Span<byte>(data, 0, 4), player);
+            BitConverter.TryWriteBytes(new Span<byte>(data, 4, 4), x);
+            BitConverter.TryWriteBytes(new Span<byte>(data, 8, 4), y);
+            data[12] = (byte)(shown ? 1 : 0);
+            return data;
+        }
+
+        private static void SetPointer(uint player, string name, float x, float y, bool shown)
+        {
+            //the picture is 800 by 600; anything far outside it is not a place on it
+            if (!shown || !float.IsFinite(x) || !float.IsFinite(y) || Math.Abs(x) > 8000 || Math.Abs(y) > 8000)
+            {
+                Pointers.Remove(player);
+                return;
+            }
+            if (!Pointers.TryGetValue(player, out var pointer))
+            {
+                pointer = new Pointer() { Player = player };
+                Pointers[player] = pointer;
+            }
+            pointer.Name = name;
+            pointer.X = x;
+            pointer.Y = y;
+        }
+
+        /// <summary>A guest's pointer moved: show it here, and pass it on to the other guests.</summary>
+        private static void HostPointer(uint guestID, float x, float y, bool shown)
+        {
+            var name = Host?.GuestName(guestID);
+            SetPointer(guestID, string.IsNullOrEmpty(name) ? "Guest" : name, x, y, shown);
+            Host?.SendToGuests(CoopFrameKind.Pointers, PackPointer(guestID, x, y, shown && Pointers.ContainsKey(guestID)), guestID);
+        }
+
+        /// <summary>Forgets the pointers of guests that have left, here and on the other guests' screens.</summary>
+        private static void DropPointers(CoopHost session)
+        {
+            foreach (var player in new List<uint>(Pointers.Keys))
+            {
+                if (session.GuestName(player) != null) continue;
+                Pointers.Remove(player);
+                session.SendToGuests(CoopFrameKind.Pointers, PackPointer(player, 0, 0, false));
+            }
         }
 
         #endregion
@@ -485,6 +585,10 @@ namespace Simitone.Client.Network.Coop
                 CasVersion++;
             };
             guest.OnNotice += ShowNotice;
+            guest.OnPointer += (player, x, y, shown) =>
+            {
+                if (player != MyID) SetPointer(player, (player == CoopProtocol.HostPlayerID) ? "Host" : "Guest", x, y, shown);
+            };
             guest.OnClosed += (reason) =>
             {
                 Console.WriteLine("COOP session ended: " + reason);
@@ -499,6 +603,8 @@ namespace Simitone.Client.Network.Coop
             WorldSeen = null;
             NeighbourhoodStale = false;
             HousesAwaited.Clear();
+            Pointers.Clear();
+            PointerShown = false;
             CasHolder = CoopProtocol.HostPlayerID;
             CasFamily = new CoopCasState().Pack();
             CasVersion++;
@@ -525,6 +631,8 @@ namespace Simitone.Client.Network.Coop
             Guest = null;
             Status = null;
             HousesAwaited.Clear();
+            Pointers.Clear();
+            PointerShown = false;
             WorldSeen = null;
             ScreenSeen = null;
             CasHolder = CoopProtocol.HostPlayerID;
@@ -639,6 +747,7 @@ namespace Simitone.Client.Network.Coop
                     return;
                 }
                 Status = null;
+                ReportPointer(0, 0, false); //the neighbourhood screen goes away, and its pointer with it
                 GameController.EnterCAS(); //our own Create-a-Family screen, which follows the host's family
                 return;
             }
