@@ -219,7 +219,9 @@ namespace Simitone.Client.UI.Screens
             if (Content.Get().TS1)
             {
                 CoopManager.Startup(); //hosting, if asked for, starts here: before any lot can load
-                NeighSelection(mode);
+                //a guest coming back from Create-a-Family is shown the host's neighbourhood by CoopManager,
+                //once this screen is up. Everyone else starts at their own.
+                if (!CoopManager.IsGuest) NeighSelection(mode);
 
                 // Check for updates from GitHub releases
                 UpdateChecker.CheckForUpdatesAsync();

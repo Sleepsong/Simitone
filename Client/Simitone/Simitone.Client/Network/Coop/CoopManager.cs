@@ -30,7 +30,14 @@ namespace Simitone.Client.Network.Coop
         /// <summary>A line telling a guest what it is waiting for, or null. The game screen shows it.</summary>
         public static string Status { get; private set; }
 
+        /// <summary>True while this game is in a session, hosting or as a guest.</summary>
+        public static bool InSession { get { return Host != null || Guest != null; } }
+
+        /// <summary>This game's player ID in the session.</summary>
+        public static uint MyID { get { return (Guest != null) ? Guest.PlayerID : CoopProtocol.HostPlayerID; } }
+
         private static TS1GameScreen Game { get { return GameFacade.Screens?.CurrentUIScreen as TS1GameScreen; } }
+        private static object ScreenSeen; //the screen the guest's view was last set up on
 
         /// <summary>
         /// Pumps the session. Called once a frame from the game loop, whichever screen is showing.
@@ -39,7 +46,18 @@ namespace Simitone.Client.Network.Coop
         {
             Host?.Update();
             Guest?.Update(); //can end the session
-            if (Guest != null) CheckGuestWorld();
+            if (Guest != null)
+            {
+                CheckGuestWorld();
+                //the game swaps whole screens between the neighbourhood and Create-a-Family. A new one starts
+                //out knowing nothing of the session, so set it up as soon as it appears.
+                var screen = GameFacade.Screens?.CurrentUIScreen;
+                if (screen != ScreenSeen && (screen is TS1GameScreen || screen is TS1CASScreen))
+                {
+                    NeighbourhoodStale = true;
+                    ApplyGuestScene();
+                }
+            }
         }
 
         private static bool StartupDone;
@@ -99,6 +117,15 @@ namespace Simitone.Client.Network.Coop
             session.OnGuestChange += (name, joined) =>
             {
                 Console.WriteLine("COOP " + (name == "" ? "a guest" : name) + (joined ? " joined" : " left") + " (" + session.GuestCount + " connected)");
+                if (!joined && CasHolder != CoopProtocol.HostPlayerID && session.GuestName(CasHolder) == null)
+                {
+                    SetCasHolder(CoopProtocol.HostPlayerID); //they left holding control of Create-a-Family
+                }
+            };
+            session.OnCasEdit += HostCasEdit;
+            session.OnCasRelease += (guestID) =>
+            {
+                if (guestID == CasHolder) SetCasHolder(CoopProtocol.HostPlayerID);
             };
             Host = session;
             Console.WriteLine("COOP hosting on port " + port);
@@ -119,12 +146,13 @@ namespace Simitone.Client.Network.Coop
         private static List<KeyValuePair<CoopFrameKind, byte[]>> Greet()
         {
             var frames = new List<KeyValuePair<CoopFrameKind, byte[]>>();
-            if (Scene == CoopScene.Neighbourhood)
+            if (Scene == CoopScene.Neighbourhood || Scene == CoopScene.CreateFamily)
             {
                 var lobby = CaptureLobby();
                 if (lobby != null) frames.Add(new KeyValuePair<CoopFrameKind, byte[]>(CoopFrameKind.Lobby, lobby));
             }
             frames.Add(new KeyValuePair<CoopFrameKind, byte[]>(CoopFrameKind.Scene, PackScene()));
+            if (Scene == CoopScene.CreateFamily) frames.Add(new KeyValuePair<CoopFrameKind, byte[]>(CoopFrameKind.Cas, PackCas()));
             return frames;
         }
 
@@ -228,9 +256,163 @@ namespace Simitone.Client.Network.Coop
 
         public static void EnterCreateFamily()
         {
+            if (Guest != null) return; //a guest's own Create-a-Family screen, following the host's
             Scene = CoopScene.CreateFamily;
             SceneHouse = 0;
+            //a new family is started, with the host in control
+            CasHolder = CoopProtocol.HostPlayerID;
+            CasFamily = new CoopCasState().Pack();
+            CasVersion++;
             SendScene();
+            if (HasGuests) Host.SendToGuests(CoopFrameKind.Cas, PackCas());
+        }
+
+        #endregion
+
+        #region Create-a-Family, shared
+
+        /// <summary>The player who may edit the family being created. Everyone else watches.</summary>
+        public static uint CasHolder { get; private set; } = CoopProtocol.HostPlayerID;
+
+        /// <summary>The family as it stands (a packed CoopCasState).</summary>
+        public static byte[] CasFamily { get; private set; } = new CoopCasState().Pack();
+
+        /// <summary>Goes up whenever the family or its holder was changed by someone other than this game's own screen.</summary>
+        public static int CasVersion { get; private set; }
+
+        /// <summary>True if this player is the one who may edit the family. Always true outside a session.</summary>
+        public static bool CasMine { get { return !InSession || CasHolder == MyID; } }
+
+        /// <summary>What to call the player holding control, for the status line.</summary>
+        public static string CasHolderName
+        {
+            get
+            {
+                if (CasHolder == CoopProtocol.HostPlayerID) return "The host";
+                var name = Host?.GuestName(CasHolder);
+                return string.IsNullOrEmpty(name) ? "Another player" : name;
+            }
+        }
+
+        private static byte[] PackCas()
+        {
+            var data = new byte[4 + CasFamily.Length];
+            BitConverter.TryWriteBytes(new Span<byte>(data, 0, 4), CasHolder);
+            Buffer.BlockCopy(CasFamily, 0, data, 4, CasFamily.Length);
+            return data;
+        }
+
+        /// <summary>
+        /// This player, holding control, changed the family on its Create-a-Family screen.
+        /// </summary>
+        public static void CasEdited(byte[] family)
+        {
+            if (!CasMine) return;
+            CasFamily = family;
+            if (Host != null)
+            {
+                if (HasGuests) Host.SendToGuests(CoopFrameKind.Cas, PackCas());
+            }
+            else Guest?.SendCasEdit(family);
+        }
+
+        /// <summary>
+        /// The host hands control of the family to a guest: the next one after whoever has it now.
+        /// With one guest, that is simply the guest.
+        /// </summary>
+        public static void CasGive()
+        {
+            if (Host == null) return;
+            var guests = Host.GuestIDs();
+            if (guests.Count == 0) return;
+            var next = guests.IndexOf(CasHolder) + 1;
+            if (next >= guests.Count) return;
+            SetCasHolder(guests[next]);
+        }
+
+        /// <summary>
+        /// The host takes control back, or the guest holding it gives it back.
+        /// </summary>
+        public static void CasTake()
+        {
+            if (Host != null) SetCasHolder(CoopProtocol.HostPlayerID);
+            else if (Guest != null && CasMine) Guest.SendCasRelease(); //the host answers with the new holder
+        }
+
+        /// <summary>The name of the guest the host's "give control" would go to, or null if there is nobody to give it to.</summary>
+        public static string CasNextName
+        {
+            get
+            {
+                if (Host == null) return null;
+                var guests = Host.GuestIDs();
+                var next = guests.IndexOf(CasHolder) + 1;
+                if (next >= guests.Count) return null;
+                var name = Host.GuestName(guests[next]);
+                return string.IsNullOrEmpty(name) ? "the guest" : name;
+            }
+        }
+
+        private static void SetCasHolder(uint holder)
+        {
+            if (Host == null || CasHolder == holder) return;
+            CasHolder = holder;
+            CasVersion++;
+            if (Scene == CoopScene.CreateFamily && HasGuests) Host.SendToGuests(CoopFrameKind.Cas, PackCas());
+        }
+
+        /// <summary>
+        /// A guest sent its version of the family. It counts only from the guest that holds control, and only
+        /// if every Sim in it is one this game can build: the family is created in the host's game.
+        /// </summary>
+        private static void HostCasEdit(uint guestID, byte[] data)
+        {
+            if (guestID != CasHolder || Scene != CoopScene.CreateFamily) return;
+            string problem = null;
+            try
+            {
+                var family = CoopCasState.Unpack(data);
+                foreach (var member in family.Members)
+                {
+                    if (!TS1CASScreen.LookAvailable(member))
+                    {
+                        problem = "The host's game does not have the head or body chosen for " +
+                            (string.IsNullOrEmpty(member.Name) ? "that Sim" : member.Name) + ", so it was not added. Please pick another.";
+                        break;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                problem = "The host could not read the family that was sent, so it was not changed.";
+            }
+
+            if (problem != null)
+            {
+                //put the guest's screen back to the family as the host has it, and say why
+                Host.SendTo(guestID, CoopFrameKind.Cas, PackCas());
+                using (var stream = new System.IO.MemoryStream())
+                {
+                    using (var writer = new System.IO.BinaryWriter(stream)) writer.Write(problem);
+                    Host.SendTo(guestID, CoopFrameKind.Notice, stream.ToArray());
+                }
+                return;
+            }
+            CasFamily = data;
+            CasVersion++;
+            Host.SendToGuests(CoopFrameKind.Cas, PackCas(), guestID);
+        }
+
+        private static void ShowNotice(string text)
+        {
+            UIMobileAlert alert = null;
+            alert = new UIMobileAlert(new UIAlertOptions()
+            {
+                Title = "Co-op",
+                Message = text,
+                Buttons = UIAlertButton.Ok((b) => alert.Close())
+            });
+            UIScreen.GlobalShowDialog(alert, true);
         }
 
         #endregion
@@ -288,18 +470,18 @@ namespace Simitone.Client.Network.Coop
                 ApplyGuestScene();
             };
             guest.OnHouseFile += GuestHouseFile;
+            guest.OnCas += (holder, family) =>
+            {
+                CasHolder = holder;
+                CasFamily = family;
+                CasVersion++;
+            };
+            guest.OnNotice += ShowNotice;
             guest.OnClosed += (reason) =>
             {
                 Console.WriteLine("COOP session ended: " + reason);
                 EndGuest();
-                UIMobileAlert alert = null;
-                alert = new UIMobileAlert(new UIAlertOptions()
-                {
-                    Title = "Co-op",
-                    Message = reason,
-                    Buttons = UIAlertButton.Ok((b) => alert.Close())
-                });
-                UIScreen.GlobalShowDialog(alert, true);
+                ShowNotice(reason);
             };
 
             HostScene = CoopScene.None;
@@ -309,6 +491,9 @@ namespace Simitone.Client.Network.Coop
             WorldSeen = null;
             NeighbourhoodStale = false;
             HousesAwaited.Clear();
+            CasHolder = CoopProtocol.HostPlayerID;
+            CasFamily = new CoopCasState().Pack();
+            CasVersion++;
             Guest = guest;
             Status = "Joining " + address + "...";
             screen.GuestHideNeighbourhood(); //our own neighbourhood: the host's replaces it
@@ -333,13 +518,18 @@ namespace Simitone.Client.Network.Coop
             Status = null;
             HousesAwaited.Clear();
             WorldSeen = null;
-            var game = Game;
-            if (game != null) game.CoopEnded();
+            ScreenSeen = null;
+            CasHolder = CoopProtocol.HostPlayerID;
+            CasVersion++;
+            var screen = GameFacade.Screens?.CurrentUIScreen;
+            if (screen is TS1GameScreen) ((TS1GameScreen)screen).CoopEnded();
             else
             {
                 //no game screen to tidy up, but our own neighbourhood and objects still have to come back
                 CoopWorld.Restore();
                 CoopContentScanner.Restore();
+                //from Create-a-Family, go back to the neighbourhood: ours again now
+                (screen as TS1CASScreen)?.CoopLeave();
             }
         }
 
@@ -417,8 +607,39 @@ namespace Simitone.Client.Network.Coop
         /// </summary>
         private static void ApplyGuestScene()
         {
-            var game = Game;
-            if (game == null || Guest == null) return;
+            if (Guest == null) return;
+            var screen = GameFacade.Screens?.CurrentUIScreen;
+            ScreenSeen = screen;
+            if (Guest.PlayerID == 0) return; //still joining: nothing to follow yet, and the status line says how far along
+            var game = screen as TS1GameScreen;
+            var cas = screen as TS1CASScreen;
+
+            if (HostScene == CoopScene.CreateFamily)
+            {
+                if (cas != null)
+                {
+                    Status = null; //the Create-a-Family screen says who is in control itself
+                    return;
+                }
+                if (game == null) return;
+                if (game.InLot) game.GuestLeaveLot();
+                game.GuestHideNeighbourhood();
+                if (!CoopWorld.Applied)
+                {
+                    //the host's neighbourhood comes first: its families and Sims are what the screen lists
+                    Status = "The host is creating a family... (Esc to leave)";
+                    return;
+                }
+                Status = null;
+                GameController.EnterCAS(); //our own Create-a-Family screen, which follows the host's family
+                return;
+            }
+            if (cas != null)
+            {
+                cas.CoopLeave(); //back to the game screen, which is set up when it appears (see Update)
+                return;
+            }
+            if (game == null) return;
             switch (HostScene)
             {
                 case CoopScene.Lot:
@@ -440,11 +661,6 @@ namespace Simitone.Client.Network.Coop
                     Status = "The host is choosing a house (Esc to leave)";
                     game.GuestShowNeighbourhood(HostArea, HostHouse, HostMoveIn, NeighbourhoodStale);
                     NeighbourhoodStale = false;
-                    break;
-                case CoopScene.CreateFamily:
-                    if (game.InLot) game.GuestLeaveLot();
-                    game.GuestHideNeighbourhood();
-                    Status = "The host is creating a family... (Esc to leave)";
                     break;
                 default:
                     if (game.InLot) game.GuestLeaveLot();

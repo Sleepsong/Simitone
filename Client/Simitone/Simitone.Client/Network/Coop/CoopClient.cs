@@ -43,6 +43,10 @@ namespace Simitone.Client.Network.Coop
         public event Action<byte[]> OnLobby;
         /// <summary>Where the host is: the scene, the area shown, the house being viewed (0 none), the family being moved in (-1 none).</summary>
         public event Action<CoopScene, ushort, int, int> OnScene;
+        /// <summary>Create-a-Family: the player who holds control, and the family as it stands (a packed CoopCasState).</summary>
+        public event Action<uint, byte[]> OnCas;
+        /// <summary>Something the host wants this player told.</summary>
+        public event Action<string> OnNotice;
         /// <summary>A house file we asked for: its name, and the frame data with where in it the file starts and how long it is (0: keep ours).</summary>
         public event Action<string, byte[], int, int> OnHouseFile;
 
@@ -97,6 +101,18 @@ namespace Simitone.Client.Network.Coop
                 PendingEnd = driver.CloseString ?? "The game lost sync with the host.";
             };
             Driver = driver;
+        }
+
+        /// <summary>Create-a-Family: sends the family as we, holding control, have changed it.</summary>
+        public void SendCasEdit(byte[] family)
+        {
+            Connection?.Send(CoopFrameKind.CasEdit, family);
+        }
+
+        /// <summary>Create-a-Family: gives control back to the host.</summary>
+        public void SendCasRelease()
+        {
+            Connection?.Send(CoopFrameKind.CasRelease, null);
         }
 
         /// <summary>
@@ -253,6 +269,22 @@ namespace Simitone.Client.Network.Coop
                             OnScene?.Invoke((CoopScene)frame.Data[0], BitConverter.ToUInt16(frame.Data, 1),
                                 BitConverter.ToInt32(frame.Data, 3), BitConverter.ToInt32(frame.Data, 7));
                         }
+                        break;
+                    case CoopFrameKind.Cas:
+                        if (PlayerID != 0 && frame.Data.Length >= 4)
+                        {
+                            var family = new byte[frame.Data.Length - 4];
+                            Buffer.BlockCopy(frame.Data, 4, family, 0, family.Length);
+                            OnCas?.Invoke(BitConverter.ToUInt32(frame.Data, 0), family);
+                        }
+                        break;
+                    case CoopFrameKind.Notice:
+                        if (PlayerID == 0) break;
+                        try
+                        {
+                            using (var reader = new BinaryReader(new MemoryStream(frame.Data))) OnNotice?.Invoke(reader.ReadString());
+                        }
+                        catch (Exception) { }
                         break;
                     case CoopFrameKind.HouseFile:
                         if (PlayerID == 0) break;

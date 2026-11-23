@@ -33,6 +33,7 @@ using Simitone.Client.Utils;
 using FSO.SimAntics.Utils;
 using FSO.SimAntics.Model.TS1Platform;
 using FSO.LotView;
+using Simitone.Client.Network.Coop;
 
 namespace Simitone.Client.UI.Screens
 {
@@ -434,8 +435,8 @@ namespace Simitone.Client.UI.Screens
 
         public TS1CASScreen()
         {
-            //guests of a co-op session are told the host is in here, and wait
-            Simitone.Client.Network.Coop.CoopManager.EnterCreateFamily();
+            //guests of a co-op session are told the host is in here, and open their own to follow along
+            CoopManager.EnterCreateFamily();
 
             var ui = Content.Get().CustomUI;
             var gd = GameFacade.GraphicsDevice;
@@ -465,7 +466,258 @@ namespace Simitone.Client.UI.Screens
 
             BackButton.OnButtonClick += GoBack;
             AcceptButton.OnButtonClick += Accept;
+
+            InitCoop();
         }
+
+        #region Co-op: one family, built by whoever holds control
+
+        //In a co-op session every player has this screen open on the same family (CoopManager.CasFamily). One of
+        //them holds control and edits; the others are locked out and shown the family as it grows. A button
+        //passes control. Nothing is saved until the host accepts the family, in the host's game.
+
+        private UICoopBlocker CoopBlocker; //swallows clicks while someone else has control
+        private UILabel CoopLabel;
+        private UILabel CoopLabelShadow;
+        private UIBigButton CoopButton;
+        private UIMobileAlert CoopLeaveAlert;
+        private int CoopVersionApplied = -1;
+        private byte[] CoopFamilySent;
+        private bool CoopHadControl = true;
+
+        private void InitCoop()
+        {
+            CoopBlocker = new UICoopBlocker();
+            CoopBlocker.Visible = false;
+            Add(CoopBlocker);
+
+            CoopLabelShadow = new UILabel();
+            CoopLabelShadow.Alignment = TextAlignment.Middle | TextAlignment.Center;
+            CoopLabelShadow.CaptionStyle = CoopLabelShadow.CaptionStyle.Clone();
+            CoopLabelShadow.CaptionStyle.Size = 19;
+            CoopLabelShadow.CaptionStyle.Color = Color.Black * 0.6f;
+            CoopLabelShadow.Visible = false;
+            Add(CoopLabelShadow);
+
+            CoopLabel = new UILabel();
+            CoopLabel.Alignment = TextAlignment.Middle | TextAlignment.Center;
+            CoopLabel.CaptionStyle = CoopLabelShadow.CaptionStyle.Clone();
+            CoopLabel.CaptionStyle.Color = Color.White;
+            CoopLabel.Visible = false;
+            Add(CoopLabel);
+
+            //added after the blocker, so it can still be pressed by a host who wants control back
+            CoopButton = new UIBigButton(false);
+            CoopButton.CaptionStyle.Size = 25;
+            CoopButton.Width = 300;
+            CoopButton.Visible = false;
+            CoopButton.OnButtonClick += (btn) =>
+            {
+                if (CoopManager.IsGuest || !CoopManager.CasMine) CoopManager.CasTake(); //give back, or take back
+                else CoopManager.CasGive();
+            };
+            Add(CoopButton);
+            LayoutCoop();
+        }
+
+        private void LayoutCoop()
+        {
+            if (CoopBlocker == null) return;
+            CoopBlocker.Resize();
+            CoopLabel.Size = new Vector2(ScreenWidth, 36);
+            CoopLabel.Position = new Vector2(0, ScreenHeight - 190);
+            CoopLabelShadow.Size = CoopLabel.Size;
+            CoopLabelShadow.Position = CoopLabel.Position + new Vector2(2);
+            CoopButton.Position = new Vector2(25, ScreenHeight - 270);
+        }
+
+        /// <summary>
+        /// Whether this game has the head, body and textures a Sim was made with. A Sim another player made is
+        /// only built here if it does.
+        /// </summary>
+        public static bool LookAvailable(CASFamilyMember member)
+        {
+            try
+            {
+                var content = Content.Get();
+                var skins = content.BCFGlobal.SkinHostBCF;
+                if (!skins.ContainsKey((member.Head ?? "").ToLowerInvariant()) || !skins.ContainsKey((member.Body ?? "").ToLowerInvariant())) return false;
+                var textures = ((TS1AvatarTextureProvider)content.AvatarTextures).GetAllNames();
+                return HasTexture(textures, member.HeadTex) && HasTexture(textures, member.BodyTex);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static bool HasTexture(IEnumerable<string> names, string texture)
+        {
+            var name = (texture ?? "").ToLowerInvariant();
+            return name != "" && (names.Contains(name + ".bmp") || names.Contains(name + ".tga"));
+        }
+
+        /// <summary>
+        /// The Sim to draw for a family member. That is the member itself, unless it was made with a head or body
+        /// this game lacks (custom skins are not shared between players yet): then the first ones this game has
+        /// stand in, on screen only.
+        /// </summary>
+        private CASFamilyMember DisplayLook(CASFamilyMember data)
+        {
+            if (LookAvailable(data) || ActiveBodies == null || ActiveBodies.Count == 0 || ActiveHeads == null || ActiveHeads.Count == 0) return data;
+            return new CASFamilyMember()
+            {
+                Name = data.Name,
+                Gender = data.Gender,
+                SkinColor = data.SkinColor,
+                Body = ActiveBodies[0],
+                BodyTex = ActiveBodyTex[0],
+                HandgroupTex = ActiveHandgroupTex[0],
+                Head = ActiveHeads[0],
+                HeadTex = ActiveHeadTex[0]
+            };
+        }
+
+        /// <summary>
+        /// Leaves for the neighbourhood screen without the host's exit steps: a guest following the host out, or
+        /// a guest whose session ended.
+        /// </summary>
+        public void CoopLeave()
+        {
+            if (Dead) return;
+            Dead = true;
+            CleanupLastWorld();
+            GameController.EnterGameMode("", false);
+        }
+
+        private CoopCasState CoopCurrentFamily()
+        {
+            return new CoopCasState()
+            {
+                Surname = FamilyPanel.SecondName.CurrentText ?? "",
+                Members = new List<CASFamilyMember>(WIPFamily)
+            };
+        }
+
+        /// <summary>
+        /// Makes the family on this screen the one another player sent.
+        /// </summary>
+        private void ApplyCoopFamily(CoopCasState family)
+        {
+            if ((FamilyPanel.SecondName.CurrentText ?? "") != family.Surname) FamilyPanel.SecondName.CurrentText = family.Surname;
+
+            var changed = false;
+            while (WIPFamily.Count > family.Members.Count)
+            {
+                var last = WIPFamily.Count - 1;
+                RepresentFamily[last].Delete(true, vm.Context);
+                RepresentFamily.RemoveAt(last);
+                WIPFamily.RemoveAt(last);
+                changed = true;
+            }
+            for (int i = 0; i < family.Members.Count; i++)
+            {
+                if (i >= WIPFamily.Count) WIPFamily.Add(family.Members[i]);
+                else if (CoopCasState.SameMember(WIPFamily[i], family.Members[i])) continue;
+                else WIPFamily[i] = family.Members[i];
+                SetFamilyMember(i);
+                changed = true;
+            }
+            if (changed) FamilyPanel.Reset(); //the row of Sims along the bottom
+        }
+
+        private void UpdateCoop(UpdateState state)
+        {
+            var guest = CoopManager.IsGuest;
+            var mine = CoopManager.CasMine;
+
+            if (CoopManager.InSession && CoopManager.CasVersion != CoopVersionApplied)
+            {
+                //the family as someone else changed it
+                CoopVersionApplied = CoopManager.CasVersion;
+                try
+                {
+                    ApplyCoopFamily(CoopCasState.Unpack(CoopManager.CasFamily));
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("COOP could not show the family another player sent: " + e.Message);
+                }
+                CoopFamilySent = CoopManager.CasFamily;
+            }
+
+            if (!mine)
+            {
+                if (CoopHadControl) state.InputManager.SetFocus(null); //stop typing into the surname
+                if (Mode == UICASMode.SimEdit) SetMode(UICASMode.FamilyEdit); //a Sim half made goes with control
+            }
+            else if (CoopManager.InSession)
+            {
+                //our own changes go out as they are made
+                var family = CoopCurrentFamily().Pack();
+                if (CoopFamilySent == null || !family.AsSpan().SequenceEqual(CoopFamilySent))
+                {
+                    CoopFamilySent = family;
+                    CoopManager.CasEdited(family);
+                }
+            }
+            CoopHadControl = mine;
+            CoopBlocker.Visible = !mine;
+
+            string label = null;
+            string button = null;
+            if (guest)
+            {
+                //a guest adds and changes Sims; saving the family and leaving are the host's to do
+                var editingSim = Mode == UICASMode.SimEdit;
+                BackButton.Visible = editingSim;
+                AcceptButton.Visible = editingSim;
+                if (mine)
+                {
+                    label = "You have control: add or change Sims, then give control back";
+                    if (!editingSim) button = "Give Back";
+                }
+                else label = CoopManager.CasHolderName + " is creating the family (Esc to leave)";
+
+                if (CoopLeaveAlert == null && state.NewKeys.Contains(Microsoft.Xna.Framework.Input.Keys.Escape))
+                {
+                    CoopLeaveAlert = new UIMobileAlert(new UIAlertOptions()
+                    {
+                        Title = "Co-op",
+                        Message = "Leave the host's game and go back to your own neighbourhood?",
+                        Buttons = UIAlertButton.YesNo(
+                            (b) => { CoopLeaveAlert.Close(); CoopLeaveAlert = null; CoopManager.Leave(); },
+                            (b) => { CoopLeaveAlert.Close(); CoopLeaveAlert = null; })
+                    });
+                    UIScreen.GlobalShowDialog(CoopLeaveAlert, true);
+                }
+            }
+            else if (CoopManager.HasGuests)
+            {
+                if (!mine)
+                {
+                    label = CoopManager.CasHolderName + " has control";
+                    button = "Take Control";
+                }
+                else if (Mode == UICASMode.FamilyEdit && CoopManager.CasNextName != null)
+                {
+                    label = "Give control to let " + CoopManager.CasNextName + " add a Sim";
+                    button = "Give Control";
+                }
+            }
+
+            CoopLabel.Visible = label != null;
+            CoopLabelShadow.Visible = label != null;
+            if (label != null && CoopLabel.Caption != label)
+            {
+                CoopLabel.Caption = label;
+                CoopLabelShadow.Caption = label;
+            }
+            CoopButton.Visible = button != null;
+            if (button != null && CoopButton.Caption != button) CoopButton.Caption = button;
+        }
+
+        #endregion
 
         private int EditIndex = -1;
 
@@ -555,6 +807,7 @@ namespace Simitone.Client.UI.Screens
 
         private void Accept(UIElement button)
         {
+            if (CoopManager.IsGuest && Mode != UICASMode.SimEdit) return; //saving a family and moving it in are the host's to do
             switch (Mode)
             {
                 case UICASMode.SimEdit:
@@ -592,6 +845,7 @@ namespace Simitone.Client.UI.Screens
 
         private void GoBack(UIElement button)
         {
+            if (CoopManager.IsGuest && Mode != UICASMode.SimEdit) return; //as is abandoning one
             if (Mode == UICASMode.FamilyEdit)
             {
                 if (ConfirmDialog == null)
@@ -680,8 +934,12 @@ namespace Simitone.Client.UI.Screens
                     Cam = fp.Camera;
                     fp.FixedCam = true;
                 }
-                SetMode(UICASMode.FamilySelect);
-                SetFamilies();
+                if (CoopManager.IsGuest) SetMode(UICASMode.FamilyEdit); //the family the host is making; the list of families is the host's business
+                else
+                {
+                    SetMode(UICASMode.FamilySelect);
+                    SetFamilies();
+                }
                 Initialized = true;
                 //FamilySimInterp = FamilySimInterp;
             }
@@ -728,6 +986,7 @@ namespace Simitone.Client.UI.Screens
             }
 
             AcceptButton.Disabled = disableAccept;
+            UpdateCoop(state);
             //AcceptButton.ForceState = disableAccept ? 0 : -1;
             //AcceptButton.Opacity = disableAccept ? 0.5f : 1;
 
@@ -852,6 +1111,7 @@ namespace Simitone.Client.UI.Screens
             fam.SetPersonData(VMPersonDataVariable.PersonsAge, (short)((data.Gender > 1) ? 12 : 21));
             fam.InitBodyData(vm.Context);
 
+            data = DisplayLook(data);
             var oft = new Outfit() { TS1AppearanceID = data.Body + ".apr", TS1TextureID = data.BodyTex };
             var code = (data.Gender > 1) ? "u" : ((data.Gender == 0) ? "m" : "f");
             var hg = data.HandgroupTex;
@@ -960,6 +1220,7 @@ namespace Simitone.Client.UI.Screens
             World?.GameResized();
             BackButton.Position = new Vector2(25, ScreenHeight - 140);
             AcceptButton.Position = new Vector2(ScreenWidth - 140, ScreenHeight - 140);
+            LayoutCoop();
             FamilySimInterp = FamilySimInterp;
         }
 

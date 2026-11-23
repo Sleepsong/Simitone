@@ -56,6 +56,10 @@ namespace Simitone.Client.Network.Coop
         public event Action<string, bool> OnGuestChange;
         /// <summary>A guest is being sent this many object files, of this many bytes. The string is their name.</summary>
         public event Action<string, int, long> OnContentRequest;
+        /// <summary>A guest (by player ID) sent its changes to the family in Create-a-Family (a packed CoopCasState).</summary>
+        public event Action<uint, byte[]> OnCasEdit;
+        /// <summary>A guest (by player ID) gave control of Create-a-Family back.</summary>
+        public event Action<uint> OnCasRelease;
 
         private class GuestState
         {
@@ -189,6 +193,12 @@ namespace Simitone.Client.Network.Coop
                         break;
                     case CoopFrameKind.HouseRequest:
                         if (guest != null) HandleHouseRequest(conn, frame.Data);
+                        break;
+                    case CoopFrameKind.CasEdit:
+                        if (guest != null) OnCasEdit?.Invoke(guest.PersistID, frame.Data);
+                        break;
+                    case CoopFrameKind.CasRelease:
+                        if (guest != null) OnCasRelease?.Invoke(guest.PersistID);
                         break;
                     case CoopFrameKind.Command:
                         if (guest != null && Driver != null)
@@ -375,11 +385,43 @@ namespace Simitone.Client.Network.Coop
         }
 
         /// <summary>
-        /// Sends a frame to every guest that is playing.
+        /// Sends a frame to every guest that is playing, or to all but one of them (by player ID).
         /// </summary>
-        public void SendToGuests(CoopFrameKind kind, byte[] data)
+        public void SendToGuests(CoopFrameKind kind, byte[] data, uint except = 0)
         {
-            foreach (var guest in Guests) ((CoopConnection)guest.NetHandle).Send(kind, data);
+            foreach (var guest in Guests)
+            {
+                if (guest.PersistID != except) ((CoopConnection)guest.NetHandle).Send(kind, data);
+            }
+        }
+
+        /// <summary>
+        /// Sends a frame to one guest that is playing, by player ID.
+        /// </summary>
+        public void SendTo(uint guestID, CoopFrameKind kind, byte[] data)
+        {
+            foreach (var guest in Guests)
+            {
+                if (guest.PersistID == guestID) ((CoopConnection)guest.NetHandle).Send(kind, data);
+            }
+        }
+
+        /// <summary>The player IDs of the guests that are playing, in the order they joined.</summary>
+        public List<uint> GuestIDs()
+        {
+            var ids = new List<uint>();
+            foreach (var guest in Guests) ids.Add(guest.PersistID);
+            return ids;
+        }
+
+        /// <summary>The name a guest that is playing gave, or null if there is no such guest.</summary>
+        public string GuestName(uint guestID)
+        {
+            foreach (var guest in Guests)
+            {
+                if (guest.PersistID == guestID) return guest.AvatarState.Name;
+            }
+            return null;
         }
 
         /// <summary>

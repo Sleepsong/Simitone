@@ -19,6 +19,8 @@ namespace Simitone.Client.Network.Coop
         ContentRequest = 4, //int32 n, int32[n] indices into the host's manifest of object files to send
         Ready = 5,        //empty: the guest has what it needs and can be given the lot
         HouseRequest = 6, //int32 n, string[n] names of house files to send
+        CasEdit = 7,      //a packed CoopCasState: the family in Create-a-Family as the guest, holding control, has changed it
+        CasRelease = 8,   //empty: the guest gives control of Create-a-Family back to the host
 
         //host -> guest
         Welcome = 16,     //uint32 the guest's player ID in the VM, string host game version, int32 n, byte[n] a packed CoopManifest
@@ -30,6 +32,8 @@ namespace Simitone.Client.Network.Coop
         Lobby = 23,       //a packed CoopWorld: the host's neighbourhood as it is now, for the neighbourhood screen
         Scene = 24,       //byte CoopScene where the host is, uint16 area, int32 house being viewed (0 none), int32 family being moved in (-1 none)
         HouseFile = 25,   //string name, then that house file's bytes
+        Cas = 26,         //uint32 the player who holds control in Create-a-Family, then a packed CoopCasState: the family as it stands
+        Notice = 27,      //string: something to tell this guest, shown as a dialog
         World = 20,       //a packed CoopWorld: the host's neighbourhood as of the lot state in the Tick frame that follows
 
         //never sent: queued locally when a connection ends. payload is a UTF8 reason, possibly empty
@@ -56,7 +60,7 @@ namespace Simitone.Client.Network.Coop
 
     public static class CoopProtocol
     {
-        public const int Version = 7;
+        public const int Version = 8;
         public const int DefaultPort = 37565;
         public const int MaxFrameSize = 64 * 1024 * 1024; //lot states are a few MB at most
 
