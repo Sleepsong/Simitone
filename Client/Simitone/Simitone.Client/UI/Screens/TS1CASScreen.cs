@@ -259,7 +259,14 @@ namespace Simitone.Client.UI.Screens
 
             var moving = 0;
 
-            if (state.MouseStates.Count(x => x.MouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed) > 0)
+            if (!CoopManager.CasMine)
+            {
+                //co-op: another player is making this Sim. The rows turn to the head and body they are on.
+                XLast = -1;
+                BodySpeed = (CoopBodyTarget - BodyPosition) * 0.2f * frac;
+                HeadSpeed = (CoopHeadTarget - HeadPosition) * 0.2f * frac;
+            }
+            else if (state.MouseStates.Count(x => x.MouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed) > 0)
             {
                 if (XLast == -1)
                 {
@@ -484,6 +491,9 @@ namespace Simitone.Client.UI.Screens
         private int CoopVersionApplied = -1;
         private byte[] CoopFamilySent;
         private bool CoopHadControl = true;
+        private CoopCasState CoopRemote; //the family, and what its editor is doing, as last sent by someone else
+        private float CoopBodyTarget;    //where the rows of bodies and heads are turning to, to match the editor's
+        private float CoopHeadTarget;
 
         private void InitCoop()
         {
@@ -592,11 +602,73 @@ namespace Simitone.Client.UI.Screens
 
         private CoopCasState CoopCurrentFamily()
         {
-            return new CoopCasState()
+            var family = new CoopCasState()
             {
                 Surname = FamilyPanel.SecondName.CurrentText ?? "",
-                Members = new List<CASFamilyMember>(WIPFamily)
+                Members = new List<CASFamilyMember>(WIPFamily),
+                Mode = (byte)Math.Max(0, Math.Min(2, (int)Mode)),
+                Tab = (byte)Math.Max(0, Math.Min(2, CASPanel.ActiveTab))
             };
+            //while a Sim is being made, the others are shown it as it stands
+            if (Mode == UICASMode.SimEdit && ActiveBodies != null && ActiveBodies.Count > 0 && ActiveHeads != null && ActiveHeads.Count > 0)
+                family.Draft = BuildMember();
+            return family;
+        }
+
+        /// <summary>
+        /// The position on a row of heads or bodies that shows the given one and is nearest to where the row is
+        /// now. The rows go round, so there are many; the nearest keeps the turn short.
+        /// </summary>
+        private static float NearestPosition(float current, int index, int count)
+        {
+            if (count <= 0) return current;
+            var basePosition = index - 8; //see BuildMember
+            var turns = (float)Math.Round((current - basePosition) / count);
+            return basePosition + turns * count;
+        }
+
+        /// <summary>
+        /// Shows, in this screen's Sim editor, the Sim another player is making.
+        /// </summary>
+        private void ApplyCoopDraft(CASFamilyMember draft, int tab, bool entering)
+        {
+            string code;
+            switch (draft.Gender)
+            {
+                case 1: code = "fa"; break;
+                case 2: code = "mc"; break;
+                case 3: code = "fc"; break;
+                default: code = "ma"; break;
+            }
+            var snap = entering;
+            if (CASPanel.AType != code || CASPanel.SkinType != draft.SkinColor || CurrentCode != code || CurrentSkin != draft.SkinColor)
+            {
+                //another kind of Sim: the rows are filled again with the heads and bodies for it (see CASPanel_OnCollectionChange)
+                CASPanel.AType = code;
+                CASPanel.SkinType = draft.SkinColor;
+                CASPanel.UpdateType();
+                snap = true;
+            }
+
+            if (CASPanel.FirstNameTextBox.CurrentText != (draft.Name ?? "")) CASPanel.FirstNameTextBox.CurrentText = draft.Name ?? "";
+            if (CASPanel.BioEdit.CurrentText != (draft.Bio ?? "")) CASPanel.BioEdit.CurrentText = draft.Bio ?? "";
+            for (int j = 0; j < 5; j++) CASPanel.Personalities[j].Points = draft.Personality[j] / 100;
+            CASPanel.UpdateTotalPoints();
+            if (CASPanel.ActiveTab != tab) CASPanel.SetTab(tab);
+
+            //heads and bodies are matched by name: each game lists them in its own order
+            var body = (ActiveBodies == null) ? -1 : ActiveBodies.IndexOf(draft.Body);
+            var head = (ActiveHeads == null) ? -1 : ActiveHeads.IndexOf(draft.Head);
+            CoopBodyTarget = (body < 0) ? BodyPosition : NearestPosition(BodyPosition, body, ActiveBodies.Count);
+            CoopHeadTarget = (head < 0) ? HeadPosition : NearestPosition(HeadPosition, head, ActiveHeads.Count);
+            if (snap)
+            {
+                //straight there, as when a Sim is opened for editing
+                BodyPosition = CoopBodyTarget;
+                HeadPosition = CoopHeadTarget;
+                BodySpeed = 0;
+                HeadSpeed = 0;
+            }
         }
 
         /// <summary>
@@ -626,18 +698,33 @@ namespace Simitone.Client.UI.Screens
             if (changed) FamilyPanel.Reset(); //the row of Sims along the bottom
         }
 
+        /// <summary>What the player in control is doing, for the line that tells everyone else.</summary>
+        private string CoopDoing()
+        {
+            if (CoopRemote == null) return "has control";
+            switch (CoopRemote.Mode)
+            {
+                case CoopCasState.ModeSim: return "is making a Sim";
+                case CoopCasState.ModeFamilies: return "is choosing a family";
+                default: return "is putting the family together";
+            }
+        }
+
         private void UpdateCoop(UpdateState state)
         {
             var guest = CoopManager.IsGuest;
             var mine = CoopManager.CasMine;
 
+            var remoteChanged = false;
             if (CoopManager.InSession && CoopManager.CasVersion != CoopVersionApplied)
             {
                 //the family as someone else changed it
                 CoopVersionApplied = CoopManager.CasVersion;
                 try
                 {
-                    ApplyCoopFamily(CoopCasState.Unpack(CoopManager.CasFamily));
+                    CoopRemote = CoopCasState.Unpack(CoopManager.CasFamily);
+                    ApplyCoopFamily(CoopRemote);
+                    remoteChanged = true;
                 }
                 catch (Exception e)
                 {
@@ -648,8 +735,31 @@ namespace Simitone.Client.UI.Screens
 
             if (!mine)
             {
-                if (CoopHadControl) state.InputManager.SetFocus(null); //stop typing into the surname
-                if (Mode == UICASMode.SimEdit) SetMode(UICASMode.FamilyEdit); //a Sim half made goes with control
+                if (CoopHadControl) state.InputManager.SetFocus(null); //stop typing into the box we were in
+                //this screen follows the editor's: into the Sim editor while they are making a Sim, and out again
+                var makingSim = CoopRemote != null && CoopRemote.Mode == CoopCasState.ModeSim && CoopRemote.Draft != null;
+                if (makingSim)
+                {
+                    var entering = Mode != UICASMode.SimEdit;
+                    if (entering) SetMode(UICASMode.SimEdit);
+                    if (entering || remoteChanged || CoopHadControl)
+                    {
+                        try
+                        {
+                            ApplyCoopDraft(CoopRemote.Draft, CoopRemote.Tab, entering || CoopHadControl);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine("COOP could not show the Sim another player is making: " + e.Message);
+                        }
+                    }
+                }
+                else if (Mode == UICASMode.SimEdit) SetMode(UICASMode.FamilyEdit);
+            }
+            else if (!CoopHadControl && Mode == UICASMode.SimEdit)
+            {
+                //control has just come to us while its last holder was making a Sim: that Sim goes with them
+                SetMode(UICASMode.FamilyEdit);
             }
             else if (CoopManager.InSession)
             {
@@ -670,14 +780,14 @@ namespace Simitone.Client.UI.Screens
             {
                 //a guest adds and changes Sims; saving the family and leaving are the host's to do
                 var editingSim = Mode == UICASMode.SimEdit;
-                BackButton.Visible = editingSim;
-                AcceptButton.Visible = editingSim;
+                BackButton.Visible = editingSim && mine;
+                AcceptButton.Visible = editingSim && mine;
                 if (mine)
                 {
                     label = "You have control: add or change Sims, then give control back";
                     if (!editingSim) button = "Give Back";
                 }
-                else label = CoopManager.CasHolderName + " is creating the family (Esc to leave)";
+                else label = CoopManager.CasHolderName + " " + CoopDoing() + " (Esc to leave)";
 
                 if (CoopLeaveAlert == null && state.NewKeys.Contains(Microsoft.Xna.Framework.Input.Keys.Escape))
                 {
@@ -696,7 +806,7 @@ namespace Simitone.Client.UI.Screens
             {
                 if (!mine)
                 {
-                    label = CoopManager.CasHolderName + " has control";
+                    label = CoopManager.CasHolderName + " " + CoopDoing();
                     button = "Take Control";
                 }
                 else if (Mode == UICASMode.FamilyEdit && CoopManager.CasNextName != null)

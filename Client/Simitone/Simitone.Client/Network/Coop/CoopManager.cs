@@ -372,6 +372,14 @@ namespace Simitone.Client.Network.Coop
             try
             {
                 var family = CoopCasState.Unpack(data);
+                if (family.Mode == CoopCasState.ModeFamilies)
+                {
+                    //the list of families is the host's alone
+                    family.Mode = CoopCasState.ModeFamily;
+                    data = family.Pack();
+                }
+                //only the Sims in the family are checked. One still being made is just shown, and its maker may
+                //yet be flicking past heads this game lacks.
                 foreach (var member in family.Members)
                 {
                     if (!TS1CASScreen.LookAvailable(member))
