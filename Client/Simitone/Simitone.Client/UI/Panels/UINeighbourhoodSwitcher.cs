@@ -18,6 +18,8 @@ namespace Simitone.Client.UI.Panels
         private UINeighborhoodSelectionPanel Panel;
         private ushort Mode;
         public bool MoveInMode;
+        /// <summary>The co-op button was pressed: host a game, join one, or see how the one in progress is doing.</summary>
+        public event Action OnCoop;
 
         public UINeighbourhoodSwitcher(UINeighborhoodSelectionPanel panel, ushort mode, bool moveIn)
         {
@@ -40,6 +42,7 @@ namespace Simitone.Client.UI.Panels
                 });
             });
             if (mode != 4) AddBtn(LeftBtns, "ngbh_back.png", (btn) => PopMode(4));
+            AddBtn(LeftBtns, "ngbh_coop.png", (btn) => OnCoop?.Invoke());
 
             if (mode != 2 && !moveIn) AddBtn(RightBtns, "ngbh_downt.png", (btn) => PopMode(2));
             if (mode != 3 && !moveIn) AddBtn(RightBtns, "ngbh_vacat.png", (btn) => PopMode(3));

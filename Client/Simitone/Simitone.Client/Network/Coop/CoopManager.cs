@@ -134,6 +134,20 @@ namespace Simitone.Client.Network.Coop
             return true;
         }
 
+        /// <summary>A line for the host's neighbourhood screen saying it is hosting and who is there, or null if it is not.</summary>
+        public static string HostStatus
+        {
+            get
+            {
+                if (Host == null) return null;
+                var guests = Host.GuestIDs();
+                if (guests.Count == 0) return "Hosting co-op: waiting for a friend to join";
+                if (guests.Count > 1) return "Hosting co-op: " + guests.Count + " guests are here";
+                var name = Host.GuestName(guests[0]);
+                return "Hosting co-op: " + (string.IsNullOrEmpty(name) ? "a guest" : name) + " is here";
+            }
+        }
+
         public static void StopHosting()
         {
             if (Host == null) return;

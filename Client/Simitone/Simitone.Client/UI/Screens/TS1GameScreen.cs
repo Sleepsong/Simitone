@@ -65,6 +65,7 @@ namespace Simitone.Client.UI.Screens
         private string CoopStatusShown;
         private UIMobileAlert CoopLeaveAlert;
         private UICoopPointers CoopPointers; //the other players' mouse pointers, while the neighbourhood is showing
+        private UIElasticButton GuestCoopButton; //a guest has none of the neighbourhood's buttons, so it gets the co-op one by itself
         private UINeighbourhoodSwitcher TS1NeighSwitcher;
         private ushort GuestNeighArea; //the area the guest's view of the host's neighbourhood shows
         public uint VisualBudget { get; set; }
@@ -249,6 +250,7 @@ namespace Simitone.Client.UI.Screens
             TS1NeighPanel = new UINeighborhoodSelectionPanel(neighborhoodMode);
             var switcher = new UINeighbourhoodSwitcher(TS1NeighPanel, neighborhoodMode, moveInMode);
             TS1NeighSwitcher = switcher;
+            switcher.OnCoop += () => UICoopMenu.Show(this);
             //guests are shown the area and the house the host is looking at
             TS1NeighPanel.OnAreaChange += (area) => CoopManager.ShowArea(area);
             TS1NeighPanel.OnHouseView += (house) => CoopManager.ViewHouse(house);
@@ -467,11 +469,37 @@ namespace Simitone.Client.UI.Screens
 
         private void BringCoopStatusToFront()
         {
+            if (GuestCoopButton != null)
+            {
+                Remove(GuestCoopButton);
+                Add(GuestCoopButton);
+            }
             if (CoopStatusLabel == null) return;
             Remove(CoopStatusShadow);
             Remove(CoopStatusLabel);
             Add(CoopStatusShadow);
             Add(CoopStatusLabel);
+        }
+
+        /// <summary>
+        /// Until the host's lot is on screen a guest is shown the co-op button, top left where the host has it,
+        /// as its way to leave the session.
+        /// </summary>
+        private void UpdateGuestCoopButton()
+        {
+            var wanted = IsCoopGuest && (vm == null || !GuestLotShown);
+            if (wanted && GuestCoopButton == null)
+            {
+                GuestCoopButton = new UIElasticButton(Content.Get().CustomUI.Get("ngbh_coop.png").Get(GameFacade.GraphicsDevice));
+                GuestCoopButton.Position = new Vector2(17 + 48, 14 + 48);
+                GuestCoopButton.OnButtonClick += (btn) => UICoopMenu.Show(this);
+                Add(GuestCoopButton);
+            }
+            else if (!wanted && GuestCoopButton != null)
+            {
+                Remove(GuestCoopButton);
+                GuestCoopButton = null;
+            }
         }
 
         /// <summary>
@@ -676,8 +704,10 @@ namespace Simitone.Client.UI.Screens
 
         public override void Update(FSO.Common.Rendering.Framework.Model.UpdateState state)
         {
-            SetCoopStatus(CoopManager.Status);
+            //a guest is told what it is waiting for; a host at the neighbourhood, that it is hosting and for whom
+            SetCoopStatus(CoopManager.Status ?? ((TS1NeighPanel != null && vm == null) ? CoopManager.HostStatus : null));
             UpdateCoopPointers(state);
+            UpdateGuestCoopButton();
             //a guest that is not on a lot yet (watching the host's neighbourhood, or waiting) has no buttons of
             //its own, so Escape offers the way out
             if (IsCoopGuest && (vm == null || !GuestLotShown) && CoopLeaveAlert == null && state.NewKeys.Contains(Keys.Escape))
